@@ -1,0 +1,94 @@
+/*
+ * Copyright (c) 2020 Gerson Fernando Budke <nandojve@gmail.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <atmel/sam4lx4.dtsi>
+
+/ {
+	model = "Atmel SAM4L WM-400 Cape Board with an Atmel SAM4LC4B SoC";
+	compatible = "peregrine,sam4l_wm400_cape", "atmel,sam4lc4b", "atmel,sam4l";
+
+	aliases {
+		led0 = &red_mod_led;
+		led1 = &green_mod_led;
+		led2 = &blue_mod_led;
+		led3 = &red_cape_led;
+		sw0 = &sw0_dfu;
+	};
+
+	chosen {
+		zephyr,console = &usart0;
+		zephyr,shell-uart = &usart0;
+		zephyr,sram = &sram0;
+		zephyr,flash = &flash0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+		red_mod_led: led_0 {
+			gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
+			label = "LED_0";
+		};
+		green_mod_led: led_1 {
+			gpios = <&gpiob 6 GPIO_ACTIVE_LOW>;
+			label = "LED_1";
+		};
+		blue_mod_led: led_2 {
+			gpios = <&gpiob 7 GPIO_ACTIVE_LOW>;
+			label = "LED_2";
+		};
+		red_cape_led: led_3 {
+			gpios = <&gpioa 24 GPIO_ACTIVE_LOW>;
+			label = "LED_3";
+		};
+	};
+
+	gpio_keys {
+		compatible = "gpio-keys";
+
+		sw0_dfu: button_1 {
+			label = "SW0_DFU";
+			gpios = <&gpiob 3 (GPIO_ACTIVE_LOW)>;
+		};
+	};
+};
+
+&cpu0 {
+	clock-frequency = <48000000>;
+};
+
+&usart0 {
+	current-speed = <115200>;
+	pinctrl-0 = <&pb14a_usart0_rxd0 &pb15a_usart0_txd0>;
+	status = "okay";
+};
+
+&usart1 {
+	current-speed = <115200>;
+	pinctrl-0 = <&pa15a_usart1_rxd1 &pa16a_usart1_txd1>;
+	status = "okay";
+};
+
+&spi0 {
+	status = "okay";
+	label = "SPI_RF2XX";
+	pinctrl-0 = <&pa21a_spi_miso
+		     &pa22a_spi_mosi
+		     &pa23a_spi_sck
+		     &pb13b_spi_npcs1>;
+	cs-gpios = <&gpioa 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+
+	rf2xx@0 {
+		compatible = "atmel,rf2xx";
+		reg = <0x0>;
+		label = "RF2XX_0";
+		spi-max-frequency = <6000000>;
+		irq-gpios = <&gpioa 20 (GPIO_PULL_DOWN | GPIO_ACTIVE_HIGH)>;
+		reset-gpios = <&gpioa 10 GPIO_ACTIVE_LOW>;
+		slptr-gpios = <&gpioa 9 GPIO_ACTIVE_HIGH>;
+		status = "okay";
+	};
+};

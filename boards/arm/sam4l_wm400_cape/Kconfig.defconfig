@@ -1,0 +1,15 @@
+# Atmel SAM4L WM-400 BBB Cape Board configuration
+
+# Copyright (c) 2020 Gerson Fernando Budke <nandojve@gmail.com>
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_SAM4L_WM400_CAPE
+
+config BOARD
+	default "sam4l_wm400_cape"
+
+config IEEE802154_RF2XX
+	default y
+	depends on IEEE802154
+
+endif # BOARD_SAM4L_WM400_CAPE

@@ -46,6 +46,48 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <net/gptp.h>
 #endif
 
+#ifdef __DCACHE_PRESENT
+#define NO_CACHE		__nocache
+
+static bool dcache_enabled;
+
+static inline void dcache_is_enabled(void)
+{
+	dcache_enabled = (SCB->CCR & SCB_CCR_DC_Msk);
+}
+static inline void dcache_invalidate(u32_t addr, u32_t size)
+{
+	if (!dcache_enabled) {
+		return;
+	}
+
+	/* Make sure it is aligned to 32B */
+	u32_t start_addr = addr & (u32_t)~(GMAC_DCACHE_ALIGNMENT - 1);
+	u32_t size_full = size + addr - start_addr;
+
+	SCB_InvalidateDCache_by_Addr((uint32_t *)start_addr, size_full);
+}
+
+static inline void dcache_clean(u32_t addr, u32_t size)
+{
+	if (!dcache_enabled) {
+		return;
+	}
+
+	/* Make sure it is aligned to 32B */
+	u32_t start_addr = addr & (u32_t)~(GMAC_DCACHE_ALIGNMENT - 1);
+	u32_t size_full = size + addr - start_addr;
+
+	SCB_CleanDCache_by_Addr((uint32_t *)start_addr, size_full);
+}
+#else
+#define NO_CACHE
+
+#define dcache_is_enabled()
+#define dcache_invalidate(addr, size)
+#define dcache_clean(addr, size)
+#endif
+
 /*
  * Verify Kconfig configuration
  */
@@ -76,50 +118,50 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 /* RX descriptors list */
 static struct gmac_desc rx_desc_que0[MAIN_QUEUE_RX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #if GMAC_PRIORITY_QUEUE_NUM >= 1
 static struct gmac_desc rx_desc_que1[PRIORITY_QUEUE1_RX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 2
 static struct gmac_desc rx_desc_que2[PRIORITY_QUEUE2_RX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 3
 static struct gmac_desc rx_desc_que3[PRIORITY_QUEUE3_RX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 4
 static struct gmac_desc rx_desc_que4[PRIORITY_QUEUE4_RX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 5
 static struct gmac_desc rx_desc_que5[PRIORITY_QUEUE5_RX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 
 /* TX descriptors list */
 static struct gmac_desc tx_desc_que0[MAIN_QUEUE_TX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #if GMAC_PRIORITY_QUEUE_NUM >= 1
 static struct gmac_desc tx_desc_que1[PRIORITY_QUEUE1_TX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 2
 static struct gmac_desc tx_desc_que2[PRIORITY_QUEUE2_TX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 3
 static struct gmac_desc tx_desc_que3[PRIORITY_QUEUE3_TX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 4
 static struct gmac_desc tx_desc_que4[PRIORITY_QUEUE4_TX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 #if GMAC_PRIORITY_QUEUE_NUM >= 5
 static struct gmac_desc tx_desc_que5[PRIORITY_QUEUE5_TX_DESC_COUNT]
-	__nocache __aligned(GMAC_DESC_ALIGNMENT);
+	NO_CACHE __aligned(GMAC_DESC_ALIGNMENT);
 #endif
 
 /* RX buffer accounting list */
@@ -339,38 +381,6 @@ static inline void eth_sam_gmac_init_qav(Gmac *gmac)
 #define eth_sam_gmac_init_qav(gmac)
 
 #endif
-
-/*
- * Cache helpers
- */
-
-static bool dcache_enabled;
-
-static inline void dcache_invalidate(u32_t addr, u32_t size)
-{
-	if (!dcache_enabled) {
-		return;
-	}
-
-	/* Make sure it is aligned to 32B */
-	u32_t start_addr = addr & (u32_t)~(GMAC_DCACHE_ALIGNMENT - 1);
-	u32_t size_full = size + addr - start_addr;
-
-	SCB_InvalidateDCache_by_Addr((uint32_t *)start_addr, size_full);
-}
-
-static inline void dcache_clean(u32_t addr, u32_t size)
-{
-	if (!dcache_enabled) {
-		return;
-	}
-
-	/* Make sure it is aligned to 32B */
-	u32_t start_addr = addr & (u32_t)~(GMAC_DCACHE_ALIGNMENT - 1);
-	u32_t size_full = size + addr - start_addr;
-
-	SCB_CleanDCache_by_Addr((uint32_t *)start_addr, size_full);
-}
 
 #if GMAC_MULTIPLE_TX_PACKETS == 1
 /*
@@ -1871,7 +1881,7 @@ static void eth0_iface_init(struct net_if *iface)
 	}
 
 	/* Check the status of data caches */
-	dcache_enabled = (SCB->CCR & SCB_CCR_DC_Msk);
+	dcache_is_enabled();
 
 	/* Initialize GMAC driver, maximum frame length is 1518 bytes */
 	gmac_ncfgr_val =

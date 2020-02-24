@@ -28,6 +28,7 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_mod_led: led_0 {
 			gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
 			label = "LED_0";
@@ -50,8 +51,8 @@
 		compatible = "gpio-keys";
 
 		sw0_dfu: button_1 {
-			label = "SW0_DFU";
 			gpios = <&gpiob 3 (GPIO_ACTIVE_LOW)>;
+			label = "SW0_DFU";
 		};
 	};
 };

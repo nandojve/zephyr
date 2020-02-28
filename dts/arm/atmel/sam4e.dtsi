@@ -131,6 +131,7 @@
 			reg = <0x40034000 0x4000>;
 			interrupt-names = "gmac";
 			num-queues = <1>;
+			phy-connection-type = "mii";
 			label = "GMAC";
 			status = "disabled";
 		};

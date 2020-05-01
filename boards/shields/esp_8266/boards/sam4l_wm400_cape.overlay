@@ -1,0 +1,13 @@
+/*
+ * Copyright (c) 2020 Gerson Fernando Budke <nandojve@gmail.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&usart1 {
+	esp8266 {
+		compatible = "espressif,esp";
+		label = "esp8266";
+		status = "okay";
+	};
+};

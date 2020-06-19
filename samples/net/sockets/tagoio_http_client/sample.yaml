@@ -1,0 +1,9 @@
+common:
+  tags: net http tagoio_http_client
+  min_ram: 32
+sample:
+  description: TagoIO HTTP(S) client sample
+  name: tagoio_http_client
+tests:
+  sample.net.sockets.tagoio_http_client:
+    harness: net

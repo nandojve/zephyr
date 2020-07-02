@@ -1,7 +1,7 @@
 # Copyright (c) 2020 Gerson Fernando Budke <nandojve@gmail.com>
 # SPDX-License-Identifier: Apache-2.0
 
-board_runner_args(bossac "--bossac-port=/dev/ttyS0")
+board_runner_args(bossac "--bossac-port=/dev/ttyACM0")
 include(${ZEPHYR_BASE}/boards/common/bossac.board.cmake)
 
 board_runner_args(jlink "--device=atsam4lc4b")

@@ -172,3 +172,7 @@
 		};
 	};
 };
+
+zephyr_udc0: &usbc {
+	status = "okay";
+};

@@ -20,6 +20,16 @@ properties:
     "#gpio-cells":
       const: 2
 
+    "#cypress,pin-cells":
+      type: int
+      required: true
+      const: 2
+      description: Number of items to expect in a cypress,pins specifier
+
 gpio-cells:
   - pin
   - flags
+
+cypress,pin-cells:
+  - pin
+  - hsiom

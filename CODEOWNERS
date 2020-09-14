@@ -298,6 +298,7 @@
 /dts/arm/atmel/samv71*                    @nandojve
 /dts/arm/atmel/                           @galak
 /dts/arm/broadcom/                        @sbranden
+/dts/arm/cypress/                         @nandojve
 /dts/arm/infineon/                        @parthitce
 /dts/arm/qemu-virt/                       @carlocaione
 /dts/arm/quicklogic/                      @wtatarski @kowalewskijan @kgugala
@@ -330,6 +331,7 @@
 /dts/bindings/adc/st*stm32-adc.yaml       @cybertale
 /dts/bindings/modem/*hl7800.yaml          @rerickson1
 /dts/bindings/serial/ns16550.yaml         @andrewboie
+/dts/bindings/*/cypress*                  @nandojve
 /dts/bindings/*/nordic*                   @anangl
 /dts/bindings/*/nxp*                      @MaureenHelm
 /dts/bindings/*/openisa*                  @MaureenHelm

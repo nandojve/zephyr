@@ -107,8 +107,10 @@
 	pinctrl-0 = <&pa21a_spi_miso
 		     &pa22a_spi_mosi
 		     &pa23a_spi_sck
-		     &pb13b_spi_npcs1>;
-	cs-gpios = <&gpioa 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+		     &pa13c_spi_npcs1
+		     &pa14c_spi_npcs2>;
+	cs-gpios = <&gpioa 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)
+		    &gpioa 14 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 
 	rf2xx@0 {
 		compatible = "atmel,rf2xx";
@@ -119,6 +121,20 @@
 		reset-gpios = <&gpioa 10 GPIO_ACTIVE_LOW>;
 		slptr-gpios = <&gpioa 9 GPIO_ACTIVE_HIGH>;
 		status = "okay";
+	};
+
+	at45db: at45db081d@1 {
+		compatible = "atmel,at45";
+		reg = <1>;
+		spi-max-frequency = <8000000>;
+		label = "DATAFLASH_0";
+		jedec-id = [1f 25 00];
+		size = <8388608>;
+		sector-size = <65536>;
+		block-size = <2048>;
+		page-size = <256>;
+		enter-dpd-delay = <3000>;
+		exit-dpd-delay = <35000>;
 	};
 };
 
@@ -135,6 +151,19 @@
 		code_partition: partition@4000 {
 			label = "image";
 			reg = <0x00004000 0x0003c000>;
+		};
+	};
+};
+
+&at45db {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		storage_partition: partition@0 {
+			label = "storage";
+			reg = <0x00000000 0x00100000>;
 		};
 	};
 };

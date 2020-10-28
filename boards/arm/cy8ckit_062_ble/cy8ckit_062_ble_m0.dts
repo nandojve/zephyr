@@ -48,6 +48,10 @@
 	status = "okay";
 };
 
+&intmux_ch21 {
+	status = "okay";
+};
+
 &p0 {
 	status = "okay";
 	interrupt-parent = <&intmux_ch20>;
@@ -60,4 +64,8 @@
 &uart5 {
 	status = "okay";
 	current-speed = <115200>;
+
+	interrupt-parent = <&intmux_ch21>;
+
+	pinctrl-0 = <&p5_0_uart5_rx &p5_1_uart5_tx>;
 };

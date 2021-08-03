@@ -20,7 +20,7 @@ if(CONFIG_SOC_FAMILY_BFLB)
   set(bflb_common_dir  ${ZEPHYR_HAL_BOUFFALOLAB_MODULE_DIR}/common)
   set(bflb_drv_src_dir ${bflb_drv_dir}/std_drv/src)
 
-  # Global includes to be used outside hal_gigadevice
+  # Global includes
   zephyr_include_directories(
     include
     ${ZEPHYR_HAL_BOUFFALOLAB_MODULE_DIR}/include

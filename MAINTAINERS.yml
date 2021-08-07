@@ -3122,6 +3122,24 @@ Broadcom Platforms:
     - soc/brcm/
     - boards/brcm/
 
+Bouffalo Lab Platforms:
+  status: maintained
+  maintainers:
+    - nandojve
+  files:
+    - boards/riscv/dt_bl10_devkit/
+    - boards/common/blflash.board.cmake
+    - dts/*/*bflb*
+    - soc/riscv/bouffalolab/*
+    - drivers/*/*bflb*
+    - dts/bindings/*/bflb,*
+    - modules/hal_bouffalolab/*
+    - scripts/west_commands/runners/blflash.py
+  labels:
+    - "platform: Bouffalo Lab"
+  description: >-
+    Bouffalo Lab SoCs, dts files, related drivers and boards.
+
 GD32 Platforms:
   status: maintained
   maintainers:

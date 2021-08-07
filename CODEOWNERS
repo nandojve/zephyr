@@ -37,6 +37,7 @@
 /soc/arm/xilinx_zynq7000/                 @ibirnbaum
 /soc/arm/xilinx_zynqmp/                   @stephanosio
 /soc/arm/renesas_rcar/                    @aaillet
+/soc/riscv/bouffalolab/                   @nandojve
 /soc/riscv/openisa*/                      @dleach02
 /soc/riscv/riscv-privileged/andes_v5/      @cwshu @kevinwang821020 @jimmyzhe
 /soc/riscv/riscv-privileged/neorv32/       @henrikbrixandersen
@@ -114,6 +115,7 @@
 /boards/arm/ubx_bmd345eval_nrf52840/      @Navin-Sankar @brec-u-blox
 /boards/arm/nrf5340_audio_dk_nrf5340      @koffes @alexsven @erikrobstad @rick1082 @gWacey
 /boards/arm/stm32_min_dev/                @sidcha
+/boards/riscv/dt_bl10_devkit/             @nandojve
 /boards/riscv/rv32m1_vega/                @dleach02
 /boards/riscv/adp_xc7k_ae350/             @cwshu @kevinwang821020 @jimmyzhe
 /boards/riscv/longan_nano/                @soburi
@@ -148,6 +150,7 @@
 /doc/services/sensing/                      @lixuzha @ghu0510 @qianruh
 /doc/CMakeLists.txt                       @carlescufi
 /doc/_scripts/                            @carlescufi
+/drivers/*/*bflb*                         @nandojve
 /drivers/*/*sam4l*                        @nandojve
 /drivers/*/*cc13xx_cc26xx*                @bwitherspoon
 /drivers/*/*gd32*                         @nandojve
@@ -292,6 +295,7 @@
 /drivers/modem/simcom-sim7080.h           @lgehreke
 /drivers/modem/Kconfig.hl7800             @rerickson1
 /drivers/modem/Kconfig.simcom-sim7080     @lgehreke
+/drivers/pinctrl/*bflb*                   @nandojve
 /drivers/pinctrl/*esp32*                  @sylvioalves
 /drivers/pinctrl/*it8xxx2*                @ite
 /drivers/pinctrl/*kb1200*                 @ene-steven
@@ -446,6 +450,7 @@
 /dts/arm/silabs/efm32pg1b*                @rdmeneze
 /dts/arm/silabs/efr32mg21*                @l-alfred
 /dts/arm/silabs/efr32fg13*                @yonsch
+/dts/riscv/bouffalolab/                   @nandojve
 /dts/riscv/ite/                           @ite
 /dts/riscv/microchip/microchip-miv.dtsi   @galak
 /dts/riscv/openisa/rv32m1*                @dleach02
@@ -471,6 +476,7 @@
 /dts/bindings/serial/ns16550.yaml         @dcpleung @nashif
 /dts/bindings/counter/snps,dw-timers.yaml @pbalsundar
 /dts/bindings/wifi/*esp-at.yaml           @mniestroj
+/dts/bindings/*/*bflb*                    @nandojve
 /dts/bindings/*/*gd32*                    @nandojve
 /dts/bindings/*/*sam*                     @nandojve
 /dts/bindings/*/*npcx*                    @MulinChao @ChiHuaL

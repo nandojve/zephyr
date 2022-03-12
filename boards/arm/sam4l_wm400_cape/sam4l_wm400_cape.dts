@@ -1,17 +1,19 @@
 /*
- * Copyright (c) 2020 Gerson Fernando Budke <nandojve@gmail.com>
+ * Copyright (c) 2020-2022, Gerson Fernando Budke <nandojve@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
 #include <atmel/sam4lx4.dtsi>
+#include "sam4l_wm400_cape-pinctrl.dtsi"
 
 / {
 	model = "Atmel SAM4L WM-400 Cape Board with an Atmel SAM4LC4B SoC";
 	compatible = "peregrine,sam4l_wm400_cape", "atmel,sam4lc4b", "atmel,sam4l";
 
 	aliases {
+		i2c-1 = &twim1;
 		led0 = &red_mod_led;
 		led1 = &green_mod_led;
 		led2 = &blue_mod_led;
@@ -65,6 +67,9 @@
 &twim1 {
 	status = "okay";
 
+	pinctrl-0 = <&twi1_default>;
+	pinctrl-names = "default";
+
 	std-clk-slew-lim = <0>;
 	std-clk-strength-low = "0.5";
 	std-data-slew-lim = <0>;
@@ -90,25 +95,28 @@
 };
 
 &usart0 {
-	current-speed = <115200>;
-	pinctrl-0 = <&pb14a_usart0_rxd0 &pb15a_usart0_txd0>;
 	status = "okay";
+	current-speed = <115200>;
+
+	pinctrl-0 = <&usart0_default>;
+	pinctrl-names = "default";
 };
 
 &usart1 {
-	current-speed = <115200>;
-	pinctrl-0 = <&pa15a_usart1_rxd1 &pa16a_usart1_txd1>;
 	status = "okay";
+	current-speed = <115200>;
+
+	pinctrl-0 = <&usart1_default>;
+	pinctrl-names = "default";
 };
 
 &spi0 {
 	status = "okay";
 	label = "SPI_RF2XX";
-	pinctrl-0 = <&pa21a_spi_miso
-		     &pa22a_spi_mosi
-		     &pa23a_spi_sck
-		     &pa13c_spi_npcs1
-		     &pa14c_spi_npcs2>;
+
+	pinctrl-0 = <&spi0_default>;
+	pinctrl-names = "default";
+
 	cs-gpios = <&gpioa 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)
 		    &gpioa 14 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 
@@ -175,4 +183,7 @@
 
 zephyr_udc0: &usbc {
 	status = "okay";
+
+	pinctrl-0 = <&usbc_default>;
+	pinctrl-names = "default";
 };

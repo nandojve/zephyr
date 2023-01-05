@@ -1,0 +1,19 @@
+{
+    "objects": [
+        [
+            {
+                "filename": "build_tfm_v2.0.0/zephyr_ns_signed.bin",
+                "mode": "zephyr"
+            }
+        ],
+        [
+            {
+                "filename": "build_tfm_v2.0.0/zephyr_ns_signed.bin",
+                "mode": "zephyr"
+            }
+        ]
+    ],
+    "product": "6132590955b7d37f1c4e2bcaeafb194001a68f4f05c4158bae387c1abaff2841",
+    "supported-hardware": "any",
+    "version": "2.0.0"
+}

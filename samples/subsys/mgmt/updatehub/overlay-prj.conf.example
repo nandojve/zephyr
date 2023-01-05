@@ -18,3 +18,16 @@ CONFIG_UPDATEHUB_CE=y
 #You need set the updatehub-ce ip Address.
 #This is a example of ip address
 CONFIG_UPDATEHUB_SERVER="updatehub.io"
+
+CONFIG_BUILD_WITH_TFM=y
+CONFIG_TFM_PROFILE_TYPE_NOT_SET=y
+CONFIG_TFM_IMAGE_VERSION_S="1.0.0"
+CONFIG_TFM_IMAGE_VERSION_NS="1.0.0"
+
+# objcopy --input-target=ihex --output-target=binary build/zephyr_ns_signed.hex build/zephyr_ns_signed.bin
+# mv build build_tfm_v1.0.0
+#
+# objcopy --input-target=ihex --output-target=binary build/zephyr_ns_signed.hex build/zephyr_ns_signed.bin
+# mv build build_tfm_v2.0.0
+# uhu package archive --output build_tfm_v2.0.0/zephyr-tfm-2.0.0.pkg
+

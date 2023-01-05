@@ -48,6 +48,7 @@ LOG_MODULE_REGISTER(updatehub, CONFIG_UPDATEHUB_LOG_LEVEL);
 #define UPDATEHUB_SERVER "coap.updatehub.io"
 #endif
 
+#if defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY)
 #ifdef CONFIG_UPDATEHUB_DOWNLOAD_SHA256_VERIFICATION
 #define _DOWNLOAD_SHA256_VERIFICATION
 #elif defined(CONFIG_UPDATEHUB_DOWNLOAD_STORAGE_SHA256_VERIFICATION)
@@ -55,6 +56,7 @@ LOG_MODULE_REGISTER(updatehub, CONFIG_UPDATEHUB_LOG_LEVEL);
 #define _STORAGE_SHA256_VERIFICATION
 #elif defined(CONFIG_UPDATEHUB_STORAGE_SHA256_VERIFICATION)
 #define _STORAGE_SHA256_VERIFICATION
+#endif
 #endif
 
 static struct updatehub_context {
@@ -750,7 +752,16 @@ int z_impl_updatehub_confirm(void)
 
 int z_impl_updatehub_reboot(void)
 {
+#if defined(CONFIG_BUILD_WITH_TFM)
+	psa_status_t status = psa_fwu_request_reboot();
+
+	if (status == PSA_ERROR_NOT_PERMITTED) {
+		LOG_DBG("Caller do not have permission to execute this operation");
+		return -EPERM;
+	}
+#else
 	sys_reboot(SYS_REBOOT_WARM);
+#endif
 
 	return 0;
 }

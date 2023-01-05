@@ -5,9 +5,9 @@ menuconfig UPDATEHUB
 	bool"UpdateHub Firmware Over-the-Air support"
 	select FLASH
 	select REBOOT
-	select IMG_MANAGER
-	select IMG_ENABLE_IMAGE_CHECK
-	select BOOTLOADER_MCUBOOT
+	select IMG_MANAGER if !BUILD_WITH_TFM
+	select IMG_ENABLE_IMAGE_CHECK if !BUILD_WITH_TFM
+	select BOOTLOADER_MCUBOOT if !BUILD_WITH_TFM
 	select MPU_ALLOW_FLASH_WRITE
 	select NETWORKING
 	select REQUIRES_FULL_LIBC
@@ -18,6 +18,8 @@ menuconfig UPDATEHUB
 	select DNS_RESOLVER
 	select JSON_LIBRARY
 	select HWINFO
+	select TFM_BL2 if BUILD_WITH_TFM
+	select TFM_PARTITION_FIRMWARE_UPDATE if BUILD_WITH_TFM
 	help
 	  UpdateHub is an enterprise-grade solution which makes simple to
 	  remotely update all your embedded devices in the field. It
@@ -149,6 +151,10 @@ endchoice
 
 choice FLASH_AREA_CHECK_INTEGRITY_BACKEND
 	default FLASH_AREA_CHECK_INTEGRITY_MBEDTLS
+endchoice
+
+choice TFM_MODEL
+	default TFM_IPC
 endchoice
 
 module = UPDATEHUB

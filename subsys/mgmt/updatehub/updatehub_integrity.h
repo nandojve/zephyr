@@ -7,7 +7,9 @@
 #ifndef __UPDATEHUB_INTEGRITY_H__
 #define __UPDATEHUB_INTEGRITY_H__
 
-#if defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY_MBEDTLS)
+#if defined(CONFIG_BUILD_WITH_TFM)
+#include <psa/crypto.h>
+#elif defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY_MBEDTLS)
 #include <mbedtls/md.h>
 #elif defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY_TC)
 #include <tinycrypt/sha256.h>
@@ -24,7 +26,9 @@ extern "C" {
 #define SHA256_HEX_DIGEST_SIZE	((SHA256_BIN_DIGEST_SIZE * 2) + 1)
 
 struct updatehub_crypto_context {
-#if defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY_MBEDTLS)
+#if defined(CONFIG_BUILD_WITH_TFM)
+	psa_hash_operation_t hash_handle;
+#elif defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY_MBEDTLS)
 	mbedtls_md_context_t md_ctx;
 	const mbedtls_md_info_t *md_info;
 #elif defined(CONFIG_FLASH_AREA_CHECK_INTEGRITY_TC)

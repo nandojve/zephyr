@@ -19,3 +19,9 @@ zephyr_library_sources_ifdef(CONFIG_USERSPACE updatehub_handlers.c)
 zephyr_include_directories(
   ${ZEPHYR_BASE}/subsys/mgmt/updatehub/include
 )
+
+if (CONFIG_BUILD_WITH_TFM)
+    zephyr_include_directories(
+      $<TARGET_PROPERTY:tfm,TFM_BINARY_DIR>/install/interface/include
+    )
+endif()

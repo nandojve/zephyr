@@ -1,5 +1,5 @@
 #
-# Copyright (c) 2018 O.S.Systems
+# Copyright (c) 2018-2023 O.S.Systems
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -17,4 +17,4 @@ CONFIG_UPDATEHUB_CE=y
 
 #You need set the updatehub-ce ip Address.
 #This is a example of ip address
-CONFIG_UPDATEHUB_SERVER="10.5.3.67"
+CONFIG_UPDATEHUB_SERVER="updatehub.io"

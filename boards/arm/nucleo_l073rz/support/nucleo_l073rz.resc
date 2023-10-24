@@ -1,0 +1,19 @@
+:description: This script is prepared to run Zephyr on nucleo_l073rz
+:name: nucleo_l073rz
+
+using sysbus
+
+$name?="nucleo_l073rz"
+mach create $name
+
+machine LoadPlatformDescription $ORIGIN/nucleo_l073rz.repl
+
+showAnalyzer usart2
+
+macro reset
+"""
+    sysbus LoadELF $bin
+    cpu0 VectorTableOffset `sysbus GetSymbolAddress "_vector_table"`
+"""
+
+runMacro $reset

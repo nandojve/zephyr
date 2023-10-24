@@ -6,6 +6,8 @@ toolchain:
   - zephyr
   - gnuarmemb
   - xtools
+simulation: renode
+simulation_exec: renode
 ram: 512
 flash: 2048
 supported:

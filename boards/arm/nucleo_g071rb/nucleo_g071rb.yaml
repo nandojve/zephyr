@@ -26,3 +26,5 @@ supported:
   - lptim
   - nvs
 vendor: st
+simulation: renode
+simulation_exec: renode

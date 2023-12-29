@@ -17,3 +17,5 @@ supported:
 ram: 12
 flash: 32
 vendor: st
+simulation: renode
+simulation_exec: renode

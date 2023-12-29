@@ -60,6 +60,10 @@
 		lora0 = &lora;
 	};
 
+	zephyr,user {
+		/* adjust channel number according to pinmux in board.dts */
+		io-channels = <&adc1 0>, <&adc1 1>;
+	};
 };
 
 &clk_lse {
@@ -97,7 +101,7 @@ arduino_i2c: &i2c1 {};
 	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
 	pinctrl-names = "default";
 	current-speed = <115200>;
-	status = "okay";
+	status = "disabled";
 };
 
 &usart2 {
@@ -178,5 +182,35 @@ zephyr_udc0: &usb {
 			label = "storage";
 			reg = <0x00028000 DT_SIZE_K(32)>;
 		};
+	};
+};
+
+&adc1 {
+	pinctrl-0 = <&adc_in0_pa0 &adc_in1_pa1>;
+	pinctrl-names = "default";
+	st,adc-clock-source = <SYNC>;
+	st,adc-prescaler = <4>;
+	status = "okay";
+	vref-mv = <3300>;
+
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	channel@0 {
+		reg = <0>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+		zephyr,oversampling = <4>; // Each sample is averaged from 2^oversampling conversion results.
+	};
+
+	channel@1 {
+		reg = <1>;
+		zephyr,gain = "ADC_GAIN_1";
+		zephyr,reference = "ADC_REF_INTERNAL";
+		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+		zephyr,resolution = <12>;
+		zephyr,oversampling = <4>; // Each sample is averaged from 2^oversampling conversion results.
 	};
 };

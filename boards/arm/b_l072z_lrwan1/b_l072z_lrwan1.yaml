@@ -21,3 +21,5 @@ supported:
   - nvs
   - lora
 vendor: st
+simulation: renode
+simulation_exec: renode

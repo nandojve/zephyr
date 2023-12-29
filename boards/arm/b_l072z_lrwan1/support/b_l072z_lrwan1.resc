@@ -1,0 +1,18 @@
+:name: b_l072z_lrwan1
+
+using sysbus
+
+$name?="b_l072z_lrwan1"
+mach create $name
+
+machine LoadPlatformDescription $ORIGIN/b_l072z_lrwan1.repl
+
+showAnalyzer usart2
+
+macro reset
+"""
+    sysbus LoadELF $bin
+    cpu0 VectorTableOffset `sysbus GetSymbolAddress "_vector_table"`
+"""
+
+runMacro $reset

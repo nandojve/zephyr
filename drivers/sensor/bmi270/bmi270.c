@@ -1,17 +1,18 @@
 /*
  * Copyright (c) 2021 Bosch Sensortec GmbH
+ * Copyright (c) 2022 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define DT_DRV_COMPAT bosch_bmi270
 
-#include <drivers/i2c.h>
-#include <drivers/sensor.h>
-#include <init.h>
-#include <sys/__assert.h>
-#include <sys/byteorder.h>
-#include <logging/log.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/logging/log.h>
 
 #include "bmi270.h"
 #include "bmi270_config_file.h"
@@ -23,24 +24,44 @@ LOG_MODULE_REGISTER(bmi270, CONFIG_SENSOR_LOG_LEVEL);
 #define BMI270_CONFIG_FILE_POLL_PERIOD_US       10000
 #define BMI270_INTER_WRITE_DELAY_US             1000
 
-static int reg_read(uint8_t reg, uint8_t *data, uint16_t length,
-		    struct bmi270_data *dev)
+static inline int bmi270_bus_check(const struct device *dev)
 {
-	return i2c_burst_read(dev->i2c, dev->i2c_addr, reg, data, length);
+	const struct bmi270_config *cfg = dev->config;
+
+	return cfg->bus_io->check(&cfg->bus);
 }
 
-static int reg_write(uint8_t reg, const uint8_t *data, uint16_t length,
-		     struct bmi270_data *dev)
+static inline int bmi270_bus_init(const struct device *dev)
 {
-	return i2c_burst_write(dev->i2c, dev->i2c_addr, reg, data, length);
+	const struct bmi270_config *cfg = dev->config;
+
+	return cfg->bus_io->init(&cfg->bus);
 }
 
-static int reg_write_with_delay(uint8_t reg, const uint8_t *data, uint16_t length,
-		     struct bmi270_data *dev, uint32_t delay_us)
+int bmi270_reg_read(const struct device *dev, uint8_t reg, uint8_t *data, uint16_t length)
+{
+	const struct bmi270_config *cfg = dev->config;
+
+	return cfg->bus_io->read(&cfg->bus, reg, data, length);
+}
+
+int bmi270_reg_write(const struct device *dev, uint8_t reg,
+		     const uint8_t *data, uint16_t length)
+{
+	const struct bmi270_config *cfg = dev->config;
+
+	return cfg->bus_io->write(&cfg->bus, reg, data, length);
+}
+
+int bmi270_reg_write_with_delay(const struct device *dev,
+				uint8_t reg,
+				const uint8_t *data,
+				uint16_t length,
+				uint32_t delay_us)
 {
 	int ret = 0;
 
-	ret = reg_write(reg, data, length, dev);
+	ret = bmi270_reg_write(dev, reg, data, length);
 	if (ret == 0) {
 		k_usleep(delay_us);
 	}
@@ -56,12 +77,6 @@ static void channel_accel_convert(struct sensor_value *val, int64_t raw_val,
 
 	val->val1 = raw_val / 1000000LL;
 	val->val2 = raw_val % 1000000LL;
-
-	/* Normalize val to make sure val->val2 is positive */
-	if (val->val2 < 0) {
-		val->val1 -= 1LL;
-		val->val2 += 1000000LL;
-	}
 }
 
 static void channel_gyro_convert(struct sensor_value *val, int64_t raw_val,
@@ -74,12 +89,6 @@ static void channel_gyro_convert(struct sensor_value *val, int64_t raw_val,
 		     / (180LL * INT16_MAX)) / 1000000LL;
 	val->val2 = ((raw_val * (int64_t) range * SENSOR_PI)
 		     / (180LL * INT16_MAX)) % 1000000LL;
-
-	/* Normalize val to make sure val->val2 is positive */
-	if (val->val2 < 0) {
-		val->val1 -= 1LL;
-		val->val2 += 1000000LL;
-	}
 }
 
 static uint8_t acc_odr_to_reg(const struct sensor_value *val)
@@ -87,47 +96,48 @@ static uint8_t acc_odr_to_reg(const struct sensor_value *val)
 	double odr = sensor_value_to_double((struct sensor_value *) val);
 	uint8_t reg = 0;
 
-	if ((odr >= 0.78125f) && (odr < 1.5625f)) {
+	if ((odr >= 0.78125) && (odr < 1.5625)) {
 		reg = BMI270_ACC_ODR_25D32_HZ;
-	} else if ((odr >= 1.5625f) && (odr < 3.125f)) {
+	} else if ((odr >= 1.5625) && (odr < 3.125)) {
 		reg = BMI270_ACC_ODR_25D16_HZ;
-	} else if ((odr >= 3.125f) && (odr < 6.25f)) {
+	} else if ((odr >= 3.125) && (odr < 6.25)) {
 		reg = BMI270_ACC_ODR_25D8_HZ;
-	} else if ((odr >= 6.25f) && (odr < 12.5f)) {
+	} else if ((odr >= 6.25) && (odr < 12.5)) {
 		reg = BMI270_ACC_ODR_25D4_HZ;
-	} else if ((odr >= 12.5f) && (odr < 25.0f)) {
+	} else if ((odr >= 12.5) && (odr < 25.0)) {
 		reg = BMI270_ACC_ODR_25D2_HZ;
-	} else if ((odr >= 25.0f) && (odr < 50.0f)) {
+	} else if ((odr >= 25.0) && (odr < 50.0)) {
 		reg = BMI270_ACC_ODR_25_HZ;
-	} else if ((odr >= 50.0f) && (odr < 100.0f)) {
+	} else if ((odr >= 50.0) && (odr < 100.0)) {
 		reg = BMI270_ACC_ODR_50_HZ;
-	} else if ((odr >= 100.0f) && (odr < 200.0f)) {
+	} else if ((odr >= 100.0) && (odr < 200.0)) {
 		reg = BMI270_ACC_ODR_100_HZ;
-	} else if ((odr >= 200.0f) && (odr < 400.0f)) {
+	} else if ((odr >= 200.0) && (odr < 400.0)) {
 		reg = BMI270_ACC_ODR_200_HZ;
-	} else if ((odr >= 400.0f) && (odr < 800.0f)) {
+	} else if ((odr >= 400.0) && (odr < 800.0)) {
 		reg = BMI270_ACC_ODR_400_HZ;
-	} else if ((odr >= 800.0f) && (odr < 1600.0f)) {
+	} else if ((odr >= 800.0) && (odr < 1600.0)) {
 		reg = BMI270_ACC_ODR_800_HZ;
-	} else if (odr >= 1600.0f) {
+	} else if (odr >= 1600.0) {
 		reg = BMI270_ACC_ODR_1600_HZ;
 	}
 	return reg;
 }
 
-static int set_accel_odr_osr(const struct sensor_value *odr,
-			     const struct sensor_value *osr, struct bmi270_data *dev)
+static int set_accel_odr_osr(const struct device *dev, const struct sensor_value *odr,
+			     const struct sensor_value *osr)
 {
+	struct bmi270_data *data = dev->data;
 	uint8_t acc_conf, odr_bits, pwr_ctrl, osr_bits;
 	int ret = 0;
 
 	if (odr || osr) {
-		ret = reg_read(BMI270_REG_ACC_CONF, &acc_conf, 1, dev);
+		ret = bmi270_reg_read(dev, BMI270_REG_ACC_CONF, &acc_conf, 1);
 		if (ret != 0) {
 			return ret;
 		}
 
-		ret = reg_read(BMI270_REG_PWR_CTRL, &pwr_ctrl, 1, dev);
+		ret = bmi270_reg_read(dev, BMI270_REG_PWR_CTRL, &pwr_ctrl, 1);
 		if (ret != 0) {
 			return ret;
 		}
@@ -159,11 +169,11 @@ static int set_accel_odr_osr(const struct sensor_value *odr,
 						   BMI270_ACC_FILT_PWR_OPT);
 		}
 
-		dev->acc_odr = odr_bits;
+		data->acc_odr = odr_bits;
 	}
 
 	if (osr) {
-		if (dev->acc_odr >= BMI270_ACC_ODR_100_HZ) {
+		if (data->acc_odr >= BMI270_ACC_ODR_100_HZ) {
 			/* Performance mode */
 			/* osr->val2 should be unused */
 			switch (osr->val1) {
@@ -218,7 +228,7 @@ static int set_accel_odr_osr(const struct sensor_value *odr,
 	}
 
 	if (odr || osr) {
-		ret = reg_write(BMI270_REG_ACC_CONF, &acc_conf, 1, dev);
+		ret = bmi270_reg_write(dev, BMI270_REG_ACC_CONF, &acc_conf, 1);
 		if (ret != 0) {
 			return ret;
 		}
@@ -227,20 +237,21 @@ static int set_accel_odr_osr(const struct sensor_value *odr,
 		k_usleep(BMI270_TRANSC_DELAY_SUSPEND);
 
 		pwr_ctrl &= BMI270_PWR_CTRL_MSK;
-		ret = reg_write_with_delay(BMI270_REG_PWR_CTRL, &pwr_ctrl, 1, dev,
-			BMI270_INTER_WRITE_DELAY_US);
+		ret = bmi270_reg_write_with_delay(dev, BMI270_REG_PWR_CTRL,
+						  &pwr_ctrl, 1,
+						  BMI270_INTER_WRITE_DELAY_US);
 	}
 
 	return ret;
 }
 
-static int set_accel_range(const struct sensor_value *range,
-			   struct bmi270_data *dev)
+static int set_accel_range(const struct device *dev, const struct sensor_value *range)
 {
+	struct bmi270_data *data = dev->data;
 	int ret = 0;
 	uint8_t acc_range, reg;
 
-	ret = reg_read(BMI270_REG_ACC_RANGE, &acc_range, 1, dev);
+	ret = bmi270_reg_read(dev, BMI270_REG_ACC_RANGE, &acc_range, 1);
 	if (ret != 0) {
 		return ret;
 	}
@@ -249,19 +260,19 @@ static int set_accel_range(const struct sensor_value *range,
 	switch (range->val1) {
 	case 2:
 		reg = BMI270_ACC_RANGE_2G;
-		dev->acc_range = 2;
+		data->acc_range = 2;
 		break;
 	case 4:
 		reg = BMI270_ACC_RANGE_4G;
-		dev->acc_range = 4;
+		data->acc_range = 4;
 		break;
 	case 8:
 		reg = BMI270_ACC_RANGE_8G;
-		dev->acc_range = 8;
+		data->acc_range = 8;
 		break;
 	case 16:
 		reg = BMI270_ACC_RANGE_16G;
-		dev->acc_range = 16;
+		data->acc_range = 16;
 		break;
 	default:
 		return -ENOTSUP;
@@ -269,8 +280,8 @@ static int set_accel_range(const struct sensor_value *range,
 
 	acc_range = BMI270_SET_BITS_POS_0(acc_range, BMI270_ACC_RANGE,
 					  reg);
-	ret = reg_write_with_delay(BMI270_REG_ACC_RANGE, &acc_range, 1, dev,
-		BMI270_INTER_WRITE_DELAY_US);
+	ret = bmi270_reg_write_with_delay(dev, BMI270_REG_ACC_RANGE, &acc_range,
+					  1, BMI270_INTER_WRITE_DELAY_US);
 
 	return ret;
 }
@@ -280,40 +291,41 @@ static uint8_t gyr_odr_to_reg(const struct sensor_value *val)
 	double odr = sensor_value_to_double((struct sensor_value *) val);
 	uint8_t reg = 0;
 
-	if ((odr >= 25.0f) && (odr < 50.0f)) {
+	if ((odr >= 25.0) && (odr < 50.0)) {
 		reg = BMI270_GYR_ODR_25_HZ;
-	} else if ((odr >= 50.0f) && (odr < 100.0f)) {
+	} else if ((odr >= 50.0) && (odr < 100.0)) {
 		reg = BMI270_GYR_ODR_50_HZ;
-	} else if ((odr >= 100.0f) && (odr < 200.0f)) {
+	} else if ((odr >= 100.0) && (odr < 200.0)) {
 		reg = BMI270_GYR_ODR_100_HZ;
-	} else if ((odr >= 200.0f) && (odr < 400.0f)) {
+	} else if ((odr >= 200.0) && (odr < 400.0)) {
 		reg = BMI270_GYR_ODR_200_HZ;
-	} else if ((odr >= 400.0f) && (odr < 800.0f)) {
+	} else if ((odr >= 400.0) && (odr < 800.0)) {
 		reg = BMI270_GYR_ODR_400_HZ;
-	} else if ((odr >= 800.0f) && (odr < 1600.0f)) {
+	} else if ((odr >= 800.0) && (odr < 1600.0)) {
 		reg = BMI270_GYR_ODR_800_HZ;
-	} else if ((odr >= 1600.0f) && (odr < 3200.0f)) {
+	} else if ((odr >= 1600.0) && (odr < 3200.0)) {
 		reg = BMI270_GYR_ODR_1600_HZ;
-	} else if (odr >= 3200.0f) {
+	} else if (odr >= 3200.0) {
 		reg = BMI270_GYR_ODR_3200_HZ;
 	}
 
 	return reg;
 }
 
-static int set_gyro_odr_osr(const struct sensor_value *odr,
-			    const struct sensor_value *osr, struct bmi270_data *dev)
+static int set_gyro_odr_osr(const struct device *dev, const struct sensor_value *odr,
+			    const struct sensor_value *osr)
 {
+	struct bmi270_data *data = dev->data;
 	uint8_t gyr_conf, odr_bits, pwr_ctrl, osr_bits;
 	int ret = 0;
 
 	if (odr || osr) {
-		ret = reg_read(BMI270_REG_GYR_CONF, &gyr_conf, 1, dev);
+		ret = bmi270_reg_read(dev, BMI270_REG_GYR_CONF, &gyr_conf, 1);
 		if (ret != 0) {
 			return ret;
 		}
 
-		ret = reg_read(BMI270_REG_PWR_CTRL, &pwr_ctrl, 1, dev);
+		ret = bmi270_reg_read(dev, BMI270_REG_PWR_CTRL, &pwr_ctrl, 1);
 		if (ret != 0) {
 			return ret;
 		}
@@ -353,7 +365,7 @@ static int set_gyro_odr_osr(const struct sensor_value *odr,
 						   BMI270_GYR_FILT_NOISE_PWR);
 		}
 
-		dev->gyr_odr = odr_bits;
+		data->gyr_odr = odr_bits;
 	}
 
 	if (osr) {
@@ -375,7 +387,7 @@ static int set_gyro_odr_osr(const struct sensor_value *odr,
 	}
 
 	if (odr || osr) {
-		ret = reg_write(BMI270_REG_GYR_CONF, &gyr_conf, 1, dev);
+		ret = bmi270_reg_write(dev, BMI270_REG_GYR_CONF, &gyr_conf, 1);
 		if (ret != 0) {
 			return ret;
 		}
@@ -384,20 +396,21 @@ static int set_gyro_odr_osr(const struct sensor_value *odr,
 		k_usleep(BMI270_TRANSC_DELAY_SUSPEND);
 
 		pwr_ctrl &= BMI270_PWR_CTRL_MSK;
-		ret = reg_write_with_delay(BMI270_REG_PWR_CTRL, &pwr_ctrl, 1, dev,
-			BMI270_INTER_WRITE_DELAY_US);
+		ret = bmi270_reg_write_with_delay(dev, BMI270_REG_PWR_CTRL,
+						  &pwr_ctrl, 1,
+						  BMI270_INTER_WRITE_DELAY_US);
 	}
 
 	return ret;
 }
 
-static int set_gyro_range(const struct sensor_value *range,
-			  struct bmi270_data *dev)
+static int set_gyro_range(const struct device *dev, const struct sensor_value *range)
 {
+	struct bmi270_data *data = dev->data;
 	int ret = 0;
 	uint8_t gyr_range, reg;
 
-	ret = reg_read(BMI270_REG_GYR_RANGE, &gyr_range, 1, dev);
+	ret = bmi270_reg_read(dev, BMI270_REG_GYR_RANGE, &gyr_range, 1);
 	if (ret != 0) {
 		return ret;
 	}
@@ -406,43 +419,46 @@ static int set_gyro_range(const struct sensor_value *range,
 	switch (range->val1) {
 	case 125:
 		reg = BMI270_GYR_RANGE_125DPS;
-		dev->gyr_range = 125;
+		data->gyr_range = 125;
 		break;
 	case 250:
 		reg = BMI270_GYR_RANGE_250DPS;
-		dev->gyr_range = 250;
+		data->gyr_range = 250;
 		break;
 	case 500:
 		reg = BMI270_GYR_RANGE_500DPS;
-		dev->gyr_range = 500;
+		data->gyr_range = 500;
 		break;
 	case 1000:
 		reg = BMI270_GYR_RANGE_1000DPS;
-		dev->gyr_range = 1000;
+		data->gyr_range = 1000;
 		break;
 	case 2000:
 		reg = BMI270_GYR_RANGE_2000DPS;
-		dev->gyr_range = 2000;
+		data->gyr_range = 2000;
 		break;
 	default:
 		return -ENOTSUP;
 	}
 
 	gyr_range = BMI270_SET_BITS_POS_0(gyr_range, BMI270_GYR_RANGE, reg);
-	ret = reg_write_with_delay(BMI270_REG_GYR_RANGE, &gyr_range, 1, dev,
-		BMI270_INTER_WRITE_DELAY_US);
+	ret = bmi270_reg_write_with_delay(dev, BMI270_REG_GYR_RANGE, &gyr_range,
+					  1, BMI270_INTER_WRITE_DELAY_US);
 
 	return ret;
 }
 
-static int8_t write_config_file(struct bmi270_data *dev)
+static int8_t write_config_file(const struct device *dev)
 {
+	const struct bmi270_config *cfg = dev->config;
 	int8_t ret = 0;
 	uint16_t index = 0;
 	uint8_t addr_array[2] = { 0 };
 
+	LOG_DBG("writing config file %s", cfg->feature->name);
+
 	/* Disable loading of the configuration */
-	for (index = 0; index < sizeof(bmi270_config_file);
+	for (index = 0; index < cfg->feature->config_file_len;
 	     index += BMI270_WR_LEN) {
 		/* Store 0 to 3 bits of address in first byte */
 		addr_array[0] = (uint8_t)((index / 2) & 0x0F);
@@ -450,13 +466,16 @@ static int8_t write_config_file(struct bmi270_data *dev)
 		/* Store 4 to 11 bits of address in the second byte */
 		addr_array[1] = (uint8_t)((index / 2) >> 4);
 
-		ret = reg_write_with_delay(BMI270_REG_INIT_ADDR_0, addr_array, 2, dev,
-			BMI270_INTER_WRITE_DELAY_US);
+		ret = bmi270_reg_write_with_delay(dev, BMI270_REG_INIT_ADDR_0,
+						  addr_array, 2,
+						  BMI270_INTER_WRITE_DELAY_US);
 
 		if (ret == 0) {
-			ret = reg_write_with_delay(BMI270_REG_INIT_DATA,
-				(bmi270_config_file + index),
-				BMI270_WR_LEN, dev, BMI270_INTER_WRITE_DELAY_US);
+			ret = bmi270_reg_write_with_delay(dev,
+						BMI270_REG_INIT_DATA,
+						&cfg->feature->config_file[index],
+						BMI270_WR_LEN,
+						BMI270_INTER_WRITE_DELAY_US);
 		}
 	}
 
@@ -465,29 +484,29 @@ static int8_t write_config_file(struct bmi270_data *dev)
 
 static int bmi270_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
-	struct bmi270_data *drv_dev = dev->data;
-	uint8_t data[12];
+	struct bmi270_data *data = dev->data;
+	uint8_t buf[12];
 	int ret;
 
 	if (chan != SENSOR_CHAN_ALL) {
 		return -ENOTSUP;
 	}
 
-	ret = reg_read(BMI270_REG_ACC_X_LSB, data, 12, drv_dev);
+	ret = bmi270_reg_read(dev, BMI270_REG_ACC_X_LSB, buf, 12);
 	if (ret == 0) {
-		drv_dev->ax = (int16_t)sys_get_le16(&data[0]);
-		drv_dev->ay = (int16_t)sys_get_le16(&data[2]);
-		drv_dev->az = (int16_t)sys_get_le16(&data[4]);
-		drv_dev->gx = (int16_t)sys_get_le16(&data[6]);
-		drv_dev->gy = (int16_t)sys_get_le16(&data[8]);
-		drv_dev->gz = (int16_t)sys_get_le16(&data[10]);
+		data->ax = (int16_t)sys_get_le16(&buf[0]);
+		data->ay = (int16_t)sys_get_le16(&buf[2]);
+		data->az = (int16_t)sys_get_le16(&buf[4]);
+		data->gx = (int16_t)sys_get_le16(&buf[6]);
+		data->gy = (int16_t)sys_get_le16(&buf[8]);
+		data->gz = (int16_t)sys_get_le16(&buf[10]);
 	} else {
-		drv_dev->ax = 0;
-		drv_dev->ay = 0;
-		drv_dev->az = 0;
-		drv_dev->gx = 0;
-		drv_dev->gy = 0;
-		drv_dev->gz = 0;
+		data->ax = 0;
+		data->ay = 0;
+		data->az = 0;
+		data->gx = 0;
+		data->gy = 0;
+		data->gz = 0;
 	}
 
 	return ret;
@@ -496,34 +515,34 @@ static int bmi270_sample_fetch(const struct device *dev, enum sensor_channel cha
 static int bmi270_channel_get(const struct device *dev, enum sensor_channel chan,
 			      struct sensor_value *val)
 {
-	struct bmi270_data *drv_dev = dev->data;
+	struct bmi270_data *data = dev->data;
 
 	if (chan == SENSOR_CHAN_ACCEL_X) {
-		channel_accel_convert(val, drv_dev->ax, drv_dev->acc_range);
+		channel_accel_convert(val, data->ax, data->acc_range);
 	} else if (chan == SENSOR_CHAN_ACCEL_Y) {
-		channel_accel_convert(val, drv_dev->ay, drv_dev->acc_range);
+		channel_accel_convert(val, data->ay, data->acc_range);
 	} else if (chan == SENSOR_CHAN_ACCEL_Z) {
-		channel_accel_convert(val, drv_dev->az, drv_dev->acc_range);
+		channel_accel_convert(val, data->az, data->acc_range);
 	} else if (chan == SENSOR_CHAN_ACCEL_XYZ) {
-		channel_accel_convert(&val[0], drv_dev->ax,
-				      drv_dev->acc_range);
-		channel_accel_convert(&val[1], drv_dev->ay,
-				      drv_dev->acc_range);
-		channel_accel_convert(&val[2], drv_dev->az,
-				      drv_dev->acc_range);
+		channel_accel_convert(&val[0], data->ax,
+				      data->acc_range);
+		channel_accel_convert(&val[1], data->ay,
+				      data->acc_range);
+		channel_accel_convert(&val[2], data->az,
+				      data->acc_range);
 	} else if (chan == SENSOR_CHAN_GYRO_X) {
-		channel_gyro_convert(val, drv_dev->gx, drv_dev->gyr_range);
+		channel_gyro_convert(val, data->gx, data->gyr_range);
 	} else if (chan == SENSOR_CHAN_GYRO_Y) {
-		channel_gyro_convert(val, drv_dev->gy, drv_dev->gyr_range);
+		channel_gyro_convert(val, data->gy, data->gyr_range);
 	} else if (chan == SENSOR_CHAN_GYRO_Z) {
-		channel_gyro_convert(val, drv_dev->gz, drv_dev->gyr_range);
+		channel_gyro_convert(val, data->gz, data->gyr_range);
 	} else if (chan == SENSOR_CHAN_GYRO_XYZ) {
-		channel_gyro_convert(&val[0], drv_dev->gx,
-				     drv_dev->gyr_range);
-		channel_gyro_convert(&val[1], drv_dev->gy,
-				     drv_dev->gyr_range);
-		channel_gyro_convert(&val[2], drv_dev->gz,
-				     drv_dev->gyr_range);
+		channel_gyro_convert(&val[0], data->gx,
+				     data->gyr_range);
+		channel_gyro_convert(&val[1], data->gy,
+				     data->gyr_range);
+		channel_gyro_convert(&val[2], data->gz,
+				     data->gyr_range);
 	} else {
 		return -ENOTSUP;
 	}
@@ -531,10 +550,52 @@ static int bmi270_channel_get(const struct device *dev, enum sensor_channel chan
 	return 0;
 }
 
+#if defined(CONFIG_BMI270_TRIGGER)
+
+/* ANYMO_1.duration conversion is 20 ms / LSB */
+#define ANYMO_1_DURATION_MSEC_TO_LSB(_ms)	\
+	BMI270_ANYMO_1_DURATION(_ms / 20)
+
+static int bmi270_write_anymo_threshold(const struct device *dev,
+					struct sensor_value val)
+{
+	struct bmi270_data *data = dev->data;
+
+	/* this takes configuration in g. */
+	if (val.val1 > 0) {
+		LOG_DBG("anymo_threshold set to max");
+		val.val2 = 1e6;
+	}
+
+	/* max = BIT_MASK(10) = 1g => 0.49 mg/LSB */
+	uint16_t lsbs = (val.val2 * BMI270_ANYMO_2_THRESHOLD_MASK) / 1e6;
+
+	if (!lsbs) {
+		LOG_ERR("Threshold too low!");
+		return -EINVAL;
+	}
+
+	uint16_t anymo_2 = BMI270_ANYMO_2_THRESHOLD(lsbs)
+		| BMI270_ANYMO_2_OUT_CONF_BIT_6;
+
+	data->anymo_2 = anymo_2;
+	return 0;
+}
+
+static int bmi270_write_anymo_duration(const struct device *dev, uint32_t ms)
+{
+	struct bmi270_data *data = dev->data;
+	uint16_t val = ANYMO_1_DURATION_MSEC_TO_LSB(ms)
+		| BMI270_ANYMO_1_SELECT_XYZ;
+
+	data->anymo_1 = val;
+	return 0;
+}
+#endif /* CONFIG_BMI270_TRIGGER */
+
 static int bmi270_attr_set(const struct device *dev, enum sensor_channel chan,
 			   enum sensor_attribute attr, const struct sensor_value *val)
 {
-	struct bmi270_data *drv_dev = dev->data;
 	int ret = -ENOTSUP;
 
 	if ((chan == SENSOR_CHAN_ACCEL_X) || (chan == SENSOR_CHAN_ACCEL_Y)
@@ -542,14 +603,20 @@ static int bmi270_attr_set(const struct device *dev, enum sensor_channel chan,
 	    || (chan == SENSOR_CHAN_ACCEL_XYZ)) {
 		switch (attr) {
 		case SENSOR_ATTR_SAMPLING_FREQUENCY:
-			ret = set_accel_odr_osr(val, NULL, drv_dev);
+			ret = set_accel_odr_osr(dev, val, NULL);
 			break;
 		case SENSOR_ATTR_OVERSAMPLING:
-			ret = set_accel_odr_osr(NULL, val, drv_dev);
+			ret = set_accel_odr_osr(dev, NULL, val);
 			break;
 		case SENSOR_ATTR_FULL_SCALE:
-			ret = set_accel_range(val, drv_dev);
+			ret = set_accel_range(dev, val);
 			break;
+#if defined(CONFIG_BMI270_TRIGGER)
+		case SENSOR_ATTR_SLOPE_DUR:
+			return bmi270_write_anymo_duration(dev, val->val1);
+		case SENSOR_ATTR_SLOPE_TH:
+			return bmi270_write_anymo_threshold(dev, *val);
+#endif
 		default:
 			ret = -ENOTSUP;
 		}
@@ -558,20 +625,17 @@ static int bmi270_attr_set(const struct device *dev, enum sensor_channel chan,
 		   || (chan == SENSOR_CHAN_GYRO_XYZ)) {
 		switch (attr) {
 		case SENSOR_ATTR_SAMPLING_FREQUENCY:
-			ret = set_gyro_odr_osr(val, NULL, drv_dev);
+			ret = set_gyro_odr_osr(dev, val, NULL);
 			break;
 		case SENSOR_ATTR_OVERSAMPLING:
-			ret = set_gyro_odr_osr(NULL, val, drv_dev);
+			ret = set_gyro_odr_osr(dev, NULL, val);
 			break;
 		case SENSOR_ATTR_FULL_SCALE:
-			ret = set_gyro_range(val, drv_dev);
+			ret = set_gyro_range(dev, val);
 			break;
 		default:
 			ret = -ENOTSUP;
 		}
-
-	} else {
-		ret = -ENOTSUP;
 	}
 
 	return ret;
@@ -580,8 +644,7 @@ static int bmi270_attr_set(const struct device *dev, enum sensor_channel chan,
 static int bmi270_init(const struct device *dev)
 {
 	int ret;
-	struct bmi270_data *drv_dev = dev->data;
-	const struct bmi270_dev_config *cfg = dev->config;
+	struct bmi270_data *data = dev->data;
 	uint8_t chip_id;
 	uint8_t soft_reset_cmd;
 	uint8_t init_ctrl;
@@ -589,22 +652,31 @@ static int bmi270_init(const struct device *dev)
 	uint8_t tries;
 	uint8_t adv_pwr_save;
 
-	drv_dev->i2c = device_get_binding(cfg->i2c_master_name);
-	if (drv_dev->i2c == NULL) {
-		LOG_ERR("Could not get pointer to %s device",
-			cfg->i2c_master_name);
-		return -EINVAL;
+	ret = bmi270_bus_check(dev);
+	if (ret < 0) {
+		LOG_ERR("Could not initialize bus");
+		return ret;
 	}
 
-	drv_dev->i2c_addr = cfg->i2c_addr;
-	drv_dev->acc_odr = BMI270_ACC_ODR_100_HZ;
-	drv_dev->acc_range = 8;
-	drv_dev->gyr_odr = BMI270_GYR_ODR_200_HZ;
-	drv_dev->gyr_range = 2000;
+#if CONFIG_BMI270_TRIGGER
+	data->dev = dev;
+	k_mutex_init(&data->trigger_mutex);
+#endif
+
+	data->acc_odr = BMI270_ACC_ODR_100_HZ;
+	data->acc_range = 8;
+	data->gyr_odr = BMI270_GYR_ODR_200_HZ;
+	data->gyr_range = 2000;
 
 	k_usleep(BMI270_POWER_ON_TIME);
 
-	ret = reg_read(BMI270_REG_CHIP_ID, &chip_id, 1, drv_dev);
+	ret = bmi270_bus_init(dev);
+	if (ret != 0) {
+		LOG_ERR("Could not initiate bus communication");
+		return ret;
+	}
+
+	ret = bmi270_reg_read(dev, BMI270_REG_CHIP_ID, &chip_id, 1);
 	if (ret != 0) {
 		return ret;
 	}
@@ -616,14 +688,14 @@ static int bmi270_init(const struct device *dev)
 	}
 
 	soft_reset_cmd = BMI270_CMD_SOFT_RESET;
-	ret = reg_write(BMI270_REG_CMD, &soft_reset_cmd, 1, drv_dev);
+	ret = bmi270_reg_write(dev, BMI270_REG_CMD, &soft_reset_cmd, 1);
 	if (ret != 0) {
 		return ret;
 	}
 
 	k_usleep(BMI270_SOFT_RESET_TIME);
 
-	ret = reg_read(BMI270_REG_PWR_CONF, &adv_pwr_save, 1, drv_dev);
+	ret = bmi270_reg_read(dev, BMI270_REG_PWR_CONF, &adv_pwr_save, 1);
 	if (ret != 0) {
 		return ret;
 	}
@@ -631,36 +703,38 @@ static int bmi270_init(const struct device *dev)
 	adv_pwr_save = BMI270_SET_BITS_POS_0(adv_pwr_save,
 					     BMI270_PWR_CONF_ADV_PWR_SAVE,
 					     BMI270_PWR_CONF_ADV_PWR_SAVE_DIS);
-	ret = reg_write(BMI270_REG_PWR_CONF, &adv_pwr_save, 1, drv_dev);
+	ret = bmi270_reg_write_with_delay(dev, BMI270_REG_PWR_CONF,
+					  &adv_pwr_save, 1,
+					  BMI270_INTER_WRITE_DELAY_US);
 	if (ret != 0) {
 		return ret;
 	}
 
 	init_ctrl = BMI270_PREPARE_CONFIG_LOAD;
-	ret = reg_write(BMI270_REG_INIT_CTRL, &init_ctrl, 1, drv_dev);
+	ret = bmi270_reg_write(dev, BMI270_REG_INIT_CTRL, &init_ctrl, 1);
 	if (ret != 0) {
 		return ret;
 	}
 
-	ret = write_config_file(drv_dev);
+	ret = write_config_file(dev);
 
 	if (ret != 0) {
 		return ret;
 	}
 
 	init_ctrl = BMI270_COMPLETE_CONFIG_LOAD;
-	ret = reg_write(BMI270_REG_INIT_CTRL, &init_ctrl, 1, drv_dev);
+	ret = bmi270_reg_write(dev, BMI270_REG_INIT_CTRL, &init_ctrl, 1);
 	if (ret != 0) {
 		return ret;
 	}
 
 	/* Timeout after BMI270_CONFIG_FILE_RETRIES x
 	 * BMI270_CONFIG_FILE_POLL_PERIOD_US microseconds.
-	 * If tries is 0 by the end of the loop,
+	 * If tries is BMI270_CONFIG_FILE_RETRIES by the end of the loop,
 	 * report an error
 	 */
 	for (tries = 0; tries <= BMI270_CONFIG_FILE_RETRIES; tries++) {
-		ret = reg_read(BMI270_REG_INTERNAL_STATUS, &msg, 1, drv_dev);
+		ret = bmi270_reg_read(dev, BMI270_REG_INTERNAL_STATUS, &msg, 1);
 		if (ret != 0) {
 			return ret;
 		}
@@ -673,15 +747,24 @@ static int bmi270_init(const struct device *dev)
 		k_usleep(BMI270_CONFIG_FILE_POLL_PERIOD_US);
 	}
 
-	if (tries == 0) {
+	if (tries == BMI270_CONFIG_FILE_RETRIES) {
 		return -EIO;
 	}
+
+#if CONFIG_BMI270_TRIGGER
+	ret = bmi270_init_interrupts(dev);
+	if (ret) {
+		LOG_ERR("bmi270_init_interrupts returned %d", ret);
+		return ret;
+	}
+#endif
 
 	adv_pwr_save = BMI270_SET_BITS_POS_0(adv_pwr_save,
 					     BMI270_PWR_CONF_ADV_PWR_SAVE,
 					     BMI270_PWR_CONF_ADV_PWR_SAVE_EN);
-	ret = reg_write_with_delay(BMI270_REG_PWR_CONF, &adv_pwr_save, 1, drv_dev,
-		BMI270_INTER_WRITE_DELAY_US);
+	ret = bmi270_reg_write_with_delay(dev, BMI270_REG_PWR_CONF,
+					  &adv_pwr_save, 1,
+					  BMI270_INTER_WRITE_DELAY_US);
 
 	return ret;
 }
@@ -689,25 +772,69 @@ static int bmi270_init(const struct device *dev)
 static const struct sensor_driver_api bmi270_driver_api = {
 	.sample_fetch = bmi270_sample_fetch,
 	.channel_get = bmi270_channel_get,
-	.attr_set = bmi270_attr_set
+	.attr_set = bmi270_attr_set,
+#if defined(CONFIG_BMI270_TRIGGER)
+	.trigger_set = bmi270_trigger_set,
+#endif
 };
 
-#define BMI270_CREATE_INST(inst)				       \
-								       \
-	static struct bmi270_data bmi270_drv_##inst;		       \
-								       \
-	static const struct bmi270_dev_config bmi270_config_##inst = { \
-		.i2c_master_name = DT_INST_BUS_LABEL(inst),	       \
-		.i2c_addr = DT_INST_REG_ADDR(inst),		       \
-	};							       \
-								       \
-	DEVICE_DT_INST_DEFINE(inst,				       \
-			      bmi270_init,			       \
-			      NULL,				       \
-			      &bmi270_drv_##inst,		       \
-			      &bmi270_config_##inst,		       \
-			      POST_KERNEL,			       \
-			      CONFIG_SENSOR_INIT_PRIORITY,	       \
+static const struct bmi270_feature_config bmi270_feature_max_fifo = {
+	.name = "max_fifo",
+	.config_file = bmi270_config_file_max_fifo,
+	.config_file_len = sizeof(bmi270_config_file_max_fifo),
+};
+
+static const struct bmi270_feature_config bmi270_feature_base = {
+	.name = "base",
+	.config_file = bmi270_config_file_base,
+	.config_file_len = sizeof(bmi270_config_file_base),
+	.anymo_1 = &(struct bmi270_feature_reg){ .page = 1, .addr = 0x3C },
+	.anymo_2 = &(struct bmi270_feature_reg){ .page = 1, .addr = 0x3E },
+};
+
+#define BMI270_FEATURE(inst) (						\
+	DT_NODE_HAS_COMPAT(DT_DRV_INST(inst), bosch_bmi270_base) ?	\
+		&bmi270_feature_base :					\
+		&bmi270_feature_max_fifo)
+
+#if CONFIG_BMI270_TRIGGER
+#define BMI270_CONFIG_INT(inst) \
+	.int1 = GPIO_DT_SPEC_INST_GET_BY_IDX_OR(inst, irq_gpios, 0, {}),\
+	.int2 = GPIO_DT_SPEC_INST_GET_BY_IDX_OR(inst, irq_gpios, 1, {}),
+#else
+#define BMI270_CONFIG_INT(inst)
+#endif
+
+/* Initializes a struct bmi270_config for an instance on a SPI bus. */
+#define BMI270_CONFIG_SPI(inst)				\
+	.bus.spi = SPI_DT_SPEC_INST_GET(		\
+		inst, BMI270_SPI_OPERATION, 0),		\
+	.bus_io = &bmi270_bus_io_spi,
+
+/* Initializes a struct bmi270_config for an instance on an I2C bus. */
+#define BMI270_CONFIG_I2C(inst)				\
+	.bus.i2c = I2C_DT_SPEC_INST_GET(inst),		\
+	.bus_io = &bmi270_bus_io_i2c,
+
+#define BMI270_CREATE_INST(inst)					\
+									\
+	static struct bmi270_data bmi270_drv_##inst;			\
+									\
+	static const struct bmi270_config bmi270_config_##inst = {	\
+		COND_CODE_1(DT_INST_ON_BUS(inst, spi),			\
+			    (BMI270_CONFIG_SPI(inst)),			\
+			    (BMI270_CONFIG_I2C(inst)))			\
+		.feature = BMI270_FEATURE(inst),			\
+		BMI270_CONFIG_INT(inst)					\
+	};								\
+									\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst,				\
+			      bmi270_init,				\
+			      NULL,					\
+			      &bmi270_drv_##inst,			\
+			      &bmi270_config_##inst,			\
+			      POST_KERNEL,				\
+			      CONFIG_SENSOR_INIT_PRIORITY,		\
 			      &bmi270_driver_api);
 
-DT_INST_FOREACH_STATUS_OKAY(BMI270_CREATE_INST)
+DT_INST_FOREACH_STATUS_OKAY(BMI270_CREATE_INST);

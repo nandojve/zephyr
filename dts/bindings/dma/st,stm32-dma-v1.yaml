@@ -59,7 +59,6 @@ description: |
          st,mem2mem;
          dma-requests = <7>;
          status = "disabled";
-         label = "DMA_2";
         };
 
   For the client part, example for stm32f411 on DMA2 instance
@@ -76,8 +75,8 @@ compatible: "st,stm32-dma-v1"
 include: st,stm32-dma.yaml
 
 properties:
-    "#dma-cells":
-      const: 4
+  "#dma-cells":
+    const: 4
 
 # Parameter syntax of stm32 follows the dma client dts syntax
 # in the Linux kernel declared in

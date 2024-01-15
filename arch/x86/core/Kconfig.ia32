@@ -6,7 +6,7 @@
 if !X86_64
 
 config NESTED_INTERRUPTS
-	bool "Enable nested interrupts"
+	bool "Nested interrupts"
 	default y
 	help
 	  This option enables support for nested interrupts.
@@ -38,6 +38,14 @@ config GDT_DYNAMIC
 	help
 	  This option stores the GDT in RAM instead of ROM, so that it may
 	  be modified at runtime at the expense of some memory.
+
+config GDT_RESERVED_NUM_ENTRIES
+	int "Number of reserved GDT entry place holders"
+	depends on GDT_DYNAMIC
+	default 0
+	help
+	  This option defines the number of GDT entry place holders revserved
+	  that can be filled at runtime.
 
 endmenu
 
@@ -137,8 +145,7 @@ endif # CPU_HAS_FPU
 
 config X86_FP_USE_SOFT_FLOAT
 	bool
-	prompt "Use Software Floating Point Operations" if !(NEWLIB_LIBC && !FPU)
-	default y if NEWLIB_LIBC && !FPU
+	default y if !FPU
 	help
 	  Enable using software floating point operations.
 
@@ -177,5 +184,12 @@ config X86_MFENCE_INSTRUCTION_SUPPORTED
 	help
 	  Set n to disable the use of MFENCE instruction in arch_dcache_flush()
 	  for X86 CPUs have CLFLUSH instruction but no MFENCE
+
+config X86_RUNTIME_IRQ_STATS
+	bool
+	help
+	  Add irq runtime statistics to allow runtime profiling irq performance
+	  data with Host tools, enable this and implement platform dependent API
+	  runtime_irq_stats().
 
 endif # !X86_64

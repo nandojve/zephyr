@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <drivers/sensor.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/device.h>
 #include <stdio.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
 #ifdef CONFIG_APDS9960_TRIGGER
 K_SEM_DEFINE(sem, 0, 1);
@@ -24,16 +24,16 @@ static void trigger_handler(const struct device *dev,
 }
 #endif
 
-void main(void)
+int main(void)
 {
 	const struct device *dev;
 	struct sensor_value intensity, pdata;
 
 	printk("APDS9960 sample application\n");
-	dev = device_get_binding(DT_LABEL(DT_INST(0, avago_apds9960)));
-	if (!dev) {
-		printk("sensor: device not found.\n");
-		return;
+	dev = DEVICE_DT_GET_ONE(avago_apds9960);
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 #ifdef CONFIG_APDS9960_TRIGGER
@@ -45,7 +45,7 @@ void main(void)
 	if (sensor_attr_set(dev, SENSOR_CHAN_PROX,
 			    SENSOR_ATTR_UPPER_THRESH, &attr)) {
 		printk("Could not set threshold\n");
-		return;
+		return 0;
 	}
 
 	struct sensor_trigger trig = {
@@ -55,7 +55,7 @@ void main(void)
 
 	if (sensor_trigger_set(dev, &trig, trigger_handler)) {
 		printk("Could not set trigger\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -77,14 +77,10 @@ void main(void)
 		       intensity.val1, pdata.val1);
 
 #ifdef CONFIG_PM_DEVICE
-		enum pm_device_state p_state;
-
-		p_state = PM_DEVICE_STATE_SUSPENDED;
-		pm_device_state_set(dev, p_state);
+		pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
 		printk("set low power state for 2s\n");
 		k_sleep(K_MSEC(2000));
-		p_state = PM_DEVICE_STATE_ACTIVE;
-		pm_device_state_set(dev, p_state);
+		pm_device_action_run(dev, PM_DEVICE_ACTION_RESUME);
 #endif
 	}
 }

@@ -5,9 +5,10 @@
  */
 
 #include <soc.h>
-#include <drivers/uart/cdc_acm.h>
-#include <drivers/usb/usb_dc.h>
-#include <usb/class/usb_cdc.h>
+#include <zephyr/drivers/uart/cdc_acm.h>
+#include <zephyr/drivers/usb/usb_dc.h>
+#include <zephyr/init.h>
+#include <zephyr/usb/class/usb_cdc.h>
 
 /*
  * Magic value that causes the bootloader to stay in bootloader mode instead of
@@ -43,7 +44,7 @@ static void bossa_reset(const struct device *dev, uint32_t rate)
 	NVIC_SystemReset();
 }
 
-static int bossa_init(const struct device *unused)
+static int bossa_init(void)
 {
 	const struct device *dev =
 		device_get_binding(CONFIG_BOOTLOADER_BOSSA_DEVICE_NAME);

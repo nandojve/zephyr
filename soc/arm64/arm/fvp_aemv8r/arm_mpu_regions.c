@@ -1,15 +1,13 @@
 /*
- * Copyright (c) 2021 Arm Limited (or its affiliates). All rights reserved.
+ * Copyright (c) 2021-2023 Arm Limited (or its affiliates). All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/slist.h>
-#include <linker/linker-defs.h>
-#include <arch/arm64/cortex_r/arm_mpu.h>
+#include <stdint.h>
 
-
-#define DEVICE_REGION_START 0x80000000UL
-#define DEVICE_REGION_END   0xFFFFFFFFUL
+#include <zephyr/arch/arm64/cortex_r/arm_mpu.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/util.h>
 
 static const struct arm_mpu_region mpu_regions[] = {
 	/* Region 0 */
@@ -40,12 +38,6 @@ static const struct arm_mpu_region mpu_regions[] = {
 #endif
 			 (uintptr_t)__kernel_ram_end,
 			 REGION_RAM_ATTR),
-
-	/* Region 4 device region */
-	MPU_REGION_ENTRY("DEVICE",
-			 DEVICE_REGION_START,
-			 DEVICE_REGION_END,
-			 REGION_DEVICE_ATTR)
 };
 
 const struct arm_mpu_config mpu_config = {

@@ -1,14 +1,17 @@
-.. _isotp-sample:
+.. zephyr:code-sample:: isotp
+   :name: ISO-TP library
+   :relevant-api: can_isotp
 
-ISO-TP library
-##############
+   Use ISO-TP library to exchange messages between two boards.
 
 Overview
 ********
-This sample demonstrates how to use the ISO-TP library.
+This sample demonstrates how to use the :ref:`ISO-TP library <can_isotp>`.
+
 Messages are exchanged between two boards. A long message, that is sent with
-a block-size (BS) of eight frames, and a short one that has an minimal
+a block-size (BS) of eight frames, and a short one that has a minimal
 separation-time (STmin) of five milliseconds.
+
 The send function call for the short message is non-blocking, and the send
 function call for the long message is blocking.
 
@@ -20,7 +23,7 @@ or Nucleo-F746ZG board.
 For the NXP TWR-KE18F board:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/drivers/can
+   :zephyr-app: samples/subsys/canbus/isotp
    :board: twr_ke18f
    :goals: build flash
 

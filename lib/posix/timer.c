@@ -3,11 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 #include <string.h>
-#include <sys/printk.h>
-#include <posix/time.h>
+#include <zephyr/posix/pthread.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/posix/signal.h>
+#include <zephyr/posix/time.h>
 
 #define ACTIVE 1
 #define NOT_ACTIVE 0
@@ -16,15 +18,18 @@ static void zephyr_timer_wrapper(struct k_timer *ztimer);
 
 struct timer_obj {
 	struct k_timer ztimer;
-	void (*sigev_notify_function)(sigval val);
-	sigval val;
+	void (*sigev_notify_function)(union sigval val);
+	union sigval val;
+	int sigev_notify;
+	struct k_sem sem_cond;
+	pthread_t thread;
 	struct timespec interval;	/* Reload value */
 	uint32_t reload;			/* Reload value in ms */
 	uint32_t status;
 };
 
 K_MEM_SLAB_DEFINE(posix_timer_slab, sizeof(struct timer_obj),
-		  CONFIG_MAX_TIMER_COUNT, 4);
+		  CONFIG_MAX_TIMER_COUNT, __alignof__(struct timer_obj));
 
 static void zephyr_timer_wrapper(struct k_timer *ztimer)
 {
@@ -39,6 +44,31 @@ static void zephyr_timer_wrapper(struct k_timer *ztimer)
 	(timer->sigev_notify_function)(timer->val);
 }
 
+static void *zephyr_thread_wrapper(void *arg)
+{
+	struct timer_obj *timer = (struct timer_obj *)arg;
+
+	while (1) {
+		if (timer->reload == 0U) {
+			timer->status = NOT_ACTIVE;
+		}
+
+		k_sem_take(&timer->sem_cond, K_FOREVER);
+
+		(timer->sigev_notify_function)(timer->val);
+	}
+
+	return NULL;
+}
+
+static void zephyr_timer_interrupt(struct k_timer *ztimer)
+{
+	struct timer_obj *timer;
+
+	timer = (struct timer_obj *)ztimer;
+	k_sem_give(&timer->sem_cond);
+}
+
 /**
  * @brief Create a per-process timer.
  *
@@ -50,15 +80,17 @@ static void zephyr_timer_wrapper(struct k_timer *ztimer)
 int timer_create(clockid_t clockid, struct sigevent *evp, timer_t *timerid)
 {
 	struct timer_obj *timer;
+	const k_timeout_t alloc_timeout = K_MSEC(CONFIG_TIMER_CREATE_WAIT);
 
 	if (clockid != CLOCK_MONOTONIC || evp == NULL ||
 	    (evp->sigev_notify != SIGEV_NONE &&
-	     evp->sigev_notify != SIGEV_SIGNAL)) {
+	     evp->sigev_notify != SIGEV_SIGNAL &&
+	     evp->sigev_notify != SIGEV_THREAD)) {
 		errno = EINVAL;
 		return -1;
 	}
 
-	if (k_mem_slab_alloc(&posix_timer_slab, (void **)&timer, K_MSEC(100)) == 0) {
+	if (k_mem_slab_alloc(&posix_timer_slab, (void **)&timer, alloc_timeout) == 0) {
 		(void)memset(timer, 0, sizeof(struct timer_obj));
 	} else {
 		errno = ENOMEM;
@@ -74,6 +106,20 @@ int timer_create(clockid_t clockid, struct sigevent *evp, timer_t *timerid)
 
 	if (evp->sigev_notify == SIGEV_NONE) {
 		k_timer_init(&timer->ztimer, NULL, NULL);
+	} else if (evp->sigev_notify == SIGEV_THREAD) {
+		int ret;
+
+		timer->sigev_notify = SIGEV_THREAD;
+		k_sem_init(&timer->sem_cond, 0, 1);
+		ret = pthread_create(&timer->thread, evp->sigev_notify_attributes,
+							zephyr_thread_wrapper, timer);
+		if (ret != 0) {
+			k_mem_slab_free(&posix_timer_slab, (void *) &timer);
+			return ret;
+		}
+
+		pthread_detach(timer->thread);
+		k_timer_init(&timer->ztimer, zephyr_timer_interrupt, NULL);
 	} else {
 		k_timer_init(&timer->ztimer, zephyr_timer_wrapper, NULL);
 	}
@@ -157,7 +203,7 @@ int timer_settime(timer_t timerid, int flags, const struct itimerspec *value,
 	timer->interval.tv_sec = value->it_interval.tv_sec;
 	timer->interval.tv_nsec = value->it_interval.tv_nsec;
 
-	/* Calcaulte timer duration */
+	/* Calculate timer duration */
 	duration = _ts_to_ms(&(value->it_value));
 	if ((flags & TIMER_ABSTIME) != 0) {
 		current = k_timer_remaining_get(&timer->ztimer);
@@ -179,6 +225,29 @@ int timer_settime(timer_t timerid, int flags, const struct itimerspec *value,
 }
 
 /**
+ * @brief Returns the timer expiration overrun count.
+ *
+ * See IEEE 1003.1
+ */
+int timer_getoverrun(timer_t timerid)
+{
+	struct timer_obj *timer = (struct timer_obj *) timerid;
+
+	if (timer == NULL) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	int overruns = k_timer_status_get(&timer->ztimer) - 1;
+
+	if (overruns > CONFIG_TIMER_DELAYTIMER_MAX) {
+		overruns = CONFIG_TIMER_DELAYTIMER_MAX;
+	}
+
+	return overruns;
+}
+
+/**
  * @brief Delete a per-process timer.
  *
  * See IEEE 1003.1
@@ -197,7 +266,10 @@ int timer_delete(timer_t timerid)
 		k_timer_stop(&timer->ztimer);
 	}
 
-	k_mem_slab_free(&posix_timer_slab, (void *) &timer);
+	if (timer->sigev_notify == SIGEV_THREAD)
+		pthread_cancel(timer->thread);
+
+	k_mem_slab_free(&posix_timer_slab, (void *)timer);
 
 	return 0;
 }

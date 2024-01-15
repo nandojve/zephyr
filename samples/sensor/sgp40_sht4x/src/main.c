@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
 
-#include <drivers/sensor/sgp40.h>
-#include <drivers/sensor/sht4x.h>
+#include <zephyr/drivers/sensor/sgp40.h>
+#include <zephyr/drivers/sensor/sht4x.h>
 
 #if !DT_HAS_COMPAT_STATUS_OKAY(sensirion_sgp40)
 #error "No sensirion,sgp40 compatible node found in the device tree"
@@ -20,25 +20,25 @@
 #error "No sensirion,sht4x compatible node found in the device tree"
 #endif
 
-void main(void)
+int main(void)
 {
 
 #if CONFIG_APP_USE_COMPENSATION
 	struct sensor_value comp_t;
 	struct sensor_value comp_rh;
 #endif
-	const struct device *sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
-	const struct device *sgp = DEVICE_DT_GET_ANY(sensirion_sgp40);
+	const struct device *const sht = DEVICE_DT_GET_ANY(sensirion_sht4x);
+	const struct device *const sgp = DEVICE_DT_GET_ANY(sensirion_sgp40);
 	struct sensor_value temp, hum, gas;
 
 	if (!device_is_ready(sht)) {
 		printf("Device %s is not ready.\n", sht->name);
-		return;
+		return 0;
 	}
 
 	if (!device_is_ready(sgp)) {
 		printf("Device %s is not ready.\n", sgp->name);
-		return;
+		return 0;
 	}
 
 #if CONFIG_APP_USE_HEATER
@@ -57,7 +57,7 @@ void main(void)
 
 		if (sensor_sample_fetch(sht)) {
 			printf("Failed to fetch sample from SHT4X device\n");
-			return;
+			return 0;
 		}
 
 		sensor_channel_get(sht, SENSOR_CHAN_AMBIENT_TEMP, &temp);
@@ -78,7 +78,7 @@ void main(void)
 
 			if (sht4x_fetch_with_heater(sht)) {
 				printf("Failed to fetch sample from SHT4X device\n");
-				return;
+				return 0;
 			}
 
 			sensor_channel_get(sht, SENSOR_CHAN_HUMIDITY, &hum);
@@ -99,7 +99,7 @@ void main(void)
 #endif
 		if (sensor_sample_fetch(sgp)) {
 			printf("Failed to fetch sample from SGP40 device.\n");
-			return;
+			return 0;
 		}
 
 		sensor_channel_get(sgp, SENSOR_CHAN_GAS_RES, &gas);

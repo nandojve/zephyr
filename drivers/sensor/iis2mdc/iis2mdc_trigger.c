@@ -10,10 +10,10 @@
 
 #define DT_DRV_COMPAT st_iis2mdc
 
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 #include "iis2mdc.h"
 
 LOG_MODULE_DECLARE(IIS2MDC, CONFIG_SENSOR_LOG_LEVEL);
@@ -36,6 +36,7 @@ int iis2mdc_trigger_set(const struct device *dev,
 
 	if (trig->chan == SENSOR_CHAN_MAGN_XYZ) {
 		iis2mdc->handler_drdy = handler;
+		iis2mdc->trig_drdy = trig;
 		if (handler) {
 			/* fetch raw data sample: re-trigger lost interrupt */
 			iis2mdc_magnetic_raw_get(iis2mdc->ctx, raw);
@@ -54,12 +55,9 @@ static void iis2mdc_handle_interrupt(const struct device *dev)
 {
 	struct iis2mdc_data *iis2mdc = dev->data;
 	const struct iis2mdc_dev_config *const config = dev->config;
-	struct sensor_trigger drdy_trigger = {
-		.type = SENSOR_TRIG_DATA_READY,
-	};
 
 	if (iis2mdc->handler_drdy != NULL) {
-		iis2mdc->handler_drdy(dev, &drdy_trigger);
+		iis2mdc->handler_drdy(dev, iis2mdc->trig_drdy);
 	}
 
 	gpio_pin_interrupt_configure_dt(&config->gpio_drdy,
@@ -85,8 +83,13 @@ static void iis2mdc_gpio_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_IIS2MDC_TRIGGER_OWN_THREAD
-static void iis2mdc_thread(struct iis2mdc_data *iis2mdc)
+static void iis2mdc_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct iis2mdc_data *iis2mdc = p1;
+
 	while (1) {
 		k_sem_take(&iis2mdc->gpio_sem, K_FOREVER);
 		iis2mdc_handle_interrupt(iis2mdc->dev);
@@ -111,7 +114,7 @@ int iis2mdc_init_interrupt(const struct device *dev)
 	int ret;
 
 	/* setup data ready gpio interrupt */
-	if (!device_is_ready(config->gpio_drdy.port)) {
+	if (!gpio_is_ready_dt(&config->gpio_drdy)) {
 		LOG_ERR("Cannot get pointer to drdy_gpio device");
 		return -ENODEV;
 	}
@@ -120,7 +123,7 @@ int iis2mdc_init_interrupt(const struct device *dev)
 	k_sem_init(&iis2mdc->gpio_sem, 0, K_SEM_MAX_LIMIT);
 	k_thread_create(&iis2mdc->thread, iis2mdc->thread_stack,
 			CONFIG_IIS2MDC_THREAD_STACK_SIZE,
-			(k_thread_entry_t)iis2mdc_thread, iis2mdc,
+			iis2mdc_thread, iis2mdc,
 			NULL, NULL, K_PRIO_COOP(CONFIG_IIS2MDC_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_IIS2MDC_TRIGGER_GLOBAL_THREAD)

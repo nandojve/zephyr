@@ -7,7 +7,11 @@ config BOARD
 	default "acrn"
 	depends on BOARD_ACRN
 
-config MP_NUM_CPUS
+config MP_MAX_NUM_CPUS
 	default 2
+
+config HEAP_MEM_POOL_ADD_SIZE_ACPI
+	default 32768
+	depends on ACPI
 
 endif

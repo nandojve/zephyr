@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <sys/atomic.h>
+#include <zephyr/ztest.h>
+#include <zephyr/sys/atomic.h>
 
 #define LOOP 10
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define THREAD_NUM 4
 #define SLAB_NUM 2
 #define TIMEOUT K_MSEC(200)
@@ -53,7 +53,7 @@ static void tmslab_api(void *p1, void *p2, void *p3)
 		}
 		for (int i = 0; i < BLK_NUM; i++) {
 			if (block[i]) {
-				k_mem_slab_free(slab, &block[i]);
+				k_mem_slab_free(slab, block[i]);
 				block[i] = NULL;
 			}
 		}
@@ -71,7 +71,7 @@ static void tmslab_api(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_memory_slab_tests
  */
-void test_mslab_threadsafe(void)
+ZTEST(mslab_threadsafe, test_mslab_threadsafe)
 {
 	k_tid_t tid[THREAD_NUM];
 

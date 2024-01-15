@@ -5,13 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <autoconf.h>
-#include <devicetree.h>
+#include <zephyr/devicetree.h>
 #include <offsets.h>
-#include <linker/linker-defs.h>
-#include <linker/linker-tool.h>
-#include <sys/util.h>
-#include <sys/mem_manage.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/linker/linker-tool.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel/mm.h>
 
 
 /* Bounds of physical RAM from DTS */
@@ -144,6 +143,14 @@ MEMORY
 
 #endif /* CONFIG_NEWLIB_LIBC */
 
+#ifdef CONFIG_PICOLIBC
+/* For Picolibc libc-hook.c. */
+#define LIB_C_IN_SECT(lsect)						\
+	*liblib__libc__picolibc.a:libc-hooks.c.obj(.##lsect)		\
+	*liblib__libc__picolibc.a:libc-hooks.c.obj(.##lsect##.*)
+
+#endif /* CONFIG_PICOLIBC */
+
 /*
  * For drivers that are usually used (e.g. serial)
  */
@@ -182,6 +189,7 @@ MEMORY
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, cbprintf_complete)	\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, cbprintf_nano)		\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, configs)			\
+	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, coverage)			\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, heap)			\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, heap-validate)		\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, mutex)			\
@@ -191,6 +199,8 @@ MEMORY
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, stdout_console)		\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, sys_clock_init)		\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, rb)			\
+	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, tracing_none)		\
+	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, tracing_tracking)		\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, thread_entry)		\
 	LIB_ZEPHYR_OBJECT_FILE_IN_SECT(lsect, work_q)
 
@@ -228,6 +238,13 @@ MEMORY
 	*(.text.sys_memcpy_swap)					\
 	*(.text.z_*)
 
+/* For logging subsys */
+#define LIB_SUBSYS_LOGGING_IN_SECT(lsect)				\
+	*log_*.c.obj(.##lsect)						\
+	*log_*.c.obj(.##lsect.*)					\
+	*mpsc_pbuf.c.obj(.##lsect)					\
+	*mpsc_pbuf.c.obj(.##lsect.*)
+
 epoint = Z_MEM_PHYS_ADDR(CONFIG_KERNEL_ENTRY);
 ENTRY(epoint)
 
@@ -235,7 +252,7 @@ ENTRY(epoint)
 SECTIONS
 	{
 
-#include <linker/rel-sections.ld>
+#include <zephyr/linker/rel-sections.ld>
 
     /DISCARD/ :
 	{
@@ -363,6 +380,7 @@ SECTIONS
 		LIB_ZEPHYR_IN_SECT(text)
 		LIB_C_IN_SECT(text)
 		LIB_DRIVERS_IN_SECT(text)
+		LIB_SUBSYS_LOGGING_IN_SECT(text)
 
 		*_divdi3.o(.text)
 		*_udivdi3.o(.text)
@@ -375,14 +393,18 @@ SECTIONS
 		*(.text.*.constprop)
 		*(.text.*.constprop.*)
 
-#ifdef CONFIG_NEWLIB_LIBC
-		*libc.a:(.text)
-		*libc.a:(.text.*)
-#endif /* CONFIG_NEWLIB_LIBC */
+#if defined(CONFIG_NEWLIB_LIBC) || defined(CONFIG_PICOLIBC)
+		*libc*.a:(.text)
+		*libc*.a:(.text.*)
+#endif
+
+#ifdef CONFIG_COVERAGE
+		*(.text._sub_I_00100_0)
+#endif
 
 		ZEPHYR_KERNEL_FUNCS_IN_SECT
 
-#include <linker/kobject-text.ld>
+#include <zephyr/linker/kobject-text.ld>
 
 		MMU_PAGE_ALIGN_PERM
 
@@ -393,12 +415,12 @@ SECTIONS
 
 	lnkr_pinned_rodata_start = .;
 
-#include <linker/common-rom.ld>
-#include <linker/thread-local-storage.ld>
+#include <zephyr/linker/common-rom.ld>
+#include <zephyr/linker/thread-local-storage.ld>
 
 	SECTION_PROLOGUE(pinned.rodata,,)
 	{
-#include <arch/x86/ia32/scripts/static_intr.ld>
+#include <zephyr/arch/x86/ia32/scripts/static_intr.ld>
 
 		LIB_KERNEL_IN_SECT(rodata)
 		LIB_ARCH_X86_IN_SECT(rodata)
@@ -409,19 +431,21 @@ SECTIONS
 		LIB_ZEPHYR_IN_SECT(rodata)
 		LIB_C_IN_SECT(rodata)
 		LIB_DRIVERS_IN_SECT(rodata)
+		LIB_SUBSYS_LOGGING_IN_SECT(rodata)
 
 		/* Static strings */
 		*(.rodata.str*.*)
 		*(.rodata.*.str*.*)
 
-#ifdef CONFIG_NEWLIB_LIBC
-		*libc.a:(.rodata)
-		*libc.a:(.rodata.*)
-#endif /* CONFIG_NEWLIB_LIBC */
+#if defined(CONFIG_NEWLIB_LIBC) || defined(CONFIG_PICOLIBC)
+		*libc*.a:(.rodata)
+		*libc*.a:(.rodata.*)
+#endif
 
 #include <snippets-rodata.ld>
+#include <snippets-pinned-rodata.ld>
 
-#include <linker/kobject-rom.ld>
+#include <zephyr/linker/kobject-rom.ld>
 
 		MMU_PAGE_ALIGN_PERM
 
@@ -436,8 +460,8 @@ SECTIONS
 
 		. = ALIGN(4);
 
-#include <arch/x86/ia32/scripts/shared_kernel_pages.ld>
-#include <arch/x86/ia32/scripts/dynamic_intr.ld>
+#include <zephyr/arch/x86/ia32/scripts/shared_kernel_pages.ld>
+#include <zephyr/arch/x86/ia32/scripts/dynamic_intr.ld>
 
 		LIB_KERNEL_IN_SECT(data)
 		LIB_ARCH_X86_IN_SECT(data)
@@ -448,14 +472,35 @@ SECTIONS
 		LIB_ZEPHYR_IN_SECT(data)
 		LIB_C_IN_SECT(data)
 		LIB_DRIVERS_IN_SECT(data)
+		LIB_SUBSYS_LOGGING_IN_SECT(data)
+
+#ifdef CONFIG_COVERAGE
+		*(.data.__gcov_.*)
+
+		/*
+		 * This is for the struct gcov_info for
+		 * various functions.
+		 */
+		*(.data..LPBX*)
+#endif
 
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
-#include <linker/common-ram.ld>
-#include <arch/x86/pagetables.ld>
-#include <linker/kobject-data.ld>
+#include <zephyr/linker/common-ram.ld>
+#include <zephyr/arch/x86/pagetables.ld>
+#include <zephyr/linker/kobject-data.ld>
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-pinned-data-sections.ld>
 
 	lnkr_pinned_data_end = .;
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-pinned-ram-sections.ld>
 
 	SECTION_PROLOGUE(pinned.bss, (NOLOAD),)
 	{
@@ -472,6 +517,11 @@ SECTIONS
 		LIB_ZEPHYR_IN_SECT(bss)
 		LIB_C_IN_SECT(bss)
 		LIB_DRIVERS_IN_SECT(bss)
+		LIB_SUBSYS_LOGGING_IN_SECT(bss)
+
+#ifdef CONFIG_COVERAGE
+		*(.bss.__gcov0.*)
+#endif
 
 		lnkr_pinned_bss_end = .;
 	} GROUP_NOLOAD_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -499,6 +549,7 @@ SECTIONS
 		LIB_ZEPHYR_IN_SECT(noinit)
 		LIB_C_IN_SECT(noinit)
 		LIB_DRIVERS_IN_SECT(noinit)
+		LIB_SUBSYS_LOGGING_IN_SECT(noinit)
 
 #ifdef CONFIG_ZTEST
 		/* For tests/kernel/mem_slab/ tests */
@@ -582,7 +633,7 @@ SECTIONS
 	*(.eini)
 
 #ifndef CONFIG_LINKER_USE_PINNED_SECTION
-#include <linker/kobject-text.ld>
+#include <zephyr/linker/kobject-text.ld>
 #endif
 
 	MMU_PAGE_ALIGN_PERM
@@ -593,8 +644,8 @@ SECTIONS
 	__rodata_region_start = .;
 
 #ifndef CONFIG_LINKER_USE_PINNED_SECTION
-#include <linker/common-rom.ld>
-#include <linker/thread-local-storage.ld>
+#include <zephyr/linker/common-rom.ld>
+#include <zephyr/linker/thread-local-storage.ld>
 #endif
 
 	SECTION_PROLOGUE(_RODATA_SECTION_NAME,,)
@@ -605,7 +656,7 @@ SECTIONS
 
 #ifndef CONFIG_DYNAMIC_INTERRUPTS
 #ifndef CONFIG_LINKER_USE_PINNED_SECTION
-#include <arch/x86/ia32/scripts/static_intr.ld>
+#include <zephyr/arch/x86/ia32/scripts/static_intr.ld>
 #endif /* !CONFIG_LINKER_USE_PINNED_SECTION */
 #endif /* CONFIG_DYNAMIC_INTERRUPTS */
 
@@ -615,11 +666,11 @@ SECTIONS
  */
 #include <snippets-rodata.ld>
 
-#include <linker/kobject-rom.ld>
+#include <zephyr/linker/kobject-rom.ld>
 #endif
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
-#include <linker/cplusplus-rom.ld>
+#include <zephyr/linker/cplusplus-rom.ld>
 
 	MMU_PAGE_ALIGN_PERM
 	/* ROM ends here, position counter will now be in RAM areas */
@@ -682,7 +733,7 @@ SECTIONS
 
 	__bss_num_words	= (__bss_end - __bss_start) >> 2;
 
-#include <linker/common-noinit.ld>
+#include <zephyr/linker/common-noinit.ld>
 
 	MMU_PAGE_ALIGN_PERM
 
@@ -697,7 +748,7 @@ SECTIONS
 
 #ifdef CONFIG_DYNAMIC_INTERRUPTS
 #ifndef CONFIG_LINKER_USE_PINNED_SECTION
-#include <arch/x86/ia32/scripts/dynamic_intr.ld>
+#include <zephyr/arch/x86/ia32/scripts/dynamic_intr.ld>
 #endif /* !CONFIG_LINKER_USE_PINNED_SECTION */
 #endif /* CONFIG_DYNAMIC_INTERRUPTS */
 
@@ -707,7 +758,7 @@ SECTIONS
 #include <snippets-rwdata.ld>
 
 #ifndef CONFIG_LINKER_USE_PINNED_SECTION
-#include <arch/x86/ia32/scripts/shared_kernel_pages.ld>
+#include <zephyr/arch/x86/ia32/scripts/shared_kernel_pages.ld>
 #endif /* !CONFIG_LINKER_USE_PINNED_SECTION */
 
 	. = ALIGN(4);
@@ -715,15 +766,20 @@ SECTIONS
 
 	__data_rom_start = LOADADDR(_DATA_SECTION_NAME);
 
-#include <linker/cplusplus-ram.ld>
+#include <zephyr/linker/cplusplus-ram.ld>
 
 #ifndef CONFIG_LINKER_USE_PINNED_SECTION
-#include <linker/common-ram.ld>
-#include <arch/x86/pagetables.ld>
+#include <zephyr/linker/common-ram.ld>
+#include <zephyr/arch/x86/pagetables.ld>
 
 /* Must be last in RAM */
-#include <linker/kobject-data.ld>
+#include <zephyr/linker/kobject-data.ld>
 #endif /* !CONFIG_LINKER_USE_PINNED_SECTION */
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-data-sections.ld>
 
 	MMU_PAGE_ALIGN
 	__data_ram_end = .;
@@ -732,14 +788,9 @@ SECTIONS
 	__kernel_ram_end = KERNEL_BASE_ADDR + KERNEL_RAM_SIZE;
 	__kernel_ram_size = __kernel_ram_end - __kernel_ram_start;
 
-	_image_ram_end = .;
 	_image_ram_all = (KERNEL_BASE_ADDR + KERNEL_RAM_SIZE) - _image_ram_start;
 
-	z_mapped_end = .;
 	z_mapped_size = z_mapped_end - z_mapped_start;
-	_end = .; /* end of image */
-
-	GROUP_END(RAMABLE_REGION)
 
 #ifndef LINKER_ZEPHYR_FINAL
 	/* static interrupts */
@@ -767,7 +818,13 @@ SECTIONS
  */
 #include <snippets-sections.ld>
 
-#include <linker/debug-sections.ld>
+#define LAST_RAM_ALIGN MMU_PAGE_ALIGN
+
+#include <zephyr/linker/ram-end.ld>
+
+    GROUP_END(RAMABLE_REGION)
+
+#include <zephyr/linker/debug-sections.ld>
 
 	/DISCARD/ : { *(.note.GNU-stack) }
 

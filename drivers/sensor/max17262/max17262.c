@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/i2c.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(max17262, CONFIG_SENSOR_LOG_LEVEL);
 
 #include "max17262.h"
@@ -24,17 +25,15 @@ LOG_MODULE_REGISTER(max17262, CONFIG_SENSOR_LOG_LEVEL);
  * @param valp Place to put the value on success
  * @return 0 if successful, or negative error code from I2C API
  */
-static int max17262_reg_read(const struct device *dev, uint8_t reg_addr,
-			     int16_t *valp)
+static int max17262_reg_read(const struct device *dev, uint8_t reg_addr, int16_t *valp)
 {
 	const struct max17262_config *cfg = dev->config;
 	uint8_t i2c_data[2];
 	int rc;
 
-	rc = i2c_burst_read(cfg->i2c, cfg->i2c_addr, reg_addr,
-			    i2c_data, 2);
+	rc = i2c_burst_read_dt(&cfg->i2c, reg_addr, i2c_data, 2);
 	if (rc < 0) {
-		LOG_ERR("Unable to read register");
+		LOG_ERR("Unable to read register 0x%02x", reg_addr);
 		return rc;
 	}
 	*valp = ((int16_t)i2c_data[1] << 8) | i2c_data[0];
@@ -52,14 +51,12 @@ static int max17262_reg_read(const struct device *dev, uint8_t reg_addr,
  * @param val Register value to write
  * @return 0 if successful, or negative error code from I2C API
  */
-static int max17262_reg_write(const struct device *dev, uint8_t reg_addr,
-			     int16_t val)
+static int max17262_reg_write(const struct device *dev, uint8_t reg_addr, int16_t val)
 {
 	const struct max17262_config *cfg = dev->config;
 	uint8_t i2c_data[3] = {reg_addr, val & 0xFF, (uint16_t)val >> 8};
 
-	return i2c_write(cfg->i2c, i2c_data, sizeof(i2c_data),
-		     cfg->i2c_addr);
+	return i2c_write_dt(&cfg->i2c, i2c_data, sizeof(i2c_data));
 }
 
 /**
@@ -83,8 +80,7 @@ static void convert_millis(struct sensor_value *val, int32_t val_millis)
  * @return 0 if successful
  * @return -ENOTSUP for unsupported channels
  */
-static int max17262_channel_get(const struct device *dev,
-				enum sensor_channel chan,
+static int max17262_channel_get(const struct device *dev, enum sensor_channel chan,
 				struct sensor_value *valp)
 {
 	const struct max17262_config *const config = dev->config;
@@ -179,10 +175,11 @@ static int max17262_channel_get(const struct device *dev,
  * @param dev MAX17262 device to access
  * @return 0 if successful, or negative error code from I2C API
  */
-static int max17262_sample_fetch(const struct device *dev,
-				 enum sensor_channel chan)
+static int max17262_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
 	struct max17262_data *data = dev->data;
+
+	/* clang-format off */
 	struct {
 		int reg_addr;
 		int16_t *dest;
@@ -200,6 +197,7 @@ static int max17262_sample_fetch(const struct device *dev,
 		{ DESIGN_CAP, &data->design_cap },
 		{ COULOMB_COUNTER, &data->coulomb_counter },
 	};
+	/* clang-format on */
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 	for (size_t i = 0; i < ARRAY_SIZE(regs); i++) {
@@ -226,14 +224,18 @@ static int max17262_gauge_init(const struct device *dev)
 {
 	const struct max17262_config *const config = dev->config;
 	int16_t tmp, hibcfg;
+	int rc;
 
-	if (!device_is_ready(config->i2c)) {
-		LOG_ERR("Could not get pointer to %s device", config->i2c->name);
-		return -EINVAL;
+	if (!device_is_ready(config->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
 	/* Read Status register */
-	max17262_reg_read(dev, STATUS, &tmp);
+	rc = max17262_reg_read(dev, STATUS, &tmp);
+	if (rc) {
+		return rc;
+	}
 
 	if (!(tmp & STATUS_POR)) {
 		/*
@@ -249,65 +251,114 @@ static int max17262_gauge_init(const struct device *dev)
 	LOG_DBG("POR detected, setting custom device configuration...");
 
 	/** STEP 1 */
-	max17262_reg_read(dev, FSTAT, &tmp);
+	rc = max17262_reg_read(dev, FSTAT, &tmp);
+	if (rc) {
+		return rc;
+	}
 
 	/* Do not continue until FSTAT.DNR bit is cleared */
 	while (tmp & FSTAT_DNR) {
 		k_sleep(K_MSEC(10));
-		max17262_reg_read(dev, FSTAT, &tmp);
+		rc = max17262_reg_read(dev, FSTAT, &tmp);
+		if (rc) {
+			return rc;
+		}
 	}
 
 	/** STEP 2 */
 	/* Store original HibCFG value */
-	max17262_reg_read(dev, HIBCFG, &hibcfg);
+	rc = max17262_reg_read(dev, HIBCFG, &hibcfg);
+	if (rc) {
+		return rc;
+	}
 
 	/* Exit Hibernate Mode step 1 */
-	max17262_reg_write(dev, SOFT_WAKEUP, 0x0090);
+	rc = max17262_reg_write(dev, SOFT_WAKEUP, 0x0090);
+	if (rc) {
+		return rc;
+	}
+
 	/* Exit Hibernate Mode step 2 */
-	max17262_reg_write(dev, HIBCFG, 0x0000);
+	rc = max17262_reg_write(dev, HIBCFG, 0x0000);
+	if (rc) {
+		return rc;
+	}
+
 	/* Exit Hibernate Mode step 3 */
-	max17262_reg_write(dev, SOFT_WAKEUP, 0x0000);
+	rc = max17262_reg_write(dev, SOFT_WAKEUP, 0x0000);
+	if (rc) {
+		return rc;
+	}
 
 	/** STEP 2.1 --> OPTION 1 EZ Config (No INI file is needed) */
 	/* Write DesignCap */
-	max17262_reg_write(dev, DESIGN_CAP, config->design_cap);
+	rc = max17262_reg_write(dev, DESIGN_CAP, config->design_cap);
+	if (rc) {
+		return rc;
+	}
 
 	/* Write IChgTerm */
-	max17262_reg_write(dev, ICHG_TERM, config->desired_charging_current);
+	rc = max17262_reg_write(dev, ICHG_TERM, config->desired_charging_current);
+	if (rc) {
+		return rc;
+	}
 
 	/* Write VEmpty */
-	max17262_reg_write(dev, VEMPTY, ((config->empty_voltage / 10) << 7) |
-					  ((config->recovery_voltage / 40) & 0x7F));
+	rc = max17262_reg_write(dev, VEMPTY,
+				((config->empty_voltage / 10) << 7) |
+					((config->recovery_voltage / 40) & 0x7F));
+	if (rc) {
+		return rc;
+	}
 
 	/* Write ModelCFG */
 	if (config->charge_voltage > 4275) {
-		max17262_reg_write(dev, MODELCFG, 0x8400);
+		rc = max17262_reg_write(dev, MODELCFG, 0x8400);
 	} else {
-		max17262_reg_write(dev, MODELCFG, 0x8000);
+		rc = max17262_reg_write(dev, MODELCFG, 0x8000);
+	}
+
+	if (rc) {
+		return rc;
 	}
 
 	/*
 	 * Read ModelCFG.Refresh (highest bit),
 	 * proceed to Step 3 when ModelCFG.Refresh == 0
 	 */
-	max17262_reg_read(dev, MODELCFG, &tmp);
+	rc = max17262_reg_read(dev, MODELCFG, &tmp);
+	if (rc) {
+		return rc;
+	}
 
 	/* Do not continue until ModelCFG.Refresh == 0 */
 	while (tmp & MODELCFG_REFRESH) {
 		k_sleep(K_MSEC(10));
-		max17262_reg_read(dev, MODELCFG, &tmp);
+		rc = max17262_reg_read(dev, MODELCFG, &tmp);
+		if (rc) {
+			return rc;
+		}
 	}
 
 	/* Restore Original HibCFG value */
-	max17262_reg_write(dev, HIBCFG, hibcfg);
+	rc = max17262_reg_write(dev, HIBCFG, hibcfg);
+	if (rc) {
+		return rc;
+	}
 
 	/** STEP 3 */
 	/* Read Status register */
-	max17262_reg_read(dev, STATUS, &tmp);
+	rc = max17262_reg_read(dev, STATUS, &tmp);
+	if (rc) {
+		return rc;
+	}
 
 	/* Clear PowerOnReset bit */
 	tmp &= ~STATUS_POR;
-	max17262_reg_write(dev, STATUS, tmp);
+	rc = max17262_reg_write(dev, STATUS, tmp);
+	if (rc) {
+		return rc;
+	}
 
 	return 0;
 }
@@ -317,27 +368,22 @@ static const struct sensor_driver_api max17262_battery_driver_api = {
 	.channel_get = max17262_channel_get,
 };
 
-#define MAX17262_INIT(n)						\
-	static struct max17262_data max17262_data_##n;			\
-									\
-	static const struct max17262_config max17262_config_##n = {	\
-		.i2c = DEVICE_DT_GET(DT_BUS(DT_DRV_INST(n))),		\
-		.i2c_addr = DT_INST_REG_ADDR(n),			\
-		.design_voltage = DT_INST_PROP(n, design_voltage),	\
-		.desired_voltage = DT_INST_PROP(n, desired_voltage),	\
-		.desired_charging_current =				\
-			DT_INST_PROP(n, desired_charging_current),	\
-		.design_cap = DT_INST_PROP(n, design_cap),		\
-		.empty_voltage = DT_INST_PROP(n, empty_voltage),	\
-		.recovery_voltage = DT_INST_PROP(n, recovery_voltage),	\
-		.charge_voltage = DT_INST_PROP(n, charge_voltage),	\
-	};								\
-									\
-	DEVICE_DT_INST_DEFINE(n, &max17262_gauge_init,			\
-			    NULL,					\
-			    &max17262_data_##n,				\
-			    &max17262_config_##n, POST_KERNEL,		\
-			    CONFIG_SENSOR_INIT_PRIORITY,		\
-			    &max17262_battery_driver_api);
+#define MAX17262_INIT(n)                                                                           \
+	static struct max17262_data max17262_data_##n;                                             \
+                                                                                                   \
+	static const struct max17262_config max17262_config_##n = {                                \
+		.i2c = I2C_DT_SPEC_INST_GET(n),                                                    \
+		.design_voltage = DT_INST_PROP(n, design_voltage),                                 \
+		.desired_voltage = DT_INST_PROP(n, desired_voltage),                               \
+		.desired_charging_current = DT_INST_PROP(n, desired_charging_current),             \
+		.design_cap = DT_INST_PROP(n, design_cap),                                         \
+		.empty_voltage = DT_INST_PROP(n, empty_voltage),                                   \
+		.recovery_voltage = DT_INST_PROP(n, recovery_voltage),                             \
+		.charge_voltage = DT_INST_PROP(n, charge_voltage),                                 \
+	};                                                                                         \
+                                                                                                   \
+	SENSOR_DEVICE_DT_INST_DEFINE(n, &max17262_gauge_init, NULL, &max17262_data_##n,            \
+				     &max17262_config_##n, POST_KERNEL,                            \
+				     CONFIG_SENSOR_INIT_PRIORITY, &max17262_battery_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(MAX17262_INIT)

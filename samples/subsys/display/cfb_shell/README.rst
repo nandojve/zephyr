@@ -1,7 +1,8 @@
-.. _cfb_shell_sample:
+.. zephyr:code-sample:: cfb-shell-sample
+   :name: Character Framebuffer shell module
+   :relevant-api: monochrome_character_framebuffer
 
-Character Framebuffer Shell Module Sample
-#########################################
+   Use the CFB shell module to interact with a monochrome display.
 
 Overview
 ********
@@ -14,7 +15,7 @@ Building and Running
 Build the sample app by choosing the target board, for example:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/display/cfb_shell
+   :zephyr-app: samples/subsys/display/cfb_shell
    :board: reel_board
    :goals: build
 
@@ -93,7 +94,7 @@ Command example (reel_board):
 .. code-block:: console
 
          uart:~$ cfb set_font 0
-         Font idx=0 height=32 widht=20 set
+         Font idx=0 height=32 width=20 set
 
 **invert**: invert the pixel color of the display.
 

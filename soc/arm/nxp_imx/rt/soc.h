@@ -7,32 +7,33 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifndef _ASMLANGUAGE
 
 #include <fsl_common.h>
 
 /* Add include for DTS generated information */
-#include <devicetree.h>
+#include <zephyr/devicetree.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#if CONFIG_DISK_DRIVER_SDMMC &&					\
-	(DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) ||	\
-	 DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc2), okay))
-
-typedef void (*usdhc_pin_cfg_cb)(uint16_t nusdhc, bool init,
-	uint32_t speed, uint32_t strength);
-
-void imxrt_usdhc_pinmux(uint16_t nusdhc,
-	bool init, uint32_t speed, uint32_t strength);
-
-void imxrt_usdhc_pinmux_cb_register(usdhc_pin_cfg_cb cb);
+#if CONFIG_I2S_MCUX_SAI
+void imxrt_audio_codec_pll_init(uint32_t clock_name, uint32_t clk_src,
+					uint32_t clk_pre_div, uint32_t clk_src_div);
 
 #endif
+
+#if CONFIG_MIPI_DSI
+void imxrt_pre_init_display_interface(void);
+
+void imxrt_post_init_display_interface(void);
+#endif
+
+void flexspi_clock_set_div(uint32_t value);
+uint32_t flexspi_clock_get_freq(void);
 
 #ifdef __cplusplus
 }

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/sparc/sparc.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/sparc/sparc.h>
 
 /* The trap table reset entry jumps to here. */
 
@@ -48,7 +48,7 @@ SECTION_FUNC(TEXT, __sparc_trap_reset)
 	call	z_bss_zero
 	 nop
 
-	call    _PrepC
+	call    z_prep_c
 	 nop
 
 /* We halt the system by generating a "trap in trap" condition. */

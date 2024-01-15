@@ -5,18 +5,22 @@
  */
 
 #include <stdbool.h>
+#ifdef CONFIG_ARCH_POSIX
 #include <fcntl.h>
+#else
+#include <zephyr/posix/fcntl.h>
+#endif
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_sock_mgmt, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
-#include <kernel.h>
-#include <sys/util.h>
-#include <net/socket.h>
-#include <syscall_handler.h>
-#include <sys/fdtable.h>
-#include <net/socket_net_mgmt.h>
-#include <net/ethernet_mgmt.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/internal/syscall_handler.h>
+#include <zephyr/sys/fdtable.h>
+#include <zephyr/net/socket_net_mgmt.h>
+#include <zephyr/net/ethernet_mgmt.h>
 
 #include "sockets_internal.h"
 #include "net_private.h"
@@ -205,8 +209,12 @@ again:
 
 	if (info) {
 		ret = info_len + sizeof(hdr);
-		ret = MIN(max_len, ret);
-		memcpy(&copy_to[sizeof(hdr)], info, ret);
+		if (ret > max_len) {
+			errno = EMSGSIZE;
+			return -1;
+		}
+
+		memcpy(&copy_to[sizeof(hdr)], info, info_len);
 	} else {
 		ret = 0;
 	}

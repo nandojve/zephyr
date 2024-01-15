@@ -6,7 +6,4 @@
  *
  */
 
-/* Add include for DTS generated information */
-#include <devicetree.h>
-#include <system_XMC4500.h>
-#include <XMC4500.h>
+#include <xmc_device.h>

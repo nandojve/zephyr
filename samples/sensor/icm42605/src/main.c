@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
 
 static const char *now_str(void)
@@ -96,14 +96,13 @@ static void handle_icm42605_double_tap(const struct device *dev,
 	printf("Double Tap detected!\n");
 }
 
-void main(void)
+int main(void)
 {
-	const char *const label = DT_LABEL(DT_INST(0, invensense_icm42605));
-	const struct device *icm42605 = device_get_binding(label);
+	const struct device *const icm42605 = DEVICE_DT_GET_ONE(invensense_icm42605);
 
-	if (!icm42605) {
-		printf("Failed to find sensor %s\n", label);
-		return;
+	if (!device_is_ready(icm42605)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	tap_trigger = (struct sensor_trigger) {
@@ -114,7 +113,7 @@ void main(void)
 	if (sensor_trigger_set(icm42605, &tap_trigger,
 			       handle_icm42605_tap) < 0) {
 		printf("Cannot configure tap trigger!!!\n");
-		return;
+		return 0;
 	}
 
 	double_tap_trigger = (struct sensor_trigger) {
@@ -125,7 +124,7 @@ void main(void)
 	if (sensor_trigger_set(icm42605, &double_tap_trigger,
 			       handle_icm42605_double_tap) < 0) {
 		printf("Cannot configure double tap trigger!!!\n");
-		return;
+		return 0;
 	}
 
 	data_trigger = (struct sensor_trigger) {
@@ -136,8 +135,9 @@ void main(void)
 	if (sensor_trigger_set(icm42605, &data_trigger,
 			       handle_icm42605_drdy) < 0) {
 		printf("Cannot configure data trigger!!!\n");
-		return;
+		return 0;
 	}
 
 	printf("Configured for triggered sampling.\n");
+	return 0;
 }

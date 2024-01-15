@@ -6,7 +6,7 @@
 
 int lll_prepare_done(void *param);
 int lll_done(void *param);
-bool lll_is_done(void *param);
+bool lll_is_done(void *param, bool *is_resume);
 int lll_is_abort_cb(void *next, void *curr, lll_prepare_cb_t *resume_cb);
 void lll_abort_cb(struct lll_prepare_param *prepare_param, void *param);
 
@@ -18,6 +18,8 @@ void lll_chan_set(uint32_t chan);
 
 void lll_isr_tx_status_reset(void);
 void lll_isr_rx_status_reset(void);
+void lll_isr_tx_sub_status_reset(void);
+void lll_isr_rx_sub_status_reset(void);
 void lll_isr_status_reset(void);
 void lll_isr_abort(void *param);
 void lll_isr_done(void *param);

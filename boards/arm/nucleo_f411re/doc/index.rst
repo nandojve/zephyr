@@ -25,10 +25,8 @@ some highlights of the Nucleo F411RE board:
 - Three LEDs: USB communication (LD1), user LED (LD2), power LED (LD3)
 - Two push-buttons: USER and RESET
 
-.. image:: img/nucleo_f411re.png
-   :width: 720px
+.. image:: img/nucleo_f411re.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo F411RE
 
 More information about the board can be found at the `Nucleo F411RE website`_.
@@ -102,15 +100,11 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_f411re_arduino.png
-   :width: 720px
+.. image:: img/nucleo_f411re_arduino.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F411RE Arduino connectors
-.. image:: img/nucleo_f411re_morpho.png
-   :width: 720px
+.. image:: img/nucleo_f411re_morpho.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F411RE Morpho connectors
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.
@@ -194,13 +188,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _Nucleo F411RE website:
-   http://www.st.com/en/evaluation-tools/nucleo-f411re.html
+   https://www.st.com/en/evaluation-tools/nucleo-f411re.html
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf
 
 .. _STM32F411RE on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f411re.html
+   https://www.st.com/en/microcontrollers/stm32f411re.html
 
 .. _STM32F411 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00119316.pdf
+   https://www.st.com/resource/en/reference_manual/dm00119316.pdf

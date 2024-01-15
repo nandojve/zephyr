@@ -86,7 +86,7 @@ def test_dfu_util_init(cc, req, find_device, tc, runner_config):
     with patch('os.path.isfile', side_effect=os_path_isfile_patch):
         runner.run('flash')
     assert find_device.called
-    assert req.called_with(exe)
+    assert req.call_args_list == [call(exe)]
     assert cc.call_args_list == [call(EXPECTED_COMMAND[tc])]
 
 def get_flash_address_patch(args, bcfg):
@@ -128,7 +128,7 @@ def test_dfu_util_create(cc, req, gfa, find_device, tc, runner_config, tmpdir):
         f.write('\n')
     runner_config = runner_config._replace(build_dir=os.fspath(tmpdir))
 
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(allow_abbrev=False)
     DfuUtilBinaryRunner.add_parser(parser)
     arg_namespace = parser.parse_args(args)
     runner = DfuUtilBinaryRunner.create(runner_config, arg_namespace)
@@ -141,5 +141,5 @@ def test_dfu_util_create(cc, req, gfa, find_device, tc, runner_config, tmpdir):
         cfg = None
     map_tc = (exe or DFU_UTIL, alt, cfg, img or RC_KERNEL_BIN)
     assert find_device.called
-    assert req.called_with(exe)
+    assert req.call_args_list == [call(exe or DFU_UTIL)]
     assert cc.call_args_list == [call(EXPECTED_COMMAND[map_tc])]

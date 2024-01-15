@@ -63,7 +63,7 @@ hardware features:
 | UART      | on-chip    | NS16550 compatible serial port       |
 +-----------+------------+--------------------------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 The default configuration can be found in the defconfig file for NON-SMP:
 
@@ -84,7 +84,7 @@ Programming and Debugging
 *************************
 
 Use the following configuration to run basic Zephyr applications and
-kernel tests on LS1046A RDB board. For example, with the :ref:`synchronization_sample`:
+kernel tests on LS1046A RDB board. For example, with the :zephyr:code-sample:`synchronization` sample:
 
 1. Non-SMP mode
 

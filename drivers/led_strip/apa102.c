@@ -7,10 +7,10 @@
 #define DT_DRV_COMPAT apa_apa102
 
 #include <errno.h>
-#include <drivers/led_strip.h>
-#include <drivers/spi.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
+#include <zephyr/drivers/led_strip.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
 
 struct apa102_config {
 	struct spi_dt_spec bus;
@@ -84,23 +84,33 @@ static int apa102_init(const struct device *dev)
 {
 	const struct apa102_config *config = dev->config;
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		return -ENODEV;
 	}
 
 	return 0;
 }
 
-static const struct apa102_config apa102_config = {
-	.bus = SPI_DT_SPEC_INST_GET(
-		0, SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8), 0)
-};
-
 static const struct led_strip_driver_api apa102_api = {
 	.update_rgb = apa102_update_rgb,
 	.update_channels = apa102_update_channels,
 };
 
-DEVICE_DT_INST_DEFINE(0, apa102_init, NULL,
-		      NULL, &apa102_config, POST_KERNEL,
-		      CONFIG_LED_STRIP_INIT_PRIORITY, &apa102_api);
+#define APA102_DEVICE(idx)						 \
+	static const struct apa102_config apa102_##idx##_config = {	 \
+		.bus = SPI_DT_SPEC_INST_GET(				 \
+			idx,						 \
+			SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8), \
+			0),						 \
+	};								 \
+									 \
+	DEVICE_DT_INST_DEFINE(idx,					 \
+			      apa102_init,				 \
+			      NULL,					 \
+			      NULL,					 \
+			      &apa102_##idx##_config,			 \
+			      POST_KERNEL,				 \
+			      CONFIG_LED_STRIP_INIT_PRIORITY,		 \
+			      &apa102_api);
+
+DT_INST_FOREACH_STATUS_OKAY(APA102_DEVICE)

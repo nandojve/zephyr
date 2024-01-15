@@ -11,7 +11,6 @@ The Zephyr kernel is supported on the Altera MAX10 Rev C development kit, using
 the Nios II Gen 2 soft CPU.
 
 .. figure:: img/altera_max10.jpg
-   :width: 442px
    :align: center
    :alt: Altera's MAX* 10
 
@@ -33,7 +32,6 @@ importance is SW2:
 * Switch 4 (HSMC_BYPASSN) should be OFF (up)
 
 .. image:: img/Altera_MAX10_switches.jpg
-   :width: 442px
    :align: center
    :alt: Altera's MAX* 10 Switches
 
@@ -235,14 +233,14 @@ You will see output similar to the following:
    Listening on port 3335 for connection from GDB: accepted
    isr_tables_syms () at /projects/zephyr/arch/common/isr_tables.c:63
    63      GEN_ABSOLUTE_SYM(__ISR_LIST_SIZEOF, sizeof(struct _isr_list));
-   (gdb) b _PrepC
+   (gdb) b z_prep_c
    Breakpoint 1 at 0xdf0: file /projects/zephyr/arch/nios2/core/prep_c.c, line 36.
    (gdb) b z_cstart
    Breakpoint 2 at 0x1254: file /projects/zephyr/kernel/init.c, line 348.
    (gdb) c
    Continuing.
 
-   Breakpoint 2, _Cstart () at /projects/zephyr/kernel/init.c:348
+   Breakpoint 2, z_cstart () at /projects/zephyr/kernel/init.c:348
    348     {
    (gdb)
 
@@ -331,4 +329,4 @@ References
 * `Quartus II Scripting Reference Manual <https://www.altera.com/content/dam/altera-www/global/en_US/pdfs/literature/manual/tclscriptrefmnl.pdf>`_
 
 
-.. _Altera Lite Distribution: http://dl.altera.com/?edition=lite
+.. _Altera Lite Distribution: https://www.intel.com/content/www/us/en/collections/products/fpga/software/downloads.html

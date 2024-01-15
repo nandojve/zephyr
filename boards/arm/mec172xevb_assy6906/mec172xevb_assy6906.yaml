@@ -15,5 +15,15 @@ ram: 64
 flash: 352
 supported:
   - gpio
-  - pinmux
   - i2c
+  - adc
+  - pwm
+  - counter
+  - spi
+testing:
+  binaries:
+    - spi_image.bin
+  ignore_tags:
+    - bluetooth
+    - net
+vendor: microchip

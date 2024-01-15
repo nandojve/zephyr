@@ -8,7 +8,7 @@
 
 #define NET_LOG_LEVEL CONFIG_NET_PPP_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
@@ -16,16 +16,16 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/crc.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/crc.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <net/ethernet.h>
-#include <net/dummy.h>
-#include <net/buf.h>
-#include <net/net_ip.h>
-#include <net/net_if.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/dummy.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
 
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
@@ -35,7 +35,7 @@ typedef enum net_verdict (*ppp_l2_callback_t)(struct net_if *iface,
 void ppp_l2_register_pkt_cb(ppp_l2_callback_t cb); /* found in ppp_l2.c */
 void ppp_driver_feed_data(uint8_t *data, int data_len);
 
-static struct net_if *iface;
+static struct net_if *net_iface;
 
 static bool test_failed;
 static bool test_started;
@@ -208,15 +208,15 @@ static enum net_verdict ppp_l2_recv(struct net_if *iface, struct net_pkt *pkt)
 
 static void test_iface_setup(void)
 {
-	iface = net_if_get_first_by_type(&NET_L2_GET_NAME(PPP));
-	zassert_not_null(iface, "PPP interface not found!");
+	net_iface = net_if_get_first_by_type(&NET_L2_GET_NAME(PPP));
+	zassert_not_null(net_iface, "PPP interface not found!");
 
 	/* The semaphore is there to wait the data to be received. */
 	k_sem_init(&wait_data, 0, UINT_MAX);
 
 	ppp_l2_register_pkt_cb(ppp_l2_recv);
 
-	net_if_up(iface);
+	net_if_up(net_iface);
 
 	test_failed = false;
 	test_started = true;
@@ -245,9 +245,9 @@ static void test_send_ppp_pkt_with_escapes(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data1, sizeof(ppp_recv_data1),
+	ret = send_iface(net_iface, ppp_recv_data1, sizeof(ppp_recv_data1),
 			 ppp_expect_data1, sizeof(ppp_expect_data1));
 
 	zassert_true(ret, "iface");
@@ -257,9 +257,9 @@ static void test_send_ppp_pkt_with_full_and_partial(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data2, sizeof(ppp_recv_data2),
+	ret = send_iface(net_iface, ppp_recv_data2, sizeof(ppp_recv_data2),
 			 ppp_expect_data1, sizeof(ppp_expect_data1));
 
 	zassert_true(ret, "iface");
@@ -320,7 +320,7 @@ static void ppp_verify_fcs(uint8_t *buf, int len)
 	uint8_t *ptr;
 	bool ret;
 
-	pkt = net_pkt_alloc_with_buffer(iface, len, AF_UNSPEC, 0, K_NO_WAIT);
+	pkt = net_pkt_alloc_with_buffer(net_iface, len, AF_UNSPEC, 0, K_NO_WAIT);
 	zassert_not_null(pkt, "Cannot create pkt");
 
 	ptr = buf;
@@ -391,7 +391,7 @@ static void ppp_calc_fcs(uint8_t *buf, int len)
 	uint8_t *ptr;
 	bool ret;
 
-	pkt = net_pkt_alloc_with_buffer(iface, len, AF_UNSPEC, 0, K_NO_WAIT);
+	pkt = net_pkt_alloc_with_buffer(net_iface, len, AF_UNSPEC, 0, K_NO_WAIT);
 	zassert_not_null(pkt, "Cannot create pkt");
 
 	ptr = buf;
@@ -445,9 +445,9 @@ static void test_send_ppp_3(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data3, sizeof(ppp_recv_data3),
+	ret = send_iface(net_iface, ppp_recv_data3, sizeof(ppp_recv_data3),
 			 ppp_expect_data3, sizeof(ppp_expect_data3));
 
 	zassert_true(ret, "iface");
@@ -461,9 +461,9 @@ static void test_send_ppp_4(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data4, sizeof(ppp_recv_data4),
+	ret = send_iface(net_iface, ppp_recv_data4, sizeof(ppp_recv_data4),
 			 ppp_expect_data4, sizeof(ppp_expect_data4));
 
 	zassert_true(ret, "iface");
@@ -477,9 +477,9 @@ static void test_send_ppp_5(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data5, sizeof(ppp_recv_data5),
+	ret = send_iface(net_iface, ppp_recv_data5, sizeof(ppp_recv_data5),
 			 ppp_expect_data5, sizeof(ppp_expect_data5));
 
 	zassert_true(ret, "iface");
@@ -493,9 +493,9 @@ static void test_send_ppp_6(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data6, sizeof(ppp_recv_data6),
+	ret = send_iface(net_iface, ppp_recv_data6, sizeof(ppp_recv_data6),
 			 ppp_expect_data6, sizeof(ppp_expect_data6));
 
 	zassert_true(ret, "iface");
@@ -509,9 +509,9 @@ static void test_send_ppp_7(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data7, sizeof(ppp_recv_data7),
+	ret = send_iface(net_iface, ppp_recv_data7, sizeof(ppp_recv_data7),
 			 ppp_expect_data7, sizeof(ppp_expect_data7));
 
 	zassert_true(ret, "iface");
@@ -525,9 +525,9 @@ static void test_send_ppp_8(void)
 {
 	bool ret;
 
-	NET_DBG("Sending data to iface %p", iface);
+	NET_DBG("Sending data to iface %p", net_iface);
 
-	ret = send_iface(iface, ppp_recv_data8, sizeof(ppp_recv_data8),
+	ret = send_iface(net_iface, ppp_recv_data8, sizeof(ppp_recv_data8),
 			 ppp_expect_data8, sizeof(ppp_expect_data8));
 
 	zassert_true(ret, "iface");
@@ -537,22 +537,20 @@ static void test_send_ppp_8(void)
 	}
 }
 
-void test_main(void)
+ZTEST(net_ppp_test_suite, test_net_ppp)
 {
-	ztest_test_suite(net_ppp_test,
-			 ztest_unit_test(test_iface_setup),
-			 ztest_unit_test(test_send_ppp_pkt_with_escapes),
-			 ztest_unit_test(test_send_ppp_pkt_with_full_and_partial),
-			 ztest_unit_test(test_ppp_verify_fcs_1),
-			 ztest_unit_test(test_ppp_calc_fcs_1),
-			 ztest_unit_test(test_ppp_verify_fcs_3),
-			 ztest_unit_test(test_send_ppp_3),
-			 ztest_unit_test(test_send_ppp_4),
-			 ztest_unit_test(test_send_ppp_5),
-			 ztest_unit_test(test_send_ppp_6),
-			 ztest_unit_test(test_send_ppp_7),
-			 ztest_unit_test(test_send_ppp_8)
-		);
-
-	ztest_run_test_suite(net_ppp_test);
+	test_iface_setup();
+	test_send_ppp_pkt_with_escapes();
+	test_send_ppp_pkt_with_full_and_partial();
+	test_ppp_verify_fcs_1();
+	test_ppp_calc_fcs_1();
+	test_ppp_verify_fcs_3();
+	test_send_ppp_3();
+	test_send_ppp_4();
+	test_send_ppp_5();
+	test_send_ppp_6();
+	test_send_ppp_7();
+	test_send_ppp_8();
 }
+
+ZTEST_SUITE(net_ppp_test_suite, NULL, NULL, NULL, NULL, NULL);

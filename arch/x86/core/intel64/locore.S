@@ -2,16 +2,18 @@
  * Copyright (c) 2019 Intel Corporation
  * SPDX-License-Identifier: Apache-2.0
  */
+#define LOAPIC_BASE_ADDRESS DT_REG_ADDR(DT_NODELABEL(intc_loapic))
 
-#include <toolchain.h>
-#include <arch/x86/multiboot.h>
-#include <sys/util.h>
-#include <arch/x86/msr.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/arch/x86/multiboot.h>
+#include <zephyr/arch/x86/efi.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/arch/x86/msr.h>
 #include <kernel_arch_data.h>
 #include <offsets_short.h>
-#include <drivers/interrupt_controller/loapic.h>
-#include <arch/cpu.h>
-#include <sys/mem_manage.h>
+#include <zephyr/drivers/interrupt_controller/loapic.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/kernel/mm.h>
 
 /*
  * Definitions/macros for enabling paging
@@ -111,7 +113,7 @@ __start:
 	nop
 	nop
 
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 
 .code16
 .global x86_ap_start
@@ -141,13 +143,13 @@ x86_ap_start:
 	 * so we can locate our x86_cpuboot[] bundle. Put it in EBP.
 	 */
 
-	movl CONFIG_LOAPIC_BASE_ADDRESS+LOAPIC_ID, %eax
+	movl LOAPIC_BASE_ADDRESS+LOAPIC_ID, %eax
 	shrl $24, %eax
 	andl $0x0F, %eax		/* local APIC ID -> EAX */
 
 	movl $x86_cpuboot, %ebp
 	xorl %ebx, %ebx
-1:	cmpl $CONFIG_MP_NUM_CPUS, %ebx
+1:	cmpl $CONFIG_MP_MAX_NUM_CPUS, %ebx
 	jz unknown_loapic_id
 	cmpb %al, x86_cpu_loapics(%ebx)
 	je go64				/* proceed to 64-bit mode */
@@ -158,7 +160,7 @@ x86_ap_start:
 unknown_loapic_id:
 	jmp unknown_loapic_id
 
-#endif /* CONFIG_MP_NUM_CPUS > 1 */
+#endif /* CONFIG_MP_MAX_NUM_CPUS > 1 */
 
 .code32
 .globl __start32
@@ -190,9 +192,14 @@ __start32:
 	 * has left a pointer to it in EBX.
 	 */
 
-	movl $x86_cpuboot, %ebp		/* BSP is always logical CPU id 0 */
-	movl %ebx, __x86_cpuboot_t_arg_OFFSET(%ebp)	/* multiboot info */
+	movl $x86_cpu_boot_arg, %ebp
 
+	/* Inserting boot type */
+	movl $MULTIBOOT_BOOT_TYPE, __x86_boot_arg_t_boot_type_OFFSET(%ebp)
+	/* and multiboot info */
+	movl %ebx, __x86_boot_arg_t_arg_OFFSET(%ebp)
+
+	movl $x86_cpuboot, %ebp         /* BSP is always logical CPU id 0 */
 
 go64:	/* Install page tables and transition to long mode */
 	install_pagetables_32
@@ -255,6 +262,11 @@ enter_code64:
 
 	/* Enter C domain now that we have a stack set up, never to return */
 	movq %rbp, %rdi
+#ifdef CONFIG_STACK_CANARIES_TLS
+	pushq %rsp
+	call z_x86_early_tls_update_gdt
+	popq %rsp
+#endif
 	call z_x86_cpu_init
 
 	/* 64 bit OS entry point, used by EFI support.  UEFI
@@ -284,8 +296,14 @@ __start64:
 	outb %al, $0x21
 	outb %al, $0xA1
 
-	/* Far call into the Zephyr code segment */
-	movq $x86_cpuboot, %rbp
+	movq $x86_cpu_boot_arg, %rbp
+	/* Inserting boot type */
+	movq $EFI_BOOT_TYPE, __x86_boot_arg_t_boot_type_OFFSET(%rbp)
+	/* and EFI boot arg (if any) */
+	movq %rbx, __x86_boot_arg_t_arg_OFFSET(%rbp)
+
+	movq $x86_cpuboot, %rbp		/* BSP is always logical CPU id 0 */
+
 	mov jmpdesc, %rax
 	jmp *%rax
 jmpdesc:
@@ -367,6 +385,22 @@ z_x86_switch:
  */
 
 __resume:
+#ifdef CONFIG_THREAD_LOCAL_STORAGE
+	/*
+	 * Write the TLS base pointer to FS_BASE MSR,
+	 * where GCC emits code to access TLS data via
+	 * offset to FS.
+	 * Since wrmsr write EDX:EAX to MSR indicated by
+	 * ECX, the high 32-bit needs to be loaded into
+	 * RDX and right shifted by 32 bits so EDX has
+	 * the higher 32-bit value.
+	 */
+	movl $X86_FS_BASE, %ecx
+	movq _thread_offset_to_tls(%rdi), %rax
+	movq _thread_offset_to_tls(%rdi), %rdx
+	shrq $32, %rdx
+	wrmsr
+#endif
 #if (!defined(CONFIG_X86_KPTI) && defined(CONFIG_USERSPACE)) \
 		|| defined(CONFIG_INSTRUMENT_THREAD_SWITCHING)
 	pushq %rdi	/* Caller-saved, stash it */
@@ -409,22 +443,6 @@ __resume:
 	movq $0xB9, _thread_offset_to_rip(%rdi)
 #endif
 
-#ifdef CONFIG_THREAD_LOCAL_STORAGE
-	/*
-	 * Write the TLS base pointer to FS_BASE MSR,
-	 * where GCC emits code to access TLS data via
-	 * offset to FS.
-	 * Since wrmsr write EDX:EAX to MSR indicated by
-	 * ECX, the high 32-bit needs to be loaded into
-	 * RDX and right shifted by 32 bits so EDX has
-	 * the higher 32-bit value.
-	 */
-	movl $X86_FS_BASE, %ecx
-	movq _thread_offset_to_tls(%rdi), %rax
-	movq _thread_offset_to_tls(%rdi), %rdx
-	shrq $32, %rdx
-	wrmsr
-#endif
 
 	movq _thread_offset_to_rbx(%rdi), %rbx
 	movq _thread_offset_to_rbp(%rdi), %rbp
@@ -778,6 +796,11 @@ irq_enter_unnested: /* Not nested: dump state to thread struct for __resume */
 #endif
 
 irq_dispatch:
+#ifdef CONFIG_SCHED_THREAD_USAGE
+	pushq %rcx
+	call z_sched_usage_stop
+	popq %rcx
+#endif
 	movq x86_irq_funcs(,%rcx,8), %rax
 	movq x86_irq_args(,%rcx,8), %rdi
 	call *%rax
@@ -788,7 +811,7 @@ irq_dispatch:
 	movl $(X86_X2APIC_BASE_MSR + (LOAPIC_EOI >> 4)), %ecx
 	wrmsr
 #else /* xAPIC */
-	movq z_loapic_regs, %rdx
+	movq Z_TOPLEVEL_RAM_NAME(LOAPIC_REGS_STR), %rdx
 	movl %eax, LOAPIC_EOI(%rdx)
 #endif /* CONFIG_X2APIC */
 
@@ -1073,21 +1096,21 @@ gdt:
 	.word 0x8900
 	.word 0, 0, 0, 0, 0
 
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 	.word __X86_TSS64_SIZEOF-1	/* 0x50: 64-bit TSS (16-byte entry) */
 	.word tss1
 	.word 0x8900
 	.word 0, 0, 0, 0, 0
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 2
+#if CONFIG_MP_MAX_NUM_CPUS > 2
 	.word __X86_TSS64_SIZEOF-1	/* 0x60: 64-bit TSS (16-byte entry) */
 	.word tss2
 	.word 0x8900
 	.word 0, 0, 0, 0, 0
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 3
+#if CONFIG_MP_MAX_NUM_CPUS > 3
 	.word __X86_TSS64_SIZEOF-1	/* 0x70: 64-bit TSS (16-byte entry) */
 	.word tss3
 	.word 0x8900
@@ -1118,7 +1141,7 @@ z_x86_exception_stack:
 z_x86_nmi_stack:
 	.fill CONFIG_X86_EXCEPTION_STACK_SIZE, 1, 0xAA
 
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 .global z_x86_exception_stack1
 .align 16
 z_x86_exception_stack1:
@@ -1129,7 +1152,7 @@ z_x86_nmi_stack1:
 	.fill CONFIG_X86_EXCEPTION_STACK_SIZE, 1, 0xAA
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 2
+#if CONFIG_MP_MAX_NUM_CPUS > 2
 .global z_x86_exception_stack2
 .align 16
 z_x86_exception_stack2:
@@ -1140,7 +1163,7 @@ z_x86_nmi_stack2:
 	.fill CONFIG_X86_EXCEPTION_STACK_SIZE, 1, 0xAA
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 3
+#if CONFIG_MP_MAX_NUM_CPUS > 3
 .global z_x86_exception_stack3
 .align 16
 z_x86_exception_stack3:
@@ -1159,21 +1182,21 @@ z_x86_nmi_stack3:
 z_x86_trampoline_stack:
 	.fill Z_X86_TRAMPOLINE_STACK_SIZE, 1, 0xAA
 
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 .global z_x86_trampoline_stack1
 .align 16
 z_x86_trampoline_stack1:
 	.fill Z_X86_TRAMPOLINE_STACK_SIZE, 1, 0xAA
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 2
+#if CONFIG_MP_MAX_NUM_CPUS > 2
 .global z_x86_trampoline_stack2
 .align 16
 z_x86_trampoline_stack2:
 	.fill Z_X86_TRAMPOLINE_STACK_SIZE, 1, 0xAA
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 3
+#if CONFIG_MP_MAX_NUM_CPUS > 3
 .global z_x86_trampoline_stack3
 .align 16
 z_x86_trampoline_stack3:

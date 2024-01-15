@@ -12,17 +12,17 @@
 #define ZEPHYR_DRIVERS_SENSOR_LIS2DS12_LIS2DS12_H_
 
 #include <zephyr/types.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
 #include <stmemsc.h>
 #include "lis2ds12_reg.h"
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
-#include <drivers/i2c.h>
+#include <zephyr/drivers/i2c.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
 
 /* Return ODR reg value based on data rate set */
@@ -57,7 +57,7 @@ struct lis2ds12_data {
 #ifdef CONFIG_LIS2DS12_TRIGGER
 	struct gpio_callback gpio_cb;
 
-	struct sensor_trigger data_ready_trigger;
+	const struct sensor_trigger *data_ready_trigger;
 	sensor_trigger_handler_t data_ready_handler;
 	const struct device *dev;
 

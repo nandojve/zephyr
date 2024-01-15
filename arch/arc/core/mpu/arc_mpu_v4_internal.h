@@ -132,7 +132,7 @@ static inline bool _is_user_accessible_region(uint32_t r_index, int write)
 	return false;
 }
 #else /* CONFIG_ARC_NORMAL_FIRMWARE */
-/* the following functions are prepared for SECURE_FRIMWARE */
+/* the following functions are prepared for SECURE_FIRMWARE */
 static inline void _region_init(uint32_t index, uint32_t region_addr, uint32_t size,
 				uint32_t region_attr)
 {
@@ -814,9 +814,8 @@ int arc_core_mpu_buffer_validate(void *addr, size_t size, int write)
  * This function provides the default configuration mechanism for the Memory
  * Protection Unit (MPU).
  */
-static int arc_mpu_init(const struct device *arg)
+static int arc_mpu_init(void)
 {
-	ARG_UNUSED(arg);
 	uint32_t num_regions;
 	uint32_t i;
 

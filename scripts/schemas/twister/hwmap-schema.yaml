@@ -1,7 +1,7 @@
 type: seq
 sequence:
   - type: map
-    required: no
+    required: false
     mapping:
       "available":
         type: bool
@@ -27,6 +27,14 @@ sequence:
       "runner":
         type: str
         required: true
+      "runner_params":
+        type: seq
+        required: false
+        sequence:
+          - type: str
+      "serial_pty":
+        type: str
+        required: false
       "serial":
         type: str
         required: false
@@ -44,6 +52,12 @@ sequence:
         required: false
       "fixtures":
         type: seq
-        required: no
+        required: false
         sequence:
           - type: str
+      "flash_timeout":
+        type: int
+        required: false
+      "flash_with_test":
+        type: bool
+        required: false

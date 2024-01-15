@@ -8,9 +8,13 @@ project(mesh_demo)
 
 target_sources(app PRIVATE src/main.c)
 target_sources_ifdef(CONFIG_BOARD_BBC_MICROBIT app PRIVATE src/microbit.c)
-zephyr_include_directories_ifdef(CONFIG_BOARD_BBC_MICROBIT
-				 ${ZEPHYR_BASE}/boards/arm/bbc_microbit)
 
 if(NODE_ADDR)
   zephyr_compile_definitions(NODE_ADDR=${NODE_ADDR})
+endif()
+
+if (CONFIG_BUILD_WITH_TFM)
+  target_include_directories(app PRIVATE
+    $<TARGET_PROPERTY:tfm,TFM_BINARY_DIR>/install/interface/include
+  )
 endif()

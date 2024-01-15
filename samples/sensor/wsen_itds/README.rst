@@ -5,7 +5,7 @@ WSEN-ITDS: 3-axis acceleration sensor
 
 Overview
 ********
- This sample periodically measures acceleration in 3-axis and die temerature for
+ This sample periodically measures acceleration in 3-axis and die temperature for
  5 sec in the interval of 300msec in polling mode. Then data ready trigger mode
  is enabled with the sample frequency of 400Hz and 3-axis data is fetched based
  on interrupt. The result is displayed on the console.
@@ -21,7 +21,7 @@ Requirements
 References
 **********
 
- - WSEN-ITDS: https://www.we-online.com/catalog/manual/2533020201601_WSEN-ITDS%202533020201601%20Manual_rev1.pdf
+ - WSEN-ITDS: https://www.we-online.com/components/products/manual/2533020201601_WSEN-ITDS%202533020201601%20Manual_rev2.3.pdf
 
 Building and Running
 ********************

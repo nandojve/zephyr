@@ -4,28 +4,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <display/cfb.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/display/cfb.h>
+#include <zephyr/sys/printk.h>
 
 #include "cfb_font_dice.h"
 
-#if defined(CONFIG_SSD1306)
-#define DISPLAY_NODE DT_INST(0, solomon_ssd1306fb)
-#elif defined(CONFIG_SSD16XX)
-#define DISPLAY_NODE DT_INST(0, solomon_ssd16xxfb)
-#else
-#error Unsupported board
-#endif
-
-void main(void)
+int main(void)
 {
-	const struct device *display = DEVICE_DT_GET(DISPLAY_NODE);
+	const struct device *const display = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 	int err;
 
 	if (!device_is_ready(display)) {
 		printk("Display device not ready\n");
+	}
+
+	if (display_set_pixel_format(display, PIXEL_FORMAT_MONO10) != 0) {
+		if (display_set_pixel_format(display, PIXEL_FORMAT_MONO01) != 0) {
+			printk("Failed to set required pixel format");
+			return 0;
+		}
+	}
+
+	if (display_blanking_off(display) != 0) {
+		printk("Failed to turn off display blanking\n");
+		return 0;
 	}
 
 	err = cfb_framebuffer_init(display);
@@ -47,4 +51,5 @@ void main(void)
 	if (err) {
 		printk("Could not finalize framebuffer (err %d)\n", err);
 	}
+	return 0;
 }

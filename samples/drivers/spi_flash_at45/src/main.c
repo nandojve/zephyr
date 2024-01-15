@@ -4,11 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <drivers/flash.h>
-#include <logging/log_ctrl.h>
-
-#define FLASH_DEVICE        DT_LABEL(DT_INST(0, atmel_at45))
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/pm/device.h>
 
 /* Set to 1 to test the chip erase functionality. Please be aware that this
  * operation takes quite a while (it depends on the chip size, but can easily
@@ -24,11 +23,11 @@
 static uint8_t write_buf[TEST_REGION_SIZE];
 static uint8_t read_buf[TEST_REGION_SIZE];
 
-void main(void)
+int main(void)
 {
 	printk("DataFlash sample on %s\n", CONFIG_BOARD);
 
-	const struct device *flash_dev;
+	const struct device *const flash_dev = DEVICE_DT_GET_ONE(atmel_at45);
 	int i;
 	int err;
 	uint8_t data;
@@ -37,10 +36,9 @@ void main(void)
 	size_t page_count, chip_size;
 #endif
 
-	flash_dev = device_get_binding(FLASH_DEVICE);
-	if (!flash_dev) {
-		printk("Device %s not found!\n", FLASH_DEVICE);
-		return;
+	if (!device_is_ready(flash_dev)) {
+		printk("%s: device not ready.\n", flash_dev->name);
+		return 0;
 	}
 
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
@@ -48,14 +46,14 @@ void main(void)
 	(void)flash_get_page_info_by_idx(flash_dev, 0, &pages_info);
 	chip_size = page_count * pages_info.size;
 	printk("Using %s, chip size: %u bytes (page: %u)\n",
-	       FLASH_DEVICE, chip_size, pages_info.size);
+	       flash_dev->name, chip_size, pages_info.size);
 #endif
 
 	printk("Reading the first byte of the test region ... ");
 	err = flash_read(flash_dev, TEST_REGION_OFFSET, &data, 1);
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	printk("OK\n");
@@ -82,7 +80,7 @@ void main(void)
 
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	printk("OK\n");
@@ -92,7 +90,7 @@ void main(void)
 			 read_buf, TEST_REGION_SIZE);
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	for (i = 0; i < TEST_REGION_SIZE; ++i) {
@@ -100,7 +98,7 @@ void main(void)
 			printk("\nERROR at read_buf[%d]: "
 			       "expected 0x%02X, got 0x%02X\n",
 			       i, 0xFF, read_buf[i]);
-			return;
+			return 0;
 		}
 	}
 
@@ -112,7 +110,7 @@ void main(void)
 			  write_buf,  TEST_REGION_SIZE/2);
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	printk("OK\n");
@@ -122,7 +120,7 @@ void main(void)
 			  &write_buf[TEST_REGION_SIZE/2], TEST_REGION_SIZE/2);
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	printk("OK\n");
@@ -132,7 +130,7 @@ void main(void)
 			 read_buf, TEST_REGION_SIZE);
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	printk("OK\n");
@@ -143,22 +141,23 @@ void main(void)
 			printk("\nERROR at read_buf[%d]: "
 			       "expected 0x%02X, got 0x%02X\n",
 			       i, write_buf[i], read_buf[i]);
-			return;
+			return 0;
 		}
 	}
 
 	printk("OK\n");
 
-#if IS_ENABLED(CONFIG_PM_DEVICE)
+#if defined(CONFIG_PM_DEVICE)
 	printk("Putting the flash device into suspended state... ");
-	err = pm_device_state_set(flash_dev, PM_DEVICE_STATE_SUSPENDED);
+	err = pm_device_action_run(flash_dev, PM_DEVICE_ACTION_SUSPEND);
 	if (err != 0) {
 		printk("FAILED\n");
-		return;
+		return 0;
 	}
 
 	printk("OK\n");
 #endif
 
 	k_sleep(K_FOREVER);
+	return 0;
 }

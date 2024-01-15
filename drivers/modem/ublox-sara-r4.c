@@ -6,21 +6,21 @@
 
 #define DT_DRV_COMPAT u_blox_sara_r4
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(modem_ublox_sara_r4, CONFIG_MODEM_LOG_LEVEL);
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <ctype.h>
 #include <errno.h>
-#include <zephyr.h>
-#include <drivers/gpio.h>
-#include <device.h>
-#include <init.h>
-#include <fcntl.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/posix/fcntl.h>
 
-#include <net/net_if.h>
-#include <net/net_offload.h>
-#include <net/socket_offload.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_offload.h>
+#include <zephyr/net/offloaded_netdev.h>
+#include <zephyr/net/socket_offload.h>
 
 #if defined(CONFIG_MODEM_UBLOX_SARA_AUTODETECT_APN)
 #include <stdio.h>
@@ -38,46 +38,21 @@ LOG_MODULE_REGISTER(modem_ublox_sara_r4, CONFIG_MODEM_LOG_LEVEL);
 
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
 #include "tls_internal.h"
-#include <net/tls_credentials.h>
+#include <zephyr/net/tls_credentials.h>
 #endif
 
 /* pin settings */
-enum mdm_control_pins {
-	MDM_POWER = 0,
+static const struct gpio_dt_spec power_gpio = GPIO_DT_SPEC_INST_GET(0, mdm_power_gpios);
 #if DT_INST_NODE_HAS_PROP(0, mdm_reset_gpios)
-	MDM_RESET,
+static const struct gpio_dt_spec reset_gpio = GPIO_DT_SPEC_INST_GET(0, mdm_reset_gpios);
 #endif
 #if DT_INST_NODE_HAS_PROP(0, mdm_vint_gpios)
-	MDM_VINT,
+static const struct gpio_dt_spec vint_gpio = GPIO_DT_SPEC_INST_GET(0, mdm_vint_gpios);
 #endif
-};
-
-static struct modem_pin modem_pins[] = {
-	/* MDM_POWER */
-	MODEM_PIN(DT_INST_GPIO_LABEL(0, mdm_power_gpios),
-		  DT_INST_GPIO_PIN(0, mdm_power_gpios),
-		  DT_INST_GPIO_FLAGS(0, mdm_power_gpios) | GPIO_OUTPUT),
-
-#if DT_INST_NODE_HAS_PROP(0, mdm_reset_gpios)
-	/* MDM_RESET */
-	MODEM_PIN(DT_INST_GPIO_LABEL(0, mdm_reset_gpios),
-		  DT_INST_GPIO_PIN(0, mdm_reset_gpios),
-		  DT_INST_GPIO_FLAGS(0, mdm_reset_gpios) | GPIO_OUTPUT),
-#endif
-
-#if DT_INST_NODE_HAS_PROP(0, mdm_vint_gpios)
-	/* MDM_VINT */
-	MODEM_PIN(DT_INST_GPIO_LABEL(0, mdm_vint_gpios),
-		  DT_INST_GPIO_PIN(0, mdm_vint_gpios),
-		  DT_INST_GPIO_FLAGS(0, mdm_vint_gpios) | GPIO_INPUT),
-#endif
-};
 
 #define MDM_UART_NODE			DT_INST_BUS(0)
 #define MDM_UART_DEV			DEVICE_DT_GET(MDM_UART_NODE)
 
-#define MDM_POWER_ENABLE		1
-#define MDM_POWER_DISABLE		0
 #define MDM_RESET_NOT_ASSERTED		1
 #define MDM_RESET_ASSERTED		0
 
@@ -161,6 +136,7 @@ struct modem_data {
 	char mdm_revision[MDM_REVISION_LENGTH];
 	char mdm_imei[MDM_IMEI_LENGTH];
 	char mdm_imsi[MDM_IMSI_LENGTH];
+	int mdm_rssi;
 
 #if defined(CONFIG_MODEM_UBLOX_SARA_AUTODETECT_VARIANT)
 	/* modem variant */
@@ -214,8 +190,8 @@ static int modem_atoi(const char *s, const int err_value,
 
 	ret = (int)strtol(s, &endptr, 10);
 	if (!endptr || *endptr != '\0') {
-		LOG_ERR("bad %s '%s' in %s", log_strdup(s), log_strdup(desc),
-			log_strdup(func));
+		LOG_ERR("bad %s '%s' in %s", s, desc,
+			func);
 		return err_value;
 	}
 
@@ -299,7 +275,7 @@ int modem_detect_apn(const char *imsi)
 	}
 
 	if (rc == 0) {
-		LOG_INF("Assign APN: \"%s\"", log_strdup(mdata.mdm_apn));
+		LOG_INF("Assign APN: \"%s\"", mdata.mdm_apn);
 	}
 
 	return rc;
@@ -315,7 +291,9 @@ static ssize_t send_socket_data(void *obj,
 				k_timeout_t timeout)
 {
 	int ret;
-	char send_buf[sizeof("AT+USO**=#,!###.###.###.###!,#####,####\r\n")];
+	char send_buf[sizeof("AT+USO**=###,"
+			     "!####.####.####.####.####.####.####.####!,"
+			     "#####,#########\r\n")];
 	uint16_t dst_port = 0U;
 	struct modem_socket *sock = (struct modem_socket *)obj;
 	const struct modem_cmd handler_cmds[] = {
@@ -351,6 +329,11 @@ static ssize_t send_socket_data(void *obj,
 	 * the socket in one command
 	 */
 	if (buf_len > MDM_MAX_DATA_LENGTH) {
+		if (sock->type == SOCK_DGRAM) {
+			errno = EMSGSIZE;
+			return -1;
+		}
+
 		buf_len = MDM_MAX_DATA_LENGTH;
 	}
 
@@ -367,6 +350,11 @@ static ssize_t send_socket_data(void *obj,
 		}
 
 		ret = modem_context_get_addr_port(dst_addr, &dst_port);
+		if (ret != 0) {
+			LOG_ERR("Error getting port from IP address %d", ret);
+			goto exit;
+		}
+
 		snprintk(send_buf, sizeof(send_buf),
 			 "AT+USOST=%d,\"%s\",%u,%zu", sock->id,
 			 ip_str,
@@ -574,7 +562,7 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_manufacturer)
 				    sizeof(mdata.mdm_manufacturer) - 1,
 				    data->rx_buf, 0, len);
 	mdata.mdm_manufacturer[out_len] = '\0';
-	LOG_INF("Manufacturer: %s", log_strdup(mdata.mdm_manufacturer));
+	LOG_INF("Manufacturer: %s", mdata.mdm_manufacturer);
 	return 0;
 }
 
@@ -587,7 +575,7 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_model)
 				    sizeof(mdata.mdm_model) - 1,
 				    data->rx_buf, 0, len);
 	mdata.mdm_model[out_len] = '\0';
-	LOG_INF("Model: %s", log_strdup(mdata.mdm_model));
+	LOG_INF("Model: %s", mdata.mdm_model);
 
 #if defined(CONFIG_MODEM_UBLOX_SARA_AUTODETECT_VARIANT)
 	/* Set modem type */
@@ -613,7 +601,7 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_revision)
 				    sizeof(mdata.mdm_revision) - 1,
 				    data->rx_buf, 0, len);
 	mdata.mdm_revision[out_len] = '\0';
-	LOG_INF("Revision: %s", log_strdup(mdata.mdm_revision));
+	LOG_INF("Revision: %s", mdata.mdm_revision);
 	return 0;
 }
 
@@ -625,7 +613,7 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_imei)
 	out_len = net_buf_linearize(mdata.mdm_imei, sizeof(mdata.mdm_imei) - 1,
 				    data->rx_buf, 0, len);
 	mdata.mdm_imei[out_len] = '\0';
-	LOG_INF("IMEI: %s", log_strdup(mdata.mdm_imei));
+	LOG_INF("IMEI: %s", mdata.mdm_imei);
 	return 0;
 }
 
@@ -637,7 +625,7 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_imsi)
 	out_len = net_buf_linearize(mdata.mdm_imsi, sizeof(mdata.mdm_imsi) - 1,
 				    data->rx_buf, 0, len);
 	mdata.mdm_imsi[out_len] = '\0';
-	LOG_INF("IMSI: %s", log_strdup(mdata.mdm_imsi));
+	LOG_INF("IMSI: %s", mdata.mdm_imsi);
 
 #if defined(CONFIG_MODEM_UBLOX_SARA_AUTODETECT_APN)
 	/* set the APN automatically */
@@ -658,13 +646,13 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_rssi_cesq)
 	rsrp = ATOI(argv[5], 0, "rsrp");
 	rxlev = ATOI(argv[0], 0, "rxlev");
 	if (rsrp >= 0 && rsrp <= 97) {
-		mctx.data_rssi = -140 + (rsrp - 1);
-		LOG_INF("RSRP: %d", mctx.data_rssi);
+		mdata.mdm_rssi = -140 + (rsrp - 1);
+		LOG_INF("RSRP: %d", mdata.mdm_rssi);
 	} else if (rxlev >= 0 && rxlev <= 63) {
-		mctx.data_rssi = -110 + (rxlev - 1);
-		LOG_INF("RSSI: %d", mctx.data_rssi);
+		mdata.mdm_rssi = -110 + (rxlev - 1);
+		LOG_INF("RSSI: %d", mdata.mdm_rssi);
 	} else {
-		mctx.data_rssi = -1000;
+		mdata.mdm_rssi = -1000;
 		LOG_INF("RSRP/RSSI not known");
 	}
 
@@ -681,15 +669,15 @@ MODEM_CMD_DEFINE(on_cmd_atcmdinfo_rssi_csq)
 
 	rssi = ATOI(argv[0], 0, "signal_power");
 	if (rssi == 31) {
-		mctx.data_rssi = -46;
+		mdata.mdm_rssi = -46;
 	} else if (rssi >= 0 && rssi <= 31) {
 		/* FIXME: This value depends on the RAT */
-		mctx.data_rssi = -110 + ((rssi * 2) + 1);
+		mdata.mdm_rssi = -110 + ((rssi * 2) + 1);
 	} else {
-		mctx.data_rssi = -1000;
+		mdata.mdm_rssi = -1000;
 	}
 
-	LOG_INF("RSSI: %d", mctx.data_rssi);
+	LOG_INF("RSSI: %d", mdata.mdm_rssi);
 	return 0;
 }
 #endif
@@ -750,15 +738,15 @@ static const struct setup_cmd query_cellinfo_cmds[] = {
 MODEM_CMD_DEFINE(on_cmd_sockcreate)
 {
 	struct modem_socket *sock = NULL;
+	int id;
 
 	/* look up new socket by special id */
 	sock = modem_socket_from_newid(&mdata.socket_config);
 	if (sock) {
-		sock->id = ATOI(argv[0],
-				mdata.socket_config.base_socket_num - 1,
-				"socket_id");
+		id = ATOI(argv[0], -1, "socket_id");
+
 		/* on error give up modem socket */
-		if (sock->id == mdata.socket_config.base_socket_num - 1) {
+		if (modem_socket_id_assign(&mdata.socket_config, sock, id) < 0) {
 			modem_socket_put(&mdata.socket_config, sock->sock_fd);
 		}
 	}
@@ -779,7 +767,7 @@ MODEM_CMD_DEFINE(on_cmd_sockwrite)
 /* Handler: +USECMNG: 0,<type>[0],<internal_name>[1],<md5_string>[2] */
 MODEM_CMD_DEFINE(on_cmd_cert_write)
 {
-	LOG_DBG("cert md5: %s", log_strdup(argv[2]));
+	LOG_DBG("cert md5: %s", argv[2]);
 	return 0;
 }
 #endif
@@ -948,13 +936,17 @@ MODEM_CMD_DEFINE(on_cmd_socknotifycreg)
 }
 
 /* RX thread */
-static void modem_rx(void)
+static void modem_rx(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	while (true) {
 		/* wait for incoming data */
-		k_sem_take(&mdata.iface_data.rx_sem, K_FOREVER);
+		modem_iface_uart_rx_wait(&mctx.iface, K_FOREVER);
 
-		mctx.cmd_handler.process(&mctx.cmd_handler, &mctx.iface);
+		modem_cmd_handler_process(&mctx.cmd_handler, &mctx.iface);
 
 		/* give up time if we have a solid stream of data */
 		k_yield();
@@ -967,36 +959,36 @@ static int pin_init(void)
 
 #if DT_INST_NODE_HAS_PROP(0, mdm_reset_gpios)
 	LOG_DBG("MDM_RESET_PIN -> NOT_ASSERTED");
-	modem_pin_write(&mctx, MDM_RESET, MDM_RESET_NOT_ASSERTED);
+	gpio_pin_set_dt(&reset_gpio, MDM_RESET_NOT_ASSERTED);
 #endif
 
 	LOG_DBG("MDM_POWER_PIN -> ENABLE");
-	modem_pin_write(&mctx, MDM_POWER, MDM_POWER_ENABLE);
+	gpio_pin_set_dt(&power_gpio, 1);
 	k_sleep(K_SECONDS(4));
 
 	LOG_DBG("MDM_POWER_PIN -> DISABLE");
-	modem_pin_write(&mctx, MDM_POWER, MDM_POWER_DISABLE);
+	gpio_pin_set_dt(&power_gpio, 0);
 #if defined(CONFIG_MODEM_UBLOX_SARA_U2)
 	k_sleep(K_SECONDS(1));
 #else
 	k_sleep(K_SECONDS(4));
 #endif
 	LOG_DBG("MDM_POWER_PIN -> ENABLE");
-	modem_pin_write(&mctx, MDM_POWER, MDM_POWER_ENABLE);
+	gpio_pin_set_dt(&power_gpio, 1);
 	k_sleep(K_SECONDS(1));
 
 	/* make sure module is powered off */
 #if DT_INST_NODE_HAS_PROP(0, mdm_vint_gpios)
 	LOG_DBG("Waiting for MDM_VINT_PIN = 0");
 
-	while (modem_pin_read(&mctx, MDM_VINT) > 0) {
+	while (gpio_pin_get_dt(&vint_gpio) > 0) {
 #if defined(CONFIG_MODEM_UBLOX_SARA_U2)
 		/* try to power off again */
 		LOG_DBG("MDM_POWER_PIN -> DISABLE");
-		modem_pin_write(&mctx, MDM_POWER, MDM_POWER_DISABLE);
+		gpio_pin_set_dt(&power_gpio, 0);
 		k_sleep(K_SECONDS(1));
 		LOG_DBG("MDM_POWER_PIN -> ENABLE");
-		modem_pin_write(&mctx, MDM_POWER, MDM_POWER_ENABLE);
+		gpio_pin_set_dt(&power_gpio, 1);
 #endif
 		k_sleep(K_MSEC(100));
 	}
@@ -1008,13 +1000,13 @@ static int pin_init(void)
 
 	unsigned int irq_lock_key = irq_lock();
 
-	modem_pin_write(&mctx, MDM_POWER, MDM_POWER_DISABLE);
+	gpio_pin_set_dt(&power_gpio, 0);
 #if defined(CONFIG_MODEM_UBLOX_SARA_U2)
 	k_usleep(50);		/* 50-80 microseconds */
 #else
 	k_sleep(K_SECONDS(1));
 #endif
-	modem_pin_write(&mctx, MDM_POWER, MDM_POWER_ENABLE);
+	gpio_pin_set_dt(&power_gpio, 1);
 
 	irq_unlock(irq_lock_key);
 
@@ -1024,12 +1016,12 @@ static int pin_init(void)
 	LOG_DBG("Waiting for MDM_VINT_PIN = 1");
 	do {
 		k_sleep(K_MSEC(100));
-	} while (modem_pin_read(&mctx, MDM_VINT) == 0);
+	} while (gpio_pin_get_dt(&vint_gpio) == 0);
 #else
 	k_sleep(K_SECONDS(10));
 #endif
 
-	modem_pin_config(&mctx, MDM_POWER, false);
+	gpio_pin_configure_dt(&power_gpio, GPIO_INPUT);
 
 	LOG_INF("... Done!");
 
@@ -1320,13 +1312,13 @@ restart:
 	counter = 0;
 	/* wait for RSSI < 0 and > -1000 */
 	while (counter++ < MDM_WAIT_FOR_RSSI_COUNT &&
-	       (mctx.data_rssi >= 0 ||
-		mctx.data_rssi <= -1000)) {
+	       (mdata.mdm_rssi >= 0 ||
+		mdata.mdm_rssi <= -1000)) {
 		modem_rssi_query_work(NULL);
 		k_sleep(MDM_WAIT_FOR_RSSI_DELAY);
 	}
 
-	if (mctx.data_rssi >= 0 || mctx.data_rssi <= -1000) {
+	if (mdata.mdm_rssi >= 0 || mdata.mdm_rssi <= -1000) {
 		retry_count++;
 		if (retry_count >= MDM_NETWORK_RETRY_COUNT) {
 			LOG_ERR("Failed network init.  Too many attempts!");
@@ -1425,39 +1417,39 @@ static int create_socket(struct modem_socket *sock, const struct sockaddr *addr)
 	}
 
 	if (sock->ip_proto == IPPROTO_TLS_1_2) {
-		char buf[sizeof("AT+USECPRF=#,#,#######\r")];
+		char atbuf[sizeof("AT+USECPRF=#,#,#######\r")];
 
 		/* Enable socket security */
-		snprintk(buf, sizeof(buf), "AT+USOSEC=%d,1,%d", sock->id, sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USOSEC=%d,1,%d", sock->id, sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Reset the security profile */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Validate server cert against the CA.  */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d,0,1", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d,0,1", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Use TLSv1.2 only */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d,1,3", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d,1,3", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Set root CA filename */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d,3,\"ca\"", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d,3,\"ca\"", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
@@ -1468,7 +1460,7 @@ static int create_socket(struct modem_socket *sock, const struct sockaddr *addr)
 	return 0;
 
 error:
-	LOG_ERR("%s ret:%d", log_strdup(buf), ret);
+	LOG_ERR("%s ret:%d", buf, ret);
 	modem_socket_put(&mdata.socket_config, sock->sock_fd);
 	errno = -ret;
 	return -1;
@@ -1501,8 +1493,8 @@ static int offload_close(void *obj)
 	char buf[sizeof("AT+USOCL=#\r")];
 	int ret;
 
-	/* make sure we assigned an id */
-	if (sock->id < mdata.socket_config.base_socket_num) {
+	/* make sure socket is allocated and assigned an id */
+	if (modem_socket_id_is_assigned(&mdata.socket_config, sock) == false) {
 		return 0;
 	}
 
@@ -1513,7 +1505,7 @@ static int offload_close(void *obj)
 				     NULL, 0U, buf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
-			LOG_ERR("%s ret:%d", log_strdup(buf), ret);
+			LOG_ERR("%s ret:%d", buf, ret);
 		}
 	}
 
@@ -1530,7 +1522,7 @@ static int offload_bind(void *obj, const struct sockaddr *addr,
 	memcpy(&sock->src, addr, sizeof(*addr));
 
 	/* make sure we've created the socket */
-	if (sock->id == mdata.socket_config.sockets_len + 1) {
+	if (modem_socket_is_allocated(&mdata.socket_config, sock) == true) {
 		if (create_socket(sock, addr) < 0) {
 			return -1;
 		}
@@ -1544,7 +1536,7 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 {
 	struct modem_socket *sock = (struct modem_socket *)obj;
 	int ret;
-	char buf[sizeof("AT+USOCO=#,!###.###.###.###!,#####,#\r")];
+	char buf[sizeof("AT+USOCO=###,!####.####.####.####.####.####.####.####!,#####,#\r")];
 	uint16_t dst_port = 0U;
 	char ip_str[NET_IPV6_ADDR_LEN];
 
@@ -1553,7 +1545,8 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 		return -1;
 	}
 
-	if (sock->id < mdata.socket_config.base_socket_num - 1) {
+	/* make sure socket has been allocated */
+	if (modem_socket_is_allocated(&mdata.socket_config, sock) == false) {
 		LOG_ERR("Invalid socket_id(%d) from fd:%d",
 			sock->id, sock->sock_fd);
 		errno = EINVAL;
@@ -1561,7 +1554,7 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 	}
 
 	/* make sure we've created the socket */
-	if (sock->id == mdata.socket_config.sockets_len + 1) {
+	if (modem_socket_id_is_assigned(&mdata.socket_config, sock) == false) {
 		if (create_socket(sock, NULL) < 0) {
 			return -1;
 		}
@@ -1596,7 +1589,7 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 			     NULL, 0U, buf,
 			     &mdata.sem_response, MDM_CMD_CONN_TIMEOUT);
 	if (ret < 0) {
-		LOG_ERR("%s ret:%d", log_strdup(buf), ret);
+		LOG_ERR("%s ret:%d", buf, ret);
 		errno = -ret;
 		return -1;
 	}
@@ -1604,31 +1597,6 @@ static int offload_connect(void *obj, const struct sockaddr *addr,
 	sock->is_connected = true;
 	errno = 0;
 	return 0;
-}
-
-/* support for POLLIN only for now. */
-static int offload_poll(struct zsock_pollfd *fds, int nfds, int msecs)
-{
-	int i;
-	void *obj;
-
-	/* Only accept modem sockets. */
-	for (i = 0; i < nfds; i++) {
-		if (fds[i].fd < 0) {
-			continue;
-		}
-
-		/* If vtable matches, then it's modem socket. */
-		obj = z_get_fd_obj(fds[i].fd,
-				   (const struct fd_op_vtable *)
-						&offload_socket_fd_op_vtable,
-				   EINVAL);
-		if (obj == NULL) {
-			return -1;
-		}
-	}
-
-	return modem_socket_poll(&mdata.socket_config, fds, nfds, msecs);
 }
 
 static ssize_t offload_recvfrom(void *obj, void *buf, size_t len,
@@ -1744,22 +1712,25 @@ static ssize_t offload_sendto(void *obj, const void *buf, size_t len,
 static int offload_ioctl(void *obj, unsigned int request, va_list args)
 {
 	switch (request) {
-	case ZFD_IOCTL_POLL_PREPARE:
-		return -EXDEV;
+	case ZFD_IOCTL_POLL_PREPARE: {
+		struct zsock_pollfd *pfd;
+		struct k_poll_event **pev;
+		struct k_poll_event *pev_end;
 
-	case ZFD_IOCTL_POLL_UPDATE:
-		return -EOPNOTSUPP;
+		pfd = va_arg(args, struct zsock_pollfd *);
+		pev = va_arg(args, struct k_poll_event **);
+		pev_end = va_arg(args, struct k_poll_event *);
 
-	case ZFD_IOCTL_POLL_OFFLOAD: {
-		struct zsock_pollfd *fds;
-		int nfds;
-		int timeout;
+		return modem_socket_poll_prepare(&mdata.socket_config, obj, pfd, pev, pev_end);
+	}
+	case ZFD_IOCTL_POLL_UPDATE: {
+		struct zsock_pollfd *pfd;
+		struct k_poll_event **pev;
 
-		fds = va_arg(args, struct zsock_pollfd *);
-		nfds = va_arg(args, int);
-		timeout = va_arg(args, int);
+		pfd = va_arg(args, struct zsock_pollfd *);
+		pev = va_arg(args, struct k_poll_event **);
 
-		return offload_poll(fds, nfds, timeout);
+		return modem_socket_poll_update(obj, pfd, pev);
 	}
 
 	case F_GETFL:
@@ -1968,12 +1939,27 @@ static const struct socket_op_vtable offload_socket_fd_op_vtable = {
 
 static bool offload_is_supported(int family, int type, int proto)
 {
-	/* TODO offloading always enabled for now. */
+	if (family != AF_INET &&
+	    family != AF_INET6) {
+		return false;
+	}
+
+	if (type != SOCK_DGRAM &&
+	    type != SOCK_STREAM) {
+		return false;
+	}
+
+	if (proto != IPPROTO_TCP &&
+	    proto != IPPROTO_UDP &&
+	    proto != IPPROTO_TLS_1_2) {
+		return false;
+	}
+
 	return true;
 }
 
-NET_SOCKET_REGISTER(ublox_sara_r4, NET_SOCKET_DEFAULT_PRIO, AF_UNSPEC,
-		    offload_is_supported, offload_socket);
+NET_SOCKET_OFFLOAD_REGISTER(ublox_sara_r4, CONFIG_NET_SOCKETS_OFFLOAD_PRIORITY,
+			    AF_UNSPEC, offload_is_supported, offload_socket);
 
 #if defined(CONFIG_DNS_RESOLVER)
 /* TODO: This is a bare-bones implementation of DNS handling
@@ -2038,9 +2024,9 @@ static int offload_getaddrinfo(const char *node, const char *service,
 	}
 
 	LOG_DBG("DNS RESULT: %s",
-		log_strdup(net_addr_ntop(result.ai_family,
+		net_addr_ntop(result.ai_family,
 					 &net_sin(&result_addr)->sin_addr,
-					 sendbuf, NET_IPV4_ADDR_LEN)));
+					 sendbuf, NET_IPV4_ADDR_LEN));
 
 	*res = (struct zsock_addrinfo *)&result;
 	return 0;
@@ -2052,7 +2038,7 @@ static void offload_freeaddrinfo(struct zsock_addrinfo *res)
 	res = NULL;
 }
 
-const struct socket_dns_offload offload_dns_ops = {
+static const struct socket_dns_offload offload_dns_ops = {
 	.getaddrinfo = offload_getaddrinfo,
 	.freeaddrinfo = offload_freeaddrinfo,
 };
@@ -2069,7 +2055,7 @@ static int net_offload_dummy_get(sa_family_t family,
 	return -ENOTSUP;
 }
 
-/* placeholders, until Zepyr IP stack updated to handle a NULL net_offload */
+/* placeholders, until Zephyr IP stack updated to handle a NULL net_offload */
 static struct net_offload modem_net_offload = {
 	.get = net_offload_dummy_get,
 };
@@ -2103,6 +2089,8 @@ static inline uint8_t *modem_get_mac(const struct device *dev)
 	return data->mac_addr;
 }
 
+static int offload_socket(int family, int type, int proto);
+
 static void modem_net_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
@@ -2117,10 +2105,12 @@ static void modem_net_iface_init(struct net_if *iface)
 #ifdef CONFIG_DNS_RESOLVER
 	socket_offload_dns_register(&offload_dns_ops);
 #endif
+
+	net_if_socket_offload_set(iface, offload_socket);
 }
 
-static struct net_if_api api_funcs = {
-	.init = modem_net_iface_init,
+static struct offloaded_if_api api_funcs = {
+	.iface_api.init = modem_net_iface_init,
 };
 
 static const struct modem_cmd response_cmds[] = {
@@ -2154,38 +2144,41 @@ static int modem_init(const struct device *dev)
 #endif
 
 	/* socket config */
-	mdata.socket_config.sockets = &mdata.sockets[0];
-	mdata.socket_config.sockets_len = ARRAY_SIZE(mdata.sockets);
-	mdata.socket_config.base_socket_num = MDM_BASE_SOCKET_NUM;
-	ret = modem_socket_init(&mdata.socket_config,
-				&offload_socket_fd_op_vtable);
+	ret = modem_socket_init(&mdata.socket_config, &mdata.sockets[0], ARRAY_SIZE(mdata.sockets),
+				MDM_BASE_SOCKET_NUM, false, &offload_socket_fd_op_vtable);
 	if (ret < 0) {
 		goto error;
 	}
 
 	/* cmd handler */
-	mdata.cmd_handler_data.cmds[CMD_RESP] = response_cmds;
-	mdata.cmd_handler_data.cmds_len[CMD_RESP] = ARRAY_SIZE(response_cmds);
-	mdata.cmd_handler_data.cmds[CMD_UNSOL] = unsol_cmds;
-	mdata.cmd_handler_data.cmds_len[CMD_UNSOL] = ARRAY_SIZE(unsol_cmds);
-	mdata.cmd_handler_data.match_buf = &mdata.cmd_match_buf[0];
-	mdata.cmd_handler_data.match_buf_len = sizeof(mdata.cmd_match_buf);
-	mdata.cmd_handler_data.buf_pool = &mdm_recv_pool;
-	mdata.cmd_handler_data.alloc_timeout = K_NO_WAIT;
-	mdata.cmd_handler_data.eol = "\r";
-	ret = modem_cmd_handler_init(&mctx.cmd_handler,
-				     &mdata.cmd_handler_data);
+	const struct modem_cmd_handler_config cmd_handler_config = {
+		.match_buf = &mdata.cmd_match_buf[0],
+		.match_buf_len = sizeof(mdata.cmd_match_buf),
+		.buf_pool = &mdm_recv_pool,
+		.alloc_timeout = K_NO_WAIT,
+		.eol = "\r",
+		.user_data = NULL,
+		.response_cmds = response_cmds,
+		.response_cmds_len = ARRAY_SIZE(response_cmds),
+		.unsol_cmds = unsol_cmds,
+		.unsol_cmds_len = ARRAY_SIZE(unsol_cmds),
+	};
+
+	ret = modem_cmd_handler_init(&mctx.cmd_handler, &mdata.cmd_handler_data,
+				     &cmd_handler_config);
 	if (ret < 0) {
 		goto error;
 	}
 
 	/* modem interface */
-	mdata.iface_data.hw_flow_control = DT_PROP(MDM_UART_NODE,
-						   hw_flow_control);
-	mdata.iface_data.rx_rb_buf = &mdata.iface_rb_buf[0];
-	mdata.iface_data.rx_rb_buf_len = sizeof(mdata.iface_rb_buf);
-	ret = modem_iface_uart_init(&mctx.iface, &mdata.iface_data,
-				    MDM_UART_DEV);
+	const struct modem_iface_uart_config uart_config = {
+		.rx_rb_buf = &mdata.iface_rb_buf[0],
+		.rx_rb_buf_len = sizeof(mdata.iface_rb_buf),
+		.dev = MDM_UART_DEV,
+		.hw_flow_control = DT_PROP(MDM_UART_NODE, hw_flow_control),
+	};
+
+	ret = modem_iface_uart_init(&mctx.iface, &mdata.iface_data, &uart_config);
 	if (ret < 0) {
 		goto error;
 	}
@@ -2195,10 +2188,30 @@ static int modem_init(const struct device *dev)
 	mctx.data_model = mdata.mdm_model;
 	mctx.data_revision = mdata.mdm_revision;
 	mctx.data_imei = mdata.mdm_imei;
+	mctx.data_rssi = &mdata.mdm_rssi;
 
 	/* pin setup */
-	mctx.pins = modem_pins;
-	mctx.pins_len = ARRAY_SIZE(modem_pins);
+	ret = gpio_pin_configure_dt(&power_gpio, GPIO_OUTPUT);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure %s pin", "power");
+		goto error;
+	}
+
+#if DT_INST_NODE_HAS_PROP(0, mdm_reset_gpios)
+	ret = gpio_pin_configure_dt(&reset_gpio, GPIO_OUTPUT);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure %s pin", "reset");
+		goto error;
+	}
+#endif
+
+#if DT_INST_NODE_HAS_PROP(0, mdm_vint_gpios)
+	ret = gpio_pin_configure_dt(&vint_gpio, GPIO_INPUT);
+	if (ret < 0) {
+		LOG_ERR("Failed to configure %s pin", "vint");
+		goto error;
+	}
+#endif
 
 	mctx.driver_data = &mdata;
 
@@ -2211,7 +2224,7 @@ static int modem_init(const struct device *dev)
 	/* start RX thread */
 	k_thread_create(&modem_rx_thread, modem_rx_stack,
 			K_KERNEL_STACK_SIZEOF(modem_rx_stack),
-			(k_thread_entry_t) modem_rx,
+			modem_rx,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 #if defined(CONFIG_MODEM_UBLOX_SARA_RSSI_WORK)

@@ -12,8 +12,7 @@ architecture. The board includes a high performance onboard debug probe, audio
 subsystem, and accelerometer, with several options for adding off-the-shelf
 add-on boards for networking, sensors, displays, and other interfaces.
 
-.. image:: ./lpcxpresso55s69.jpg
-   :width: 720px
+.. image:: lpcxpresso55s69.jpg
    :align: center
    :alt: LPCXPRESSO55S69
 
@@ -44,12 +43,16 @@ For more information about the LPC55S69 SoC and LPCXPRESSO55S69 board, see:
 - `LPCXPRESSO55S69 Website`_
 - `LPCXPRESSO55S69 User Guide`_
 - `LPCXPRESSO55S69 Schematics`_
+- `LPCXPRESSO55S69 Debug Firmware`_
 
 Supported Features
 ==================
 
-The lpcxpresso55s69 board configuration supports the following hardware
-features:
+NXP considers the LPCXpresso55S69 as the superset board for the LPC55xx
+series of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire LPC55xx series.  NXP prioritizes enabling
+this board with new support for Zephyr features.  The lpcxpresso55s69 board
+configuration supports the following hardware features:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -66,7 +69,8 @@ features:
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
 +-----------+------------+-------------------------------------+
-| USART     | on-chip    | serial port-polling                 |
+| USART     | on-chip    | serial port-polling;                |
+|           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
 | WWDT      | on-chip    | windowed watchdog timer             |
 +-----------+------------+-------------------------------------+
@@ -80,13 +84,22 @@ features:
 +-----------+------------+-------------------------------------+
 | HWINFO    | on-chip    | Unique device serial number         |
 +-----------+------------+-------------------------------------+
-| USB       | on-chip    | USB device                          |
+| USB HS    | on-chip    | USB High Speed device               |
++-----------+------------+-------------------------------------+
+| USB FS    | on-chip    | USB Full Speed device               |
 +-----------+------------+-------------------------------------+
 | COUNTER   | on-chip    | counter                             |
 +-----------+------------+-------------------------------------+
 | I2S       | on-chip    | i2s                                 |
 +-----------+------------+-------------------------------------+
 | PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| RNG       | on-chip    | entropy;                            |
+|           |            | random                              |
++-----------+------------+-------------------------------------+
+| IAP       | on-chip    | flash programming                   |
++-----------+------------+-------------------------------------+
+| SDIF      | on-chip    | sdhc                                |
 +-----------+------------+-------------------------------------+
 
 Targets available
@@ -157,6 +170,20 @@ functionality of a pin.
 +---------+-----------------+----------------------------+
 | PIO0_15 | SCT0_OUT2       | PWM                        |
 +---------+-----------------+----------------------------+
+| PIO0_24 | SD0_D0          | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_25 | SD0_D1          | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_31 | SD0_D2          | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_7  | SD0_CLK         | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_8  | SD0_CMD         | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO0_9  | SD0_POW_EN      | SDHC                       |
++---------+-----------------+----------------------------+
+| PIO1_0  | SD0_D3          | SDHC                       |
++---------+-----------------+----------------------------+
 
 Memory mappings
 ===============
@@ -164,21 +191,21 @@ Memory mappings
 There are multiple memory configurations, they all start from the
 MCUboot partitioning which looks like the table below
 
-+---------+------------------+---------------------------------+
-| Name    | Address[Size]    | Comment                         |
-+=========+==================+=================================+
-| boot    | 0x00000000[32K]  | Bootloader                      |
-+---------+------------------+---------------------------------+
-| slot0   | 0x00008000[160k] | Image that runs after boot      |
-+---------+------------------+---------------------------------+
-| slot1   | 0x00030000[96k]  | Second image, core 1 or NS      |
-+---------+------------------+---------------------------------+
-| slot2   | 0x00048000[160k] | Updates slot0 image             |
-+---------+------------------+---------------------------------+
-| slot3   | 0x00070000[96k]  | Updates slot1 image             |
-+---------+------------------+---------------------------------+
-| storage | 0x00088000[50k]  | File system, persistent storage |
-+---------+------------------+---------------------------------+
++----------+------------------+---------------------------------+
+| Name     | Address[Size]    | Comment                         |
++==========+==================+=================================+
+| boot     | 0x00000000[32K]  | Bootloader                      |
++----------+------------------+---------------------------------+
+| slot0    | 0x00008000[160k] | Image that runs after boot      |
++----------+------------------+---------------------------------+
+| slot0_ns | 0x00030000[96k]  | Second image, core 1 or NS      |
++----------+------------------+---------------------------------+
+| slot1    | 0x00048000[160k] | Updates slot0 image             |
++----------+------------------+---------------------------------+
+| slot1_ns | 0x00070000[96k]  | Updates slot0_ns image          |
++----------+------------------+---------------------------------+
+| storage  | 0x00088000[50k]  | File system, persistent storage |
++----------+------------------+---------------------------------+
 
 See below examples of how this partitioning is used
 
@@ -229,9 +256,11 @@ Dual Core samples
 System Clock
 ============
 
-The LPC55S69 SoC is configured to use the internal FRO at 96MHz as a source for
-the system clock. Other sources for the system clock are provided in the SOC,
-depending on your system requirements.
+The LPC55S69 SoC is configured to use PLL1 clocked from the external 16MHz
+crystal, running at 144MHz as a source for the system clock. When the flash
+controller is enabled, the core clock will be reduced to 96MHz. The application
+may reconfigure clocks after initialization, provided that the core clock is
+always set to 96MHz when flash programming operations are performed.
 
 Serial Port
 ===========
@@ -262,6 +291,12 @@ path.
 Follow the instructions in :ref:`lpclink2-jlink-onboard-debug-probe` to program
 the J-Link firmware. Please make sure you have the latest firmware for this
 board.
+
+:ref:`lpclink2-cmsis-onboard-debug-probe`
+-----------------------------------------
+
+        1. Install the :ref:`linkserver-debug-host-tools` and make sure they are in your search path.
+        2. To update the debug firmware, please follow the instructions on `LPCXPRESSO55S69 Debug Firmware`
 
 :ref:`opensda-daplink-onboard-debug-probe`
 ------------------------------------------
@@ -311,7 +346,7 @@ a J-Link as follows (reset and erase are for recovering a locked core):
       JLinkExe -device lpc55s69 -if swd -speed 2000 -autoconnect 1
       J-Link>r
       J-Link>erase
-      J-Link>loadfile build/tfm_merged.hex
+      J-Link>loadfile build/zephyr/tfm_merged.hex
 
 We need to reset the board manually after flashing the image to run this code.
 
@@ -355,7 +390,7 @@ should see the following message in the terminal:
    https://www.nxp.com/products/processors-and-microcontrollers/arm-based-processors-and-mcus/lpc-cortex-m-mcus/lpc5500-cortex-m33/high-efficiency-arm-cortex-m33-based-microcontroller-family:LPC55S6x
 
 .. _LPC55S69 Datasheet:
-   https://www.nxp.com/docs/en/data-sheet/LPC55S6x.pdf
+   https://www.nxp.com/docs/en/nxp/data-sheets/LPC55S6x_DS.pdf
 
 .. _LPC55S69 Reference Manual:
    https://www.nxp.com/webapp/Download?colCode=UM11126
@@ -365,6 +400,9 @@ should see the following message in the terminal:
 
 .. _LPCXPRESSO55S69 User Guide:
    https://www.nxp.com/webapp/Download?colCode=UM11158
+
+.. _LPCXPRESSO55S69 Debug Firmware:
+   https://www.nxp.com/docs/en/application-note/AN13206.pdf
 
 .. _LPCXPRESSO55S69 Schematics:
    https://www.nxp.com/webapp/Download?colCode=LPC55S69-SCH

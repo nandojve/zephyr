@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 static inline float out_ev(struct sensor_value *val)
 {
@@ -95,16 +95,16 @@ static void lsm6dsl_trigger_handler(const struct device *dev,
 }
 #endif
 
-void main(void)
+int main(void)
 {
 	int cnt = 0;
 	char out_str[64];
 	struct sensor_value odr_attr;
-	const struct device *lsm6dsl_dev = device_get_binding(DT_LABEL(DT_INST(0, st_lsm6dsl)));
+	const struct device *const lsm6dsl_dev = DEVICE_DT_GET_ONE(st_lsm6dsl);
 
-	if (lsm6dsl_dev == NULL) {
-		printk("Could not get LSM6DSL device\n");
-		return;
+	if (!device_is_ready(lsm6dsl_dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	/* set accel/gyro sampling frequency to 104 Hz */
@@ -114,13 +114,13 @@ void main(void)
 	if (sensor_attr_set(lsm6dsl_dev, SENSOR_CHAN_ACCEL_XYZ,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &odr_attr) < 0) {
 		printk("Cannot set sampling frequency for accelerometer.\n");
-		return;
+		return 0;
 	}
 
 	if (sensor_attr_set(lsm6dsl_dev, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_SAMPLING_FREQUENCY, &odr_attr) < 0) {
 		printk("Cannot set sampling frequency for gyro.\n");
-		return;
+		return 0;
 	}
 
 #ifdef CONFIG_LSM6DSL_TRIGGER
@@ -131,13 +131,13 @@ void main(void)
 
 	if (sensor_trigger_set(lsm6dsl_dev, &trig, lsm6dsl_trigger_handler) != 0) {
 		printk("Could not set sensor type and channel\n");
-		return;
+		return 0;
 	}
 #endif
 
 	if (sensor_sample_fetch(lsm6dsl_dev) < 0) {
 		printk("Sensor sample update error\n");
-		return;
+		return 0;
 	}
 
 	while (1) {

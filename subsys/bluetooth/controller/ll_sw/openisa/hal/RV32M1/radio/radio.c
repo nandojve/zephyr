@@ -7,17 +7,19 @@
  */
 
 #include <string.h>
-#include <sys/printk.h>
-#include <sys/dlist.h>
-#include <sys/byteorder.h>
-#include <bluetooth/addr.h>
-#include <toolchain.h>
-#include <irq.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/bluetooth/addr.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/irq.h>
 #include <errno.h>
 
 #include "util/mem.h"
+
 #include "hal/ccm.h"
 #include "hal/radio.h"
+
+#include "lll/pdu_vendor.h"
 #include "ll_sw/pdu.h"
 
 #include "fsl_xcvr.h"
@@ -26,11 +28,14 @@
 #include "hal/swi.h"
 #include "fsl_cau3_ble.h"	/* must be after irq.h */
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_openisa_radio
-#include "common/log.h"
+#include "common/assert.h"
+
 #include <soc.h>
 #include "hal/debug.h"
+
+#define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_openisa_radio);
 
 static radio_isr_cb_t isr_cb;
 static void *isr_cb_param;
@@ -138,12 +143,14 @@ static struct {
 	uint8_t empty_pdu_rxed;
 } ctx_ccm;
 
+#if defined(CONFIG_BT_CTLR_PRIVACY)
 #define RPA_NO_IRK_MATCH 0xFF	/* No IRK match in AR table */
 
 static struct {
 	uint8_t ar_enable;
 	uint32_t irk_idx;
 } radio_ar_ctx = {0U, RPA_NO_IRK_MATCH};
+#endif /* CONFIG_BT_CTLR_PRIVACY */
 
 static void tmp_cb(void *param)
 {
@@ -214,7 +221,7 @@ static void ar_execute(void *pkt)
 					kCAU3_TaskDoneEvent);
 		if (status != kStatus_Success) {
 			radio_ar_ctx.irk_idx = RPA_NO_IRK_MATCH;
-			BT_ERR("CAUv3 RPA table search failed %d", status);
+			LOG_ERR("CAUv3 RPA table search failed %d", status);
 			return;
 		}
 	}
@@ -515,7 +522,7 @@ void radio_setup(void)
 	 */
 	GENFSK->PB_PARTITION = GENFSK_PB_PARTITION_PB_PARTITION(PB_RX);
 
-	/* Get warmpup times. They are used in TIFS calculations */
+	/* Get warmup times. They are used in TIFS calculations */
 	rx_wu = (XCVR_TSM->END_OF_SEQ & XCVR_TSM_END_OF_SEQ_END_OF_RX_WU_MASK)
 				>> XCVR_TSM_END_OF_SEQ_END_OF_RX_WU_SHIFT;
 	tx_wu = (XCVR_TSM->END_OF_SEQ & XCVR_TSM_END_OF_SEQ_END_OF_TX_WU_MASK)
@@ -575,7 +582,7 @@ void radio_phy_set(uint8_t phy, uint8_t flags)
 
 		err = XCVR_ChangeMode(GFSK_BT_0p5_h_0p5, DR_1MBPS);
 		if (err) {
-			BT_ERR("Failed to change PHY to 1 Mbps");
+			LOG_ERR("Failed to change PHY to 1 Mbps");
 			BT_ASSERT(0);
 		}
 
@@ -592,7 +599,7 @@ void radio_phy_set(uint8_t phy, uint8_t flags)
 
 		err = XCVR_ChangeMode(GFSK_BT_0p5_h_0p5, DR_2MBPS);
 		if (err) {
-			BT_ERR("Failed to change PHY to 2 Mbps");
+			LOG_ERR("Failed to change PHY to 2 Mbps");
 			BT_ASSERT(0);
 		}
 
@@ -677,7 +684,7 @@ void radio_whiten_iv_set(uint32_t iv)
 	GENFSK->WHITEN_SZ_THR |= GENFSK_WHITEN_SZ_THR_WHITEN_SZ_THR(0);
 }
 
-void radio_aa_set(uint8_t *aa)
+void radio_aa_set(const uint8_t *aa)
 {
 	/* Configure Access Address detection using NETWORK ADDRESS 0 */
 	GENFSK->NTW_ADR_0 = *((uint32_t *)aa);
@@ -740,7 +747,7 @@ void radio_pkt_configure(uint8_t bits_len, uint8_t max_len, uint8_t flags)
 	GENFSK->H1_CFG |= GENFSK_H1_CFG_H1_MASK(0) |
 			  GENFSK_H1_CFG_H1_MATCH(0);
 
-	/* set Rx watermak to AA + PDU header */
+	/* set Rx watermark to AA + PDU header */
 	GENFSK->RX_WATERMARK = GENFSK_RX_WATERMARK_RX_WATERMARK(RX_WTMRK);
 }
 
@@ -899,8 +906,9 @@ void radio_crc_configure(uint32_t polynomial, uint32_t iv)
 
 uint32_t radio_crc_is_valid(void)
 {
-	if (force_bad_crc)
+	if (force_bad_crc) {
 		return 0;
+	}
 
 	uint32_t radio_crc = (GENFSK->XCVR_STS & GENFSK_XCVR_STS_CRC_VALID_MASK) >>
 						GENFSK_XCVR_STS_CRC_VALID_SHIFT;
@@ -1259,9 +1267,9 @@ void *radio_ccm_rx_pkt_set_ut(struct ccm *ccm, uint8_t phy, void *pkt)
 	radio_ccm_is_done();
 
 	if (ctx_ccm.auth_mic_valid == 1 && ((uint8_t *)pkt)[2] == 0x06) {
-		BT_INFO("Passed decrypt\n");
+		LOG_INF("Passed decrypt\n");
 	} else {
-		BT_INFO("Failed decrypt\n");
+		LOG_INF("Failed decrypt\n");
 	}
 
 	return result;
@@ -1294,7 +1302,7 @@ void *radio_ccm_rx_pkt_set(struct ccm *ccm, uint8_t phy, void *pkt)
 	/* Loads the key into CAU3's DMEM and expands the AES key schedule. */
 	status = CAU3_AES_SetKey(CAU3, &handle, key_local, 16);
 	if (status != kStatus_Success) {
-		BT_ERR("CAUv3 AES key set failed %d", status);
+		LOG_ERR("CAUv3 AES key set failed %d", status);
 		return NULL;
 	}
 
@@ -1356,9 +1364,9 @@ void *radio_ccm_tx_pkt_set_ut(struct ccm *ccm, void *pkt)
 	result = radio_ccm_tx_pkt_set(ccm, pkt);
 
 	if (memcmp(result, data_ref_out, sizeof(data_ref_out))) {
-		BT_INFO("Failed encrypt\n");
+		LOG_INF("Failed encrypt\n");
 	} else {
-		BT_INFO("Passed encrypt\n");
+		LOG_INF("Passed encrypt\n");
 	}
 
 	return result;
@@ -1393,7 +1401,7 @@ void *radio_ccm_tx_pkt_set(struct ccm *ccm, void *pkt)
 	/* Loads the key into CAU3's DMEM and expands the AES key schedule. */
 	status = CAU3_AES_SetKey(CAU3, &handle, key_local, 16);
 	if (status != kStatus_Success) {
-		BT_ERR("CAUv3 AES key set failed %d", status);
+		LOG_ERR("CAUv3 AES key set failed %d", status);
 		return NULL;
 	}
 
@@ -1406,7 +1414,7 @@ void *radio_ccm_tx_pkt_set(struct ccm *ccm, void *pkt)
 				 ctx_ccm.nonce.bytes, 13,
 				 &aad, 1, auth_mic, CAU3_BLE_MIC_SIZE);
 	if (status != kStatus_Success) {
-		BT_ERR("CAUv3 AES CCM decrypt failed %d", status);
+		LOG_ERR("CAUv3 AES CCM decrypt failed %d", status);
 		return 0;
 	}
 
@@ -1437,7 +1445,7 @@ uint32_t radio_ccm_is_done(void)
 				ctx_ccm.nonce.bytes, 13,
 				&aad, 1, auth_mic, CAU3_BLE_MIC_SIZE);
 		if (status != kStatus_Success) {
-			BT_ERR("CAUv3 AES CCM decrypt failed %d", status);
+			LOG_ERR("CAUv3 AES CCM decrypt failed %d", status);
 			return 0;
 		}
 
@@ -1466,6 +1474,7 @@ uint32_t radio_ccm_is_available(void)
 	return ctx_ccm.empty_pdu_rxed;
 }
 
+#if defined(CONFIG_BT_CTLR_PRIVACY)
 void radio_ar_configure(uint32_t nirk, void *irk)
 {
 	status_t status;
@@ -1474,14 +1483,13 @@ void radio_ar_configure(uint32_t nirk, void *irk)
 	/* Initialize CAUv3 RPA table */
 	status = CAU3_RPAtableInit(CAU3, kCAU3_TaskDoneEvent);
 	if (kStatus_Success != status) {
-		BT_ERR("CAUv3 RPA table init failed");
+		LOG_ERR("CAUv3 RPA table init failed");
 		return;
 	}
 
 	/* CAUv3 RPA table is limited to CONFIG_BT_CTLR_RL_SIZE entries */
 	if (nirk > CONFIG_BT_CTLR_RL_SIZE) {
-		BT_WARN("Max CAUv3 RPA table size is %d",
-			CONFIG_BT_CTLR_RL_SIZE);
+		LOG_WRN("Max CAUv3 RPA table size is %d", CONFIG_BT_CTLR_RL_SIZE);
 		nirk = CONFIG_BT_CTLR_RL_SIZE;
 	}
 
@@ -1492,7 +1500,7 @@ void radio_ar_configure(uint32_t nirk, void *irk)
 		status = CAU3_RPAtableInsertKey(CAU3, (uint32_t *)&pirk,
 						kCAU3_TaskDoneEvent);
 		if (kStatus_Success != status) {
-			BT_ERR("CAUv3 RPA table insert failed");
+			LOG_ERR("CAUv3 RPA table insert failed");
 			return;
 		}
 	}
@@ -1516,6 +1524,7 @@ uint32_t radio_ar_has_match(void)
 {
 	return (radio_ar_ctx.irk_idx != RPA_NO_IRK_MATCH);
 }
+#endif /* CONFIG_BT_CTLR_PRIVACY */
 
 uint32_t radio_sleep(void)
 {

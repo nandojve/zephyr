@@ -23,8 +23,9 @@
 
 #include <stm32l4xx.h>
 
-/* Add generated devicetree information and STM32 helper macros */
-#include <st_stm32_dt.h>
+/* The STM32 HAL headers define these, but they conflict with the Zephyr can.h */
+#undef CAN_MODE_NORMAL
+#undef CAN_MODE_LOOPBACK
 
 #endif /* !_ASMLANGUAGE */
 

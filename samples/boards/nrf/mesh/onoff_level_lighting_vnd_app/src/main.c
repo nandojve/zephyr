@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 
 #include "app_gpio.h"
 #include "ble_mesh.h"
@@ -14,11 +14,6 @@
 #include "state_binding.h"
 #include "storage.h"
 #include "transition.h"
-
-#if defined(CONFIG_MCUMGR)
-#include <mgmt/mcumgr/smp_bt.h>
-#include "smp_svr.h"
-#endif
 
 static bool reset;
 
@@ -94,8 +89,7 @@ static void light_default_status_init(void)
 void update_vnd_led_gpio(void)
 {
 #ifndef ONE_LED_ONE_BUTTON_BOARD
-	gpio_pin_set(led_device[1], DT_GPIO_PIN(DT_ALIAS(led1), gpios),
-		     vnd_user_data.current == STATE_ON);
+	gpio_pin_set_dt(&led_device[1], vnd_user_data.current == STATE_ON);
 #endif
 }
 
@@ -109,13 +103,10 @@ void update_led_gpio(void)
 
 	printk("power-> %d, color-> %d\n", power, color);
 
-	gpio_pin_set(led_device[0], DT_GPIO_PIN(DT_ALIAS(led0), gpios),
-		     ctl->light->current);
+	gpio_pin_set_dt(&led_device[0], ctl->light->current);
 #ifndef ONE_LED_ONE_BUTTON_BOARD
-	gpio_pin_set(led_device[2], DT_GPIO_PIN(DT_ALIAS(led2), gpios),
-		     power < 50);
-	gpio_pin_set(led_device[3], DT_GPIO_PIN(DT_ALIAS(led3), gpios),
-		     color < 50);
+	gpio_pin_set_dt(&led_device[2], power < 50);
+	gpio_pin_set_dt(&led_device[3], color < 50);
 #endif
 }
 
@@ -152,17 +143,13 @@ static void reset_counter_timer_handler(struct k_timer *dummy)
 
 K_TIMER_DEFINE(reset_counter_timer, reset_counter_timer_handler, NULL);
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	light_default_var_init();
 
 	app_gpio_init();
-
-#if defined(CONFIG_MCUMGR)
-	smp_svr_init();
-#endif
 
 	printk("Initializing...\n");
 
@@ -172,7 +159,7 @@ void main(void)
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	bt_ready();
@@ -183,11 +170,5 @@ void main(void)
 
 	short_time_multireset_bt_mesh_unprovisioning();
 	k_timer_start(&reset_counter_timer, K_MSEC(7000), K_NO_WAIT);
-
-#if defined(CONFIG_MCUMGR)
-	/* Initialize the Bluetooth mcumgr transport. */
-	smp_bt_register();
-
-	k_timer_start(&smp_svr_timer, K_NO_WAIT, K_MSEC(1000));
-#endif
+	return 0;
 }

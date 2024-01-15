@@ -6,14 +6,14 @@
 
 #define DT_DRV_COMPAT adi_adxl372
 
-#include <device.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
-#include <kernel.h>
-#include <drivers/sensor.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
 #include "adxl372.h"
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(ADXL372, CONFIG_SENSOR_LOG_LEVEL);
 
 static void adxl372_thread_cb(const struct device *dev)
@@ -34,17 +34,17 @@ static void adxl372_thread_cb(const struct device *dev)
 		 */
 		if (cfg->max_peak_detect_mode &&
 			ADXL372_STATUS_2_INACT(status2)) {
-			drv_data->th_handler(dev, &drv_data->th_trigger);
+			drv_data->th_handler(dev, drv_data->th_trigger);
 		} else if (!cfg->max_peak_detect_mode &&
 			(ADXL372_STATUS_2_INACT(status2) ||
 			ADXL372_STATUS_2_ACTIVITY(status2))) {
-			drv_data->th_handler(dev, &drv_data->th_trigger);
+			drv_data->th_handler(dev, drv_data->th_trigger);
 		}
 	}
 
 	if ((drv_data->drdy_handler != NULL) &&
 		ADXL372_STATUS_1_DATA_RDY(status1)) {
-		drv_data->drdy_handler(dev, &drv_data->drdy_trigger);
+		drv_data->drdy_handler(dev, drv_data->drdy_trigger);
 	}
 
 	ret = gpio_pin_interrupt_configure_dt(&cfg->interrupt,
@@ -69,8 +69,13 @@ static void adxl372_gpio_callback(const struct device *dev,
 }
 
 #if defined(CONFIG_ADXL372_TRIGGER_OWN_THREAD)
-static void adxl372_thread(struct adxl372_data *drv_data)
+static void adxl372_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct adxl372_data *drv_data = p1;
+
 	while (true) {
 		k_sem_take(&drv_data->gpio_sem, K_FOREVER);
 		adxl372_thread_cb(drv_data->dev);
@@ -105,13 +110,13 @@ int adxl372_trigger_set(const struct device *dev,
 	switch (trig->type) {
 	case SENSOR_TRIG_THRESHOLD:
 		drv_data->th_handler = handler;
-		drv_data->th_trigger = *trig;
+		drv_data->th_trigger = trig;
 		int_mask = ADXL372_INT1_MAP_ACT_MSK |
 			   ADXL372_INT1_MAP_INACT_MSK;
 		break;
 	case SENSOR_TRIG_DATA_READY:
 		drv_data->drdy_handler = handler;
-		drv_data->drdy_trigger = *trig;
+		drv_data->drdy_trigger = trig;
 		int_mask = ADXL372_INT1_MAP_DATA_RDY_MSK;
 		break;
 	default:
@@ -125,7 +130,7 @@ int adxl372_trigger_set(const struct device *dev,
 		int_en = 0U;
 	}
 
-	ret = adxl372_reg_write_mask(dev, ADXL372_INT1_MAP, int_mask, int_en);
+	ret = drv_data->hw_tf->write_reg_mask(dev, ADXL372_INT1_MAP, int_mask, int_en);
 	if (ret < 0) {
 		return ret;
 	}
@@ -150,7 +155,7 @@ int adxl372_init_interrupt(const struct device *dev)
 	struct adxl372_data *drv_data = dev->data;
 	int ret;
 
-	if (!device_is_ready(cfg->interrupt.port)) {
+	if (!gpio_is_ready_dt(&cfg->interrupt)) {
 		LOG_ERR("GPIO port %s not ready", cfg->interrupt.port->name);
 		return -EINVAL;
 	}
@@ -177,7 +182,7 @@ int adxl372_init_interrupt(const struct device *dev)
 
 	k_thread_create(&drv_data->thread, drv_data->thread_stack,
 			CONFIG_ADXL372_THREAD_STACK_SIZE,
-			(k_thread_entry_t)adxl372_thread, drv_data,
+			adxl372_thread, drv_data,
 			NULL, NULL, K_PRIO_COOP(CONFIG_ADXL372_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_ADXL372_TRIGGER_GLOBAL_THREAD)

@@ -5,23 +5,28 @@
  */
 
 /dts-v1/;
+#include <freq.h>
 #include <atmel/samd20.dtsi>
+#include <atmel/samx2xx18.dtsi>
+#include "atsamd20_xpro-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "SAM D20 Xplained Pro";
 	compatible = "atsamd20,xpro", "atmel,samd20j18", "atmel,samd20";
-
-	aliases {
-		led0 = &yellow_led;
-		sw0 = &user_button;
-		i2c-0 = &sercom2;
-	};
 
 	chosen {
 		zephyr,console = &sercom3;
 		zephyr,shell-uart = &sercom3;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+	};
+
+	/* These aliases are provided for compatibility with samples */
+	aliases {
+		led0 = &yellow_led;
+		sw0 = &user_button;
+		i2c-0 = &sercom2;
 	};
 
 	leds {
@@ -37,12 +42,13 @@
 		user_button: button_0 {
 			gpios = <&porta 15 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "SW0";
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
 };
 
 &cpu0 {
-	clock-frequency = <48000000>;
+	clock-frequency = <DT_FREQ_M(48)>;
 };
 
 &sercom0 {
@@ -53,6 +59,9 @@
 	#address-cells = <1>;
 	#size-cells = <0>;
 	cs-gpios = <&porta 5 GPIO_ACTIVE_LOW>;
+
+	pinctrl-0 = <&sercom0_spi_default>;
+	pinctrl-names = "default";
 };
 
 &sercom2 {
@@ -61,6 +70,9 @@
 	clock-frequency = <I2C_BITRATE_FAST>;
 	#address-cells = <1>;
 	#size-cells = <0>;
+
+	pinctrl-0 = <&sercom2_i2c_default>;
+	pinctrl-names = "default";
 };
 
 &sercom3 {
@@ -70,7 +82,8 @@
 	rxpo = <3>;
 	txpo = <1>;
 
-	pinctrl-0 = <&pa25c_sercom3_pad3 &pa24c_sercom3_pad2>;
+	pinctrl-0 = <&sercom3_uart_default>;
+	pinctrl-names = "default";
 };
 
 &sercom4 {
@@ -80,7 +93,8 @@
 	rxpo = <1>;
 	txpo = <0>;
 
-	pinctrl-0 = <&pb9d_sercom4_pad1 &pb8d_sercom4_pad0>;
+	pinctrl-0 = <&sercom4_uart_default>;
+	pinctrl-names = "default";
 };
 
 &flash0 {
@@ -99,8 +113,4 @@
 			reg = <0x0003c000 0x00004000>;
 		};
 	};
-};
-
-&rtc {
-	status = "okay";
 };

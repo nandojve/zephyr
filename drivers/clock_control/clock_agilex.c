@@ -1,24 +1,13 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * Copyright (C) 2021, Intel Corporation
+ * Copyright (C) 2021-2022, Intel Corporation
  *
  */
 
-#include <drivers/clock_control.h>
-#include <drivers/clock_control/clock_agilex_ll.h>
-#include <dt-bindings/clock/intel_socfpga_clock.h>
-#include <logging/log.h>
-#include <soc.h>
-
-LOG_MODULE_REGISTER(clock_control, CONFIG_CLOCK_CONTROL_LOG_LEVEL);
-
-static int clk_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-	LOG_INF("Intel Clock driver initialized");
-	return 0;
-}
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/clock_control/clock_agilex_ll.h>
+#include <zephyr/dt-bindings/clock/intel_socfpga_clock.h>
 
 static int clk_get_rate(const struct device *dev,
 			clock_control_subsys_t sub_system,
@@ -26,9 +15,7 @@ static int clk_get_rate(const struct device *dev,
 {
 	ARG_UNUSED(dev);
 
-	struct clock_attr *attr = (struct clock_attr *)(sub_system);
-
-	switch (attr->clock_id) {
+	switch ((intptr_t) sub_system) {
 	case INTEL_SOCFPGA_CLOCK_MPU:
 		*rate = get_mpu_clk();
 		break;
@@ -52,6 +39,6 @@ static const struct clock_control_driver_api clk_api = {
 	.get_rate = clk_get_rate
 };
 
-DEVICE_DT_DEFINE(DT_NODELABEL(clock), clk_init, NULL, NULL, NULL,
+DEVICE_DT_DEFINE(DT_NODELABEL(clock), NULL, NULL, NULL, NULL,
 		 PRE_KERNEL_1, CONFIG_CLOCK_CONTROL_INIT_PRIORITY,
 		 &clk_api);

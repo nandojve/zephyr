@@ -7,15 +7,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(net_echo_server_sample, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 #include <stdio.h>
 
-#include <net/socket.h>
-#include <net/tls_credentials.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/tls_credentials.h>
 
 #include "common.h"
 #include "certificate.h"
@@ -150,8 +150,6 @@ static void process_udp4(void)
 		return;
 	}
 
-	k_work_reschedule(&conf.ipv4.udp.stats_print, K_SECONDS(STATS_TIMER));
-
 	while (ret == 0) {
 		ret = process_udp(&conf.ipv4);
 		if (ret < 0) {
@@ -176,8 +174,6 @@ static void process_udp6(void)
 		return;
 	}
 
-	k_work_reschedule(&conf.ipv6.udp.stats_print, K_SECONDS(STATS_TIMER));
-
 	while (ret == 0) {
 		ret = process_udp(&conf.ipv6);
 		if (ret < 0) {
@@ -188,7 +184,8 @@ static void process_udp6(void)
 
 static void print_stats(struct k_work *work)
 {
-	struct data *data = CONTAINER_OF(work, struct data, udp.stats_print);
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct data *data = CONTAINER_OF(dwork, struct data, udp.stats_print);
 	int total_received = atomic_get(&data->udp.bytes_received);
 
 	if (total_received) {
@@ -216,6 +213,8 @@ void start_udp(void)
 		k_work_init_delayable(&conf.ipv6.udp.stats_print, print_stats);
 		k_thread_name_set(udp6_thread_id, "udp6");
 		k_thread_start(udp6_thread_id);
+		k_work_reschedule(&conf.ipv6.udp.stats_print,
+				  K_SECONDS(STATS_TIMER));
 	}
 
 	if (IS_ENABLED(CONFIG_NET_IPV4)) {
@@ -226,6 +225,8 @@ void start_udp(void)
 		k_work_init_delayable(&conf.ipv4.udp.stats_print, print_stats);
 		k_thread_name_set(udp4_thread_id, "udp4");
 		k_thread_start(udp4_thread_id);
+		k_work_reschedule(&conf.ipv4.udp.stats_print,
+				  K_SECONDS(STATS_TIMER));
 	}
 }
 

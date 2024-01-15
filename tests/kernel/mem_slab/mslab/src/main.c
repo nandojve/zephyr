@@ -23,13 +23,13 @@
  * will have unpredictable side effects.
  */
 
-#include <tc_util.h>
+#include <zephyr/tc_util.h>
 #include <stdbool.h>
-#include <zephyr.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
 
 /* size of stack area used by each thread */
-#define STACKSIZE (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACKSIZE (1024 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 /* Number of memory blocks. The minimum number of blocks needed to run the
  * test is 2
@@ -54,7 +54,6 @@ K_MEM_SLAB_DEFINE(map_lgblks, 1024, NUMBLOCKS, 4);
  * SEM_REGRESDONE and SEM_HELPERDONE to synchronize between different parts
  * of the test.
  *
- * @return  N/A
  */
 
 void helper_thread(void)
@@ -86,20 +85,20 @@ void helper_thread(void)
 		 "from alloc timeout\n", __func__);
 
 	TC_PRINT("%s: About to free a memory block\n", __func__);
-	k_mem_slab_free(&map_lgblks, &ptr[0]);
+	k_mem_slab_free(&map_lgblks, ptr[0]);
 	k_sem_give(&SEM_HELPERDONE);
 
 	/* Part 5 of test */
 	k_sem_take(&SEM_REGRESSDONE, K_FOREVER);
 	TC_PRINT("(5) <%s> freeing the next block\n", __func__);
 	TC_PRINT("%s: About to free another memory block\n", __func__);
-	k_mem_slab_free(&map_lgblks, &ptr[1]);
+	k_mem_slab_free(&map_lgblks, ptr[1]);
 
 	/*
 	 * Free all the other blocks.  The first 2 blocks are freed by this task
 	 */
 	for (int i = 2; i < NUMBLOCKS; i++) {
-		k_mem_slab_free(&map_lgblks, &ptr[i]);
+		k_mem_slab_free(&map_lgblks, ptr[i]);
 	}
 	TC_PRINT("%s: freed all blocks allocated by this task\n", __func__);
 
@@ -122,7 +121,6 @@ void helper_thread(void)
  *
  * @param p    pointer to pointer of allocated blocks
  *
- * @return  TC_PASS, TC_FAIL
  */
 
 void test_slab_get_all_blocks(void **p)
@@ -165,7 +163,6 @@ void test_slab_get_all_blocks(void **p)
  *
  * @param p    pointer to pointer of allocated blocks
  *
- * @return  TC_PASS, TC_FAIL
  */
 
 void test_slab_free_all_blocks(void **p)
@@ -177,7 +174,7 @@ void test_slab_free_all_blocks(void **p)
 
 		TC_PRINT("  block ptr to free p[%d] = %p\n", i, p[i]);
 		/* Free memory block */
-		k_mem_slab_free(&map_lgblks, &p[i]);
+		k_mem_slab_free(&map_lgblks, p[i]);
 
 		TC_PRINT("map_lgblks freed %d block\n", i + 1);
 
@@ -209,8 +206,7 @@ void test_slab_free_all_blocks(void **p)
  * @see k_mem_slab_alloc(), k_mem_slab_num_used_get(),
  * memset(), k_mem_slab_free()
  */
-
-void test_mslab(void)
+ZTEST(memory_slab_1cpu, test_mslab)
 {
 	int ret_value;                  /* task_mem_map_xxx interface return value */
 	void *b;                        /* Pointer to memory block */
@@ -271,7 +267,7 @@ void test_mslab(void)
 	/* Free memory block */
 	TC_PRINT("%s: Used %d block\n", __func__,
 		 k_mem_slab_num_used_get(&map_lgblks));
-	k_mem_slab_free(&map_lgblks, &b);
+	k_mem_slab_free(&map_lgblks, b);
 	TC_PRINT("%s: 1 block freed, used %d block\n",
 		 __func__,  k_mem_slab_num_used_get(&map_lgblks));
 }
@@ -280,9 +276,4 @@ K_THREAD_DEFINE(HELPER, STACKSIZE, helper_thread, NULL, NULL, NULL,
 		7, 0, 0);
 
 /*test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(memory_slab,
-			 ztest_1cpu_unit_test(test_mslab));
-	ztest_run_test_suite(memory_slab);
-}
+ZTEST_SUITE(memory_slab_1cpu, NULL, NULL, ztest_simple_1cpu_before, ztest_simple_1cpu_after, NULL);

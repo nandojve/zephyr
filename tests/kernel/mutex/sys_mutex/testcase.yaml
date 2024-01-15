@@ -1,8 +1,15 @@
 tests:
-  system.mutex:
+  kernel.mutex.system:
     filter: CONFIG_ARCH_HAS_USERSPACE
-    tags: kernel userspace
-  system.mutex.nouser:
-    tags: kernel
+    arch_exclude:
+      - posix
+    tags:
+      - kernel
+      - userspace
+      - mutex
+  kernel.mutex.system.nouser:
+    tags:
+      - kernel
+      - mutex
     extra_configs:
       - CONFIG_TEST_USERSPACE=n

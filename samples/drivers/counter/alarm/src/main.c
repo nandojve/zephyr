@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <device.h>
-#include <drivers/counter.h>
-#include <sys/printk.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/counter.h>
+#include <zephyr/sys/printk.h>
 
 #define DELAY 2000000
 #define ALARM_CHANNEL_ID 0
@@ -16,23 +16,43 @@
 struct counter_alarm_cfg alarm_cfg;
 
 #if defined(CONFIG_BOARD_ATSAMD20_XPRO)
-#define TIMER DT_LABEL(DT_NODELABEL(tc4))
+#define TIMER DT_NODELABEL(tc4)
 #elif defined(CONFIG_SOC_FAMILY_SAM)
-#define TIMER DT_LABEL(DT_NODELABEL(tc0))
+#define TIMER DT_NODELABEL(tc0)
 #elif defined(CONFIG_COUNTER_MICROCHIP_MCP7940N)
-#define TIMER DT_LABEL(DT_NODELABEL(extrtc0))
-#elif defined(CONFIG_COUNTER_RTC0)
-#define TIMER DT_LABEL(DT_NODELABEL(rtc0))
+#define TIMER DT_NODELABEL(extrtc0)
+#elif defined(CONFIG_COUNTER_NRF_RTC)
+#define TIMER DT_NODELABEL(rtc0)
+#elif defined(CONFIG_COUNTER_TIMER_STM32)
+#define TIMER DT_INST(0, st_stm32_counter)
 #elif defined(CONFIG_COUNTER_RTC_STM32)
-#define TIMER DT_LABEL(DT_INST(0, st_stm32_rtc))
+#define TIMER DT_INST(0, st_stm32_rtc)
+#elif defined(CONFIG_COUNTER_SMARTBOND_TIMER)
+#define TIMER DT_NODELABEL(timer3)
 #elif defined(CONFIG_COUNTER_NATIVE_POSIX)
-#define TIMER DT_LABEL(DT_NODELABEL(counter0))
+#define TIMER DT_NODELABEL(counter0)
 #elif defined(CONFIG_COUNTER_XLNX_AXI_TIMER)
-#define TIMER DT_LABEL(DT_INST(0, xlnx_xps_timer_1_00_a))
-#elif defined(CONFIG_COUNTER_ESP32)
-#define TIMER DT_LABEL(DT_NODELABEL(timer0))
+#define TIMER DT_INST(0, xlnx_xps_timer_1_00_a)
+#elif defined(CONFIG_COUNTER_TMR_ESP32)
+#define TIMER DT_NODELABEL(timer0)
 #elif defined(CONFIG_COUNTER_MCUX_CTIMER)
-#define TIMER DT_LABEL(DT_NODELABEL(ctimer0))
+#define TIMER DT_NODELABEL(ctimer0)
+#elif defined(CONFIG_COUNTER_NXP_S32_SYS_TIMER)
+#define TIMER DT_NODELABEL(stm0)
+#elif defined(CONFIG_COUNTER_TIMER_GD32)
+#define TIMER DT_NODELABEL(timer0)
+#elif defined(CONFIG_COUNTER_GECKO_RTCC)
+#define TIMER DT_NODELABEL(rtcc0)
+#elif defined(CONFIG_COUNTER_GECKO_STIMER)
+#define TIMER DT_NODELABEL(stimer0)
+#elif defined(CONFIG_COUNTER_INFINEON_CAT1)
+#define TIMER DT_NODELABEL(counter0_0)
+#elif defined(CONFIG_COUNTER_AMBIQ)
+#define TIMER DT_NODELABEL(counter0)
+#elif defined(CONFIG_COUNTER_SNPS_DW)
+#define TIMER DT_NODELABEL(timer0)
+#elif defined(CONFIG_COUNTER_TIMER_RPI_PICO)
+#define TIMER DT_NODELABEL(timer)
 #endif
 
 static void test_counter_interrupt_fn(const struct device *counter_dev,
@@ -72,16 +92,16 @@ static void test_counter_interrupt_fn(const struct device *counter_dev,
 	}
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *counter_dev;
+	const struct device *const counter_dev = DEVICE_DT_GET(TIMER);
 	int err;
 
 	printk("Counter alarm sample\n\n");
-	counter_dev = device_get_binding(TIMER);
-	if (counter_dev == NULL) {
-		printk("Device not found\n");
-		return;
+
+	if (!device_is_ready(counter_dev)) {
+		printk("device not ready.\n");
+		return 0;
 	}
 
 	counter_start(counter_dev);
@@ -109,4 +129,5 @@ void main(void)
 	while (1) {
 		k_sleep(K_FOREVER);
 	}
+	return 0;
 }

@@ -11,10 +11,9 @@
  * Core thread related primitives for the ARM64 Cortex-A
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <ksched.h>
-#include <wait_q.h>
-#include <arch/cpu.h>
+#include <zephyr/arch/cpu.h>
 
 /*
  * Note about stack usage:
@@ -29,18 +28,34 @@
  *   normal execution. When at exception is taken or a syscall is called the
  *   stack pointer switches to SP_EL1 and the execution starts using the
  *   privileged portion of the user stack without touching SP_EL0. This portion
- *   is marked as not user accessible in the MMU.
+ *   is marked as not user accessible in the MMU/MPU.
+ *
+ * - a stack guard region will be added bellow the kernel stack when
+ *   ARM64_STACK_PROTECTION is enabled. In this case, SP_EL0 will always point
+ *   to the safe exception stack in the kernel space. For the kernel thread,
+ *   SP_EL0 will not change always pointing to safe exception stack. For the
+ *   userspace thread, SP_EL0 will switch from the user stack to the safe
+ *   exception stack when entering the EL1 mode, and restore to the user stack
+ *   when backing to userspace (EL0).
  *
  *   Kernel threads:
+ *
+ * High memory addresses
  *
  *    +---------------+ <- stack_ptr
  *  E |     ESF       |
  *  L |<<<<<<<<<<<<<<<| <- SP_EL1
  *  1 |               |
- *    +---------------+
-
+ *    +---------------+ <- stack limit
+ *    |  Stack guard  | } Z_ARM64_STACK_GUARD_SIZE (protected by MMU/MPU)
+ *    +---------------+ <- stack_obj
+ *
+ * Low Memory addresses
+ *
  *
  *   User threads:
+ *
+ * High memory addresses
  *
  *    +---------------+ <- stack_ptr
  *  E |               |
@@ -50,13 +65,14 @@
  *  E |     ESF       |               |  Privileged portion of the stack
  *  L +>>>>>>>>>>>>>>>+ <- SP_EL1     |_ used during exceptions and syscalls
  *  1 |               |               |  of size ARCH_THREAD_STACK_RESERVED
- *    +---------------+ <- stack_obj..|
+ *    +---------------+ <- stack limit|
+ *    |  Stack guard  | } Z_ARM64_STACK_GUARD_SIZE (protected by MMU/MPU)
+ *    +---------------+ <- stack_obj
  *
- *  When a new user thread is created or when a kernel thread switches to user
- *  mode the initial ESF is relocated to the privileged portion of the stack
- *  and the values of stack_ptr, SP_EL0 and SP_EL1 are correctly reset when
- *  going through arch_user_mode_enter() and z_arm64_userspace_enter()
+ * Low Memory addresses
  *
+ *  When a kernel thread switches to user mode the SP_EL0 and SP_EL1
+ *  values are reset accordingly in arch_user_mode_enter().
  */
 
 #ifdef CONFIG_USERSPACE
@@ -70,7 +86,14 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 		     char *stack_ptr, k_thread_entry_t entry,
 		     void *p1, void *p2, void *p3)
 {
+	extern void z_arm64_exit_exc(void);
 	z_arch_esf_t *pInitCtx;
+
+	/*
+	 * Clean the thread->arch to avoid unexpected behavior because the
+	 * thread->arch might be dirty
+	 */
+	memset(&thread->arch, 0, sizeof(thread->arch));
 
 	/*
 	 * The ESF is now hosted at the top of the stack. For user threads this
@@ -102,9 +125,11 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	} else {
 		pInitCtx->elr = (uint64_t)z_thread_entry;
 	}
+
 #else
 	pInitCtx->elr = (uint64_t)z_thread_entry;
 #endif
+
 	/* Keep using SP_EL1 */
 	pInitCtx->spsr = SPSR_MODE_EL1H | DAIF_FIQ_BIT;
 
@@ -114,60 +139,62 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	/*
 	 * We are saving SP_EL1 to pop out entry and parameters when going
 	 * through z_arm64_exit_exc(). For user threads the definitive location
-	 * of SP_EL1 will be set implicitly when going through
-	 * z_arm64_userspace_enter() (see comments there)
+	 * of SP_EL1 will be set in arch_user_mode_enter().
 	 */
 	thread->callee_saved.sp_elx = (uint64_t)pInitCtx;
+	thread->callee_saved.lr = (uint64_t)z_arm64_exit_exc;
 
 	thread->switch_handle = thread;
-}
-
-void *z_arch_get_next_switch_handle(struct k_thread **old_thread)
-{
-	*old_thread =  _current;
-
-	return z_get_next_switch_handle(*old_thread);
+#if defined(CONFIG_ARM64_STACK_PROTECTION)
+	thread->arch.stack_limit = (uint64_t)stack + Z_ARM64_STACK_GUARD_SIZE;
+	z_arm64_thread_mem_domains_init(thread);
+#endif
 }
 
 #ifdef CONFIG_USERSPACE
 FUNC_NORETURN void arch_user_mode_enter(k_thread_entry_t user_entry,
 					void *p1, void *p2, void *p3)
 {
-	z_arch_esf_t *pInitCtx;
-	uintptr_t stack_ptr;
+	uintptr_t stack_el0, stack_el1;
+	uint64_t tmpreg;
 
 	/* Map the thread stack */
 	z_arm64_thread_mem_domains_init(_current);
 
-	/*
-	 * Reset the SP_EL0 stack pointer to the stack top discarding any old
-	 * context. The actual register is written in z_arm64_userspace_enter()
-	 */
-	stack_ptr = Z_STACK_PTR_ALIGN(_current->stack_info.start +
+	/* Top of the user stack area */
+	stack_el0 = Z_STACK_PTR_ALIGN(_current->stack_info.start +
 				      _current->stack_info.size -
 				      _current->stack_info.delta);
 
-	/*
-	 * Reconstruct the ESF from scratch to leverage the z_arm64_exit_exc()
-	 * macro that will simulate a return from exception to move from EL1h
-	 * to EL0t. On return we will be in userspace using SP_EL0.
-	 *
-	 * We relocate the ESF to the beginning of the privileged stack in the
-	 * not user accessible part of the stack
-	 */
-	pInitCtx = (struct __esf *) (_current->stack_obj + ARCH_THREAD_STACK_RESERVED -
-			sizeof(struct __esf));
+	/* Top of the privileged non-user-accessible part of the stack */
+	stack_el1 = (uintptr_t)(_current->stack_obj + ARCH_THREAD_STACK_RESERVED);
 
-	pInitCtx->spsr = DAIF_FIQ_BIT | SPSR_MODE_EL0T;
-	pInitCtx->elr = (uint64_t)z_thread_entry;
+	register void *x0 __asm__("x0") = user_entry;
+	register void *x1 __asm__("x1") = p1;
+	register void *x2 __asm__("x2") = p2;
+	register void *x3 __asm__("x3") = p3;
 
-	pInitCtx->x0 = (uint64_t)user_entry;
-	pInitCtx->x1 = (uint64_t)p1;
-	pInitCtx->x2 = (uint64_t)p2;
-	pInitCtx->x3 = (uint64_t)p3;
+	/* we don't want to be disturbed when playing with SPSR and ELR */
+	arch_irq_lock();
 
-	/* All the needed information is already in the ESF */
-	z_arm64_userspace_enter(pInitCtx, stack_ptr);
+	/* set up and drop into EL0 */
+	__asm__ volatile (
+	"mrs	%[tmp], tpidrro_el0\n\t"
+	"orr	%[tmp], %[tmp], %[is_usermode_flag]\n\t"
+	"msr	tpidrro_el0, %[tmp]\n\t"
+	"msr	elr_el1, %[elr]\n\t"
+	"msr	spsr_el1, %[spsr]\n\t"
+	"msr	sp_el0, %[sp_el0]\n\t"
+	"mov	sp, %[sp_el1]\n\t"
+	"eret"
+	: [tmp] "=&r" (tmpreg)
+	: "r" (x0), "r" (x1), "r" (x2), "r" (x3),
+	  [is_usermode_flag] "i" (TPIDRROEL0_IN_EL0),
+	  [elr] "r" (z_thread_entry),
+	  [spsr] "r" (DAIF_FIQ_BIT | SPSR_MODE_EL0T),
+	  [sp_el0] "r" (stack_el0),
+	  [sp_el1] "r" (stack_el1)
+	: "memory");
 
 	CODE_UNREACHABLE;
 }

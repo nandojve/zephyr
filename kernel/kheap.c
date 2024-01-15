@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/iterable_sections.h>
+/* private kernel APIs */
 #include <ksched.h>
 #include <wait_q.h>
-#include <init.h>
-#include <linker/linker-defs.h>
 
 void k_heap_init(struct k_heap *h, void *mem, size_t bytes)
 {
@@ -18,9 +20,8 @@ void k_heap_init(struct k_heap *h, void *mem, size_t bytes)
 	SYS_PORT_TRACING_OBJ_INIT(k_heap, h);
 }
 
-static int statics_init(const struct device *unused)
+static int statics_init(void)
 {
-	ARG_UNUSED(unused);
 	STRUCT_SECTION_FOREACH(k_heap, h) {
 #if defined(CONFIG_DEMAND_PAGING) && !defined(CONFIG_LINKER_GENERIC_SECTIONS_PRESENT_AT_BOOT)
 		/* Some heaps may not present at boot, so we need to wait for
@@ -52,20 +53,21 @@ static int statics_init(const struct device *unused)
 	return 0;
 }
 
-SYS_INIT(statics_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_OBJECTS);
+SYS_INIT_NAMED(statics_init_pre, statics_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_OBJECTS);
 
 #if defined(CONFIG_DEMAND_PAGING) && !defined(CONFIG_LINKER_GENERIC_SECTIONS_PRESENT_AT_BOOT)
 /* Need to wait for paging mechanism to be initialized before
  * heaps that are not in pinned sections can be initialized.
  */
-SYS_INIT(statics_init, POST_KERNEL, 0);
+SYS_INIT_NAMED(statics_init_post, statics_init, POST_KERNEL, 0);
 #endif /* CONFIG_DEMAND_PAGING && !CONFIG_LINKER_GENERIC_SECTIONS_PRESENT_AT_BOOT */
 
 void *k_heap_aligned_alloc(struct k_heap *h, size_t align, size_t bytes,
 			k_timeout_t timeout)
 {
-	int64_t now, end = sys_clock_timeout_end_calc(timeout);
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 	void *ret = NULL;
+
 	k_spinlock_key_t key = k_spin_lock(&h->lock);
 
 	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap, aligned_alloc, h, timeout);
@@ -77,9 +79,8 @@ void *k_heap_aligned_alloc(struct k_heap *h, size_t align, size_t bytes,
 	while (ret == NULL) {
 		ret = sys_heap_aligned_alloc(&h->heap, align, bytes);
 
-		now = sys_clock_tick_get();
 		if (!IS_ENABLED(CONFIG_MULTITHREADING) ||
-		    (ret != NULL) || ((end - now) <= 0)) {
+		    (ret != NULL) || K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
 			break;
 		}
 
@@ -93,8 +94,8 @@ void *k_heap_aligned_alloc(struct k_heap *h, size_t align, size_t bytes,
 			 */
 		}
 
-		(void) z_pend_curr(&h->lock, key, &h->wait_q,
-				   K_TICKS(end - now));
+		timeout = sys_timepoint_timeout(end);
+		(void) z_pend_curr(&h->lock, key, &h->wait_q, timeout);
 		key = k_spin_lock(&h->lock);
 	}
 

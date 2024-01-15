@@ -7,14 +7,14 @@
 #ifndef __DSA_SAMPLE__
 #define __DSA_SAMPLE__
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <errno.h>
 
-#include <net/net_core.h>
-#include <net/net_l2.h>
-#include <net/net_if.h>
-#include <net/socket.h>
-#include <net/ethernet.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/ethernet.h>
 
 #define MCAST_DEST_MAC0 0x01
 #define MCAST_DEST_MAC1 0x80
@@ -27,7 +27,7 @@
 #define ETH_ALEN 6
 #define PACKET_LEN 128
 
-extern struct ud ifaces;
+extern struct ud user_data_ifaces;
 
 struct eth_addr {
 	uint8_t addr[ETH_ALEN]; /* origin hardware address */
@@ -86,7 +86,7 @@ enum net_verdict dsa_ll_addr_switch_cb(struct net_if *iface,
 		struct instance_data data;                                     \
 		struct net_if *iface;                                          \
 									       \
-		iface = ifaces.lan[ID-1];                                      \
+		iface = user_data_ifaces.lan[ID-1];                            \
 									       \
 		data.if_name = "lan"#ID;                                       \
 		ret = start_slave_port_packet_socket(iface, &data);            \

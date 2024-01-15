@@ -1,10 +1,13 @@
-Hawkbit Direct Device Integration API sample
-############################################
+.. zephyr:code-sample:: hawkbit-api
+   :name: Eclipse hawkBit Direct Device Integration API
+   :relevant-api: hawkbit
+
+   Update a device using Eclipse hawkBit DDI API.
 
 Overview
 ********
 
-The hawkbit update server provides REST resources which are consumed by the
+The Eclipse hawkBit update server provides REST resources which are consumed by the
 device to retrieve software update tasks. This API is based on HTTP standards
 and a polling mechanism.
 
@@ -23,7 +26,7 @@ Caveats
 *******
 
 * The Zephyr port of ``Hawkbit`` is configured to run on a
-  :ref: `Freedom-K64F <frdm_k64f>` MCU by default. The application should
+  :ref:`Freedom-K64F <frdm_k64f>` MCU by default. The application should
   build and run for other platforms with support internet connection. Some
   platforms need some modification. Overlay files would be needed to support
   BLE 6lowpan, 802.15.4 or OpenThread configurations as well as the
@@ -78,7 +81,7 @@ Step 4: Build Hawkbit
 ``Hawkbit`` can be built for the frdm_k64f as follows:
 
 .. zephyr-app-commands::
-    :zephyr-app: samples/net/hawkbit
+    :zephyr-app: samples/subsys/mgmt/hawkbit
     :board: frdm_k64f
     :conf: "prj.conf"
     :goals: build
@@ -114,7 +117,7 @@ of your board.
 
 Once the image is flashed and booted, the sample will print the image build
 time to the console. After it connects to the internet, in hawkbit server UI,
-you should see the the frdm_k64f show up in the Targets pane. It's time to
+you should see the frdm_k64f show up in the Targets pane. It's time to
 upload a firmware binary to the server, and update it using this UI.
 
 Step 7: Building and signing the test image
@@ -155,7 +158,7 @@ following command:
    hawkbit run
 
 And then wait. The board will ping the server, check if there are any new
-updates, and then download the update you've just created. If everyting goes
+updates, and then download the update you've just created. If everything goes
 fine the message ``Image flashed successfully, you can reboot now`` will be
 printed on the terminal.
 
@@ -196,7 +199,7 @@ to support https.
    openssl req -new -key server.key -out server.csr
 
 Once you run the command, it will prompt you to enter your Country,
-State, City, Company name and enter the Comman Name field with
+State, City, Company name and enter the Command Name field with
 ``<your-ip-address>``.
 
 * Generate the self-signed x509 certificate suitable to use on web server.
@@ -284,7 +287,7 @@ Step 11: Build Hawkbit HTTPS
 ``Hawkbit https`` can be built for the frdm_k64f as follows:
 
 .. zephyr-app-commands::
-    :zephyr-app: samples/net/hawkbit
+    :zephyr-app: samples/subsys/mgmt/hawkbit
     :board: frdm_k64f
     :conf: "prj.conf overlay-tls.conf"
     :goals: build

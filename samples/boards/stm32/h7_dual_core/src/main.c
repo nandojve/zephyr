@@ -4,15 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/ipm.h>
-#include <drivers/gpio.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/ipm.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/printk.h>
 
 #define SLEEP_TIME_MS   1000
-
-#define IPM  DT_LABEL(DT_NODELABEL(mailbox))
 
 struct ipm_data {
 	const struct gpio_dt_spec *led;
@@ -34,21 +32,20 @@ void new_message_callback(const struct device *dev, void *user_data,
 	ipm_data->led_is_on = !ipm_data->led_is_on;
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *ipm;
+	const struct device *const ipm = DEVICE_DT_GET(DT_NODELABEL(mailbox));
 
 	printk("STM32 h7_dual_core application\n");
 
-	ipm = device_get_binding(IPM);
 	if (!device_is_ready(ipm)) {
 		printk("ipm device not ready\n");
-		return;
+		return 0;
 	}
 
-	if (!device_is_ready(led0.port)) {
+	if (!gpio_is_ready_dt(&led0)) {
 		printk("led0 device not ready\n");
-		return;
+		return 0;
 	}
 
 	gpio_pin_configure_dt(&led0, GPIO_OUTPUT_INACTIVE);
@@ -64,4 +61,5 @@ void main(void)
 		ipm_send(ipm, 0, 0, NULL, 0);
 		k_msleep(SLEEP_TIME_MS);
 	}
+	return 0;
 }

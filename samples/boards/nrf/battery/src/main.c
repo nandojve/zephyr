@@ -9,12 +9,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include "battery.h"
 
 /** A discharge curve specific to the power source. */
 static const struct battery_level_point levels[] = {
-#if DT_NODE_HAS_PROP(DT_INST(0, voltage_divider), io_channels)
 	/* "Curve" here eyeballed from captured data for the [Adafruit
 	 * 3.7v 2000 mAh](https://www.adafruit.com/product/2011) LIPO
 	 * under full load that started with a charge of 3.96 V and
@@ -30,11 +29,6 @@ static const struct battery_level_point levels[] = {
 	{ 10000, 3950 },
 	{ 625, 3550 },
 	{ 0, 3100 },
-#else
-	/* Linear from maximum voltage to minimum voltage. */
-	{ 10000, 3600 },
-	{ 0, 1700 },
-#endif
 };
 
 static const char *now_str(void)
@@ -58,13 +52,13 @@ static const char *now_str(void)
 	return buf;
 }
 
-void main(void)
+int main(void)
 {
 	int rc = battery_measure_enable(true);
 
 	if (rc != 0) {
 		printk("Failed initialize battery measurement: %d\n", rc);
-		return;
+		return 0;
 	}
 
 	while (true) {
@@ -85,4 +79,5 @@ void main(void)
 		k_busy_wait(5 * USEC_PER_SEC);
 	}
 	printk("Disable: %d\n", battery_measure_enable(false));
+	return 0;
 }

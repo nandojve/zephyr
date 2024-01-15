@@ -10,14 +10,14 @@
 
 #define DT_DRV_COMPAT st_iis2iclx
 
-#include <drivers/sensor.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <string.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 #include "iis2iclx.h"
 
@@ -214,9 +214,10 @@ static int iis2iclx_sample_fetch_accel(const struct device *dev)
 static int iis2iclx_sample_fetch_temp(const struct device *dev)
 {
 	struct iis2iclx_data *data = dev->data;
+	const struct iis2iclx_config *cfg = dev->config;
 	int16_t buf;
 
-	if (iis2iclx_temperature_raw_get(&data->ctx, &buf) < 0) {
+	if (iis2iclx_temperature_raw_get((stmdev_ctx_t *)&cfg->ctx, &buf) < 0) {
 		LOG_ERR("Failed to read sample");
 		return -EIO;
 	}
@@ -629,7 +630,7 @@ static int iis2iclx_init(const struct device *dev)
  */
 
 #define IIS2ICLX_DEVICE_INIT(inst)					\
-	DEVICE_DT_INST_DEFINE(inst,					\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst,				\
 			    iis2iclx_init,				\
 			    NULL,					\
 			    &iis2iclx_data_##inst,			\
@@ -651,6 +652,12 @@ static int iis2iclx_init(const struct device *dev)
 #define IIS2ICLX_CFG_IRQ(inst)
 #endif /* CONFIG_IIS2ICLX_TRIGGER */
 
+#define IIS2ICLX_CONFIG_COMMON(inst)					\
+	.odr = DT_INST_PROP(inst, odr),					\
+	.range = DT_INST_PROP(inst, range),				\
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, drdy_gpios),		\
+		(IIS2ICLX_CFG_IRQ(inst)), ())
+
 #define IIS2ICLX_SPI_OPERATION (SPI_WORD_SET(8) |			\
 				SPI_OP_MODE_MASTER |			\
 				SPI_MODE_CPOL |				\
@@ -658,23 +665,13 @@ static int iis2iclx_init(const struct device *dev)
 
 #define IIS2ICLX_CONFIG_SPI(inst)					\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_spi_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_spi_write,	\
-			.handle =					\
-			   (void *)&iis2iclx_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_SPI(&iis2iclx_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
 					   IIS2ICLX_SPI_OPERATION,	\
 					   0),				\
 		},							\
-		.odr = DT_INST_PROP(inst, odr),				\
-		.range = DT_INST_PROP(inst, range),			\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, drdy_gpios),	\
-			(IIS2ICLX_CFG_IRQ(inst)), ())			\
+		IIS2ICLX_CONFIG_COMMON(inst)				\
 	}
 
 /*
@@ -683,21 +680,11 @@ static int iis2iclx_init(const struct device *dev)
 
 #define IIS2ICLX_CONFIG_I2C(inst)					\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_i2c_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_i2c_write,	\
-			.handle =					\
-			   (void *)&iis2iclx_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_I2C(&iis2iclx_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.i2c = I2C_DT_SPEC_INST_GET(inst),		\
 		},							\
-		.odr = DT_INST_PROP(inst, odr),				\
-		.range = DT_INST_PROP(inst, range),			\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, drdy_gpios),	\
-			(IIS2ICLX_CFG_IRQ(inst)), ())			\
+		IIS2ICLX_CONFIG_COMMON(inst)				\
 	}
 
 /*

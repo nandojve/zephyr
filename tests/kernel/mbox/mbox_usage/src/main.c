@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
 
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define MAIL_LEN 64
 #define HIGH_PRIO 1
 #define LOW_PRIO  8
@@ -32,6 +32,7 @@ static enum mmsg_type {
 static void msg_sender(struct k_mbox *pmbox, k_timeout_t timeout)
 {
 	static struct k_mbox_msg mmsg;
+	int ret;
 
 	(void)memset(&mmsg, 0, sizeof(mmsg));
 
@@ -41,13 +42,9 @@ static void msg_sender(struct k_mbox *pmbox, k_timeout_t timeout)
 		mmsg.info = PUT_GET_NULL;
 		mmsg.size = 0;
 		mmsg.tx_data = NULL;
-		if (K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-			k_mbox_put(pmbox, &mmsg, K_FOREVER);
-		} else if (K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
-			k_mbox_put(pmbox, &mmsg, K_NO_WAIT);
-		} else {
-			k_mbox_put(pmbox, &mmsg, timeout);
-		}
+
+		ret = k_mbox_put(pmbox, &mmsg, timeout);
+		zassert_ok(ret, "k_mbox_put() failed, ret %d", ret);
 		break;
 	default:
 		break;
@@ -59,20 +56,20 @@ static void msg_receiver(struct k_mbox *pmbox, k_tid_t thd_id,
 {
 	static struct k_mbox_msg mmsg;
 	static char rxdata[MAIL_LEN];
+	int ret;
 
 	switch (info_type) {
 	case PUT_GET_NULL:
 		mmsg.size = sizeof(rxdata);
 		mmsg.rx_source_thread = thd_id;
+
+		ret = k_mbox_get(pmbox, &mmsg, rxdata, timeout);
 		if (K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-			zassert_true(k_mbox_get(pmbox, &mmsg,
-				     rxdata, K_FOREVER) == 0, NULL);
+			zassert_ok(ret, "k_mbox_get() ret %d", ret);
 		} else if (K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
-			zassert_false(k_mbox_get(pmbox, &mmsg,
-				      rxdata, K_NO_WAIT) == 0, NULL);
+			zassert_false(ret == 0, "k_mbox_get() ret %d", ret);
 		} else {
-			zassert_true(k_mbox_get(pmbox, &mmsg,
-				     rxdata, timeout) == 0, NULL);
+			zassert_ok(ret, "k_mbox_get() ret %d", ret);
 		}
 		break;
 	default:
@@ -88,13 +85,13 @@ static void test_mbox_init(void)
 	k_sem_init(&sync_sema, 0, 2);
 }
 
-void test_send(void *p1, void *p2, void *p3)
+static void test_send(void *p1, void *p2, void *p3)
 {
 	msg_sender((struct k_mbox *)p1, K_NO_WAIT);
 }
 
 /* Receive message from any thread with no wait */
-void test_msg_receiver(void)
+ZTEST(mbox_usage, test_msg_receiver)
 {
 	static k_tid_t tid;
 
@@ -109,14 +106,14 @@ void test_msg_receiver(void)
 	k_thread_abort(tid);
 }
 
-void test_send_un(void *p1, void *p2, void *p3)
+static void test_send_un(void *p1, void *p2, void *p3)
 {
 	TC_PRINT("Sender UNLIMITED\n");
 	msg_sender((struct k_mbox *)p1, K_FOREVER);
 }
 
 /* Receive message from thread tid1 */
-void test_msg_receiver_unlimited(void)
+ZTEST(mbox_usage, test_msg_receiver_unlimited)
 {
 	info_type = PUT_GET_NULL;
 
@@ -129,7 +126,7 @@ void test_msg_receiver_unlimited(void)
 	k_thread_abort(tid1);
 }
 
-void thread_low_prio(void *p1, void *p2, void *p3)
+static void thread_low_prio(void *p1, void *p2, void *p3)
 {
 	static struct k_mbox_msg mmsg = {0};
 	static char rxdata[MAIL_LEN];
@@ -146,7 +143,7 @@ void thread_low_prio(void *p1, void *p2, void *p3)
 	k_sem_give(&sync_sema);
 }
 
-void thread_high_prio(void *p1, void *p2, void *p3)
+static void thread_high_prio(void *p1, void *p2, void *p3)
 {
 	static struct k_mbox_msg mmsg = {0};
 	static char rxdata[MAIL_LEN];
@@ -163,7 +160,7 @@ void thread_high_prio(void *p1, void *p2, void *p3)
 	k_sem_give(&sync_sema);
 }
 
-void test_multi_thread_send_get(void)
+ZTEST(mbox_usage_1cpu, test_multi_thread_send_get)
 {
 	static k_tid_t low_prio, high_prio;
 	struct k_mbox_msg mmsg = {0};
@@ -178,7 +175,6 @@ void test_multi_thread_send_get(void)
 				    thread_high_prio, &multi_tmbox, NULL, NULL,
 				    HIGH_PRIO, 0, K_NO_WAIT);
 
-	k_sleep(K_MSEC(20));
 	mmsg.size = sizeof(msg_data[0]);
 	mmsg.tx_data = msg_data[0];
 	mmsg.tx_target_thread = K_ANY;
@@ -197,13 +193,14 @@ void test_multi_thread_send_get(void)
 	k_thread_abort(high_prio);
 }
 
-/*test case main entry*/
-void test_main(void)
+void *setup_mbox_usage(void)
 {
 	test_mbox_init();
-	ztest_test_suite(test_mbox,
-			 ztest_unit_test(test_msg_receiver),
-			 ztest_unit_test(test_msg_receiver_unlimited),
-			 ztest_1cpu_user_unit_test(test_multi_thread_send_get));
-	ztest_run_test_suite(test_mbox);
+
+	return NULL;
 }
+
+ZTEST_SUITE(mbox_usage, NULL, setup_mbox_usage, NULL, NULL, NULL);
+
+ZTEST_SUITE(mbox_usage_1cpu, NULL, setup_mbox_usage,
+	ztest_simple_1cpu_before, ztest_simple_1cpu_after, NULL);

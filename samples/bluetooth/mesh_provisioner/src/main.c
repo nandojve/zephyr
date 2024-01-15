@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/mesh.h>
+#include <zephyr/drivers/gpio.h>
 
-#include <settings/settings.h>
-
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/mesh.h>
+#define SW0_NODE	DT_ALIAS(sw0)
 
 static const uint16_t net_idx;
 static const uint16_t app_idx;
@@ -19,6 +20,9 @@ static uint8_t node_uuid[16];
 
 K_SEM_DEFINE(sem_unprov_beacon, 0, 1);
 K_SEM_DEFINE(sem_node_added, 0, 1);
+#if DT_NODE_HAS_STATUS(SW0_NODE, okay)
+K_SEM_DEFINE(sem_button_pressed, 0, 1);
+#endif
 
 static struct bt_mesh_cfg_cli cfg_cli = {
 };
@@ -49,17 +53,17 @@ static struct bt_mesh_health_cli health_cli = {
 	.current_status = health_current_status,
 };
 
-static struct bt_mesh_model root_models[] = {
+static const struct bt_mesh_model root_models[] = {
 	BT_MESH_MODEL_CFG_SRV,
 	BT_MESH_MODEL_CFG_CLI(&cfg_cli),
 	BT_MESH_MODEL_HEALTH_CLI(&health_cli),
 };
 
-static struct bt_mesh_elem elements[] = {
+static const struct bt_mesh_elem elements[] = {
 	BT_MESH_ELEM(0, root_models, BT_MESH_MODEL_NONE),
 };
 
-static const struct bt_mesh_comp comp = {
+static const struct bt_mesh_comp mesh_comp = {
 	.cid = BT_COMP_ID_LF,
 	.elem = elements,
 	.elem_count = ARRAY_SIZE(elements),
@@ -68,6 +72,8 @@ static const struct bt_mesh_comp comp = {
 static void setup_cdb(void)
 {
 	struct bt_mesh_cdb_app_key *key;
+	uint8_t app_key[16];
+	int err;
 
 	key = bt_mesh_cdb_app_key_alloc(net_idx, app_idx);
 	if (key == NULL) {
@@ -75,7 +81,13 @@ static void setup_cdb(void)
 		return;
 	}
 
-	bt_rand(key->keys[0].app_key, 16);
+	bt_rand(app_key, 16);
+
+	err = bt_mesh_cdb_app_key_import(key, 0, app_key);
+	if (err) {
+		printk("Failed to import appkey into cdb. Err:%d\n", err);
+		return;
+	}
 
 	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
 		bt_mesh_cdb_app_key_store(key);
@@ -85,6 +97,7 @@ static void setup_cdb(void)
 static void configure_self(struct bt_mesh_cdb_node *self)
 {
 	struct bt_mesh_cdb_app_key *key;
+	uint8_t app_key[16];
 	uint8_t status = 0;
 	int err;
 
@@ -96,18 +109,23 @@ static void configure_self(struct bt_mesh_cdb_node *self)
 		return;
 	}
 
+	err = bt_mesh_cdb_app_key_export(key, 0, app_key);
+	if (err) {
+		printk("Failed to export appkey from cdb. Err:%d\n", err);
+		return;
+	}
+
 	/* Add Application Key */
-	err = bt_mesh_cfg_app_key_add(self->net_idx, self->addr, self->net_idx,
-				      app_idx, key->keys[0].app_key, &status);
+	err = bt_mesh_cfg_cli_app_key_add(self->net_idx, self->addr, self->net_idx, app_idx,
+					  app_key, &status);
 	if (err || status) {
 		printk("Failed to add app-key (err %d, status %d)\n", err,
 		       status);
 		return;
 	}
 
-	err = bt_mesh_cfg_mod_app_bind(self->net_idx, self->addr, self->addr,
-				       app_idx, BT_MESH_MODEL_ID_HEALTH_CLI,
-				       &status);
+	err = bt_mesh_cfg_cli_mod_app_bind(self->net_idx, self->addr, self->addr, app_idx,
+					   BT_MESH_MODEL_ID_HEALTH_CLI, &status);
 	if (err || status) {
 		printk("Failed to bind app-key (err %d, status %d)\n", err,
 		       status);
@@ -128,6 +146,7 @@ static void configure_node(struct bt_mesh_cdb_node *node)
 	NET_BUF_SIMPLE_DEFINE(buf, BT_MESH_RX_SDU_MAX);
 	struct bt_mesh_comp_p0_elem elem;
 	struct bt_mesh_cdb_app_key *key;
+	uint8_t app_key[16];
 	struct bt_mesh_comp_p0 comp;
 	uint8_t status;
 	int err, elem_addr;
@@ -140,16 +159,21 @@ static void configure_node(struct bt_mesh_cdb_node *node)
 		return;
 	}
 
+	err = bt_mesh_cdb_app_key_export(key, 0, app_key);
+	if (err) {
+		printk("Failed to export appkey from cdb. Err:%d\n", err);
+		return;
+	}
+
 	/* Add Application Key */
-	err = bt_mesh_cfg_app_key_add(net_idx, node->addr, net_idx, app_idx,
-				      key->keys[0].app_key, &status);
+	err = bt_mesh_cfg_cli_app_key_add(net_idx, node->addr, net_idx, app_idx, app_key, &status);
 	if (err || status) {
 		printk("Failed to add app-key (err %d status %d)\n", err, status);
 		return;
 	}
 
 	/* Get the node's composition data and bind all models to the appkey */
-	err = bt_mesh_cfg_comp_data_get(net_idx, node->addr, 0, &status, &buf);
+	err = bt_mesh_cfg_cli_comp_data_get(net_idx, node->addr, 0, &status, &buf);
 	if (err || status) {
 		printk("Failed to get Composition data (err %d, status: %d)\n",
 		       err, status);
@@ -176,9 +200,8 @@ static void configure_node(struct bt_mesh_cdb_node *node)
 			printk("Binding AppKey to model 0x%03x:%04x\n",
 			       elem_addr, id);
 
-			err = bt_mesh_cfg_mod_app_bind(net_idx, node->addr,
-						       elem_addr, app_idx, id,
-						       &status);
+			err = bt_mesh_cfg_cli_mod_app_bind(net_idx, node->addr, elem_addr, app_idx,
+							   id, &status);
 			if (err || status) {
 				printk("Failed (err: %d, status: %d)\n", err,
 				       status);
@@ -192,10 +215,8 @@ static void configure_node(struct bt_mesh_cdb_node *node)
 			printk("Binding AppKey to model 0x%03x:%04x:%04x\n",
 			       elem_addr, id.company, id.id);
 
-			err = bt_mesh_cfg_mod_app_bind_vnd(net_idx, node->addr,
-							   elem_addr, app_idx,
-							   id.id, id.company,
-							   &status);
+			err = bt_mesh_cfg_cli_mod_app_bind_vnd(net_idx, node->addr, elem_addr,
+							       app_idx, id.id, id.company, &status);
 			if (err || status) {
 				printk("Failed (err: %d, status: %d)\n", err,
 				       status);
@@ -222,7 +243,7 @@ static void unprovisioned_beacon(uint8_t uuid[16],
 	k_sem_give(&sem_unprov_beacon);
 }
 
-static void node_added(uint16_t net_idx, uint8_t uuid[16], uint16_t addr, uint8_t num_elem)
+static void node_added(uint16_t idx, uint8_t uuid[16], uint16_t addr, uint8_t num_elem)
 {
 	node_addr = addr;
 	k_sem_give(&sem_node_added);
@@ -239,7 +260,7 @@ static int bt_ready(void)
 	uint8_t net_key[16], dev_key[16];
 	int err;
 
-	err = bt_mesh_init(&prov, &comp);
+	err = bt_mesh_init(&prov, &mesh_comp);
 	if (err) {
 		printk("Initializing mesh failed (err %d)\n", err);
 		return err;
@@ -294,7 +315,41 @@ static uint8_t check_unconfigured(struct bt_mesh_cdb_node *node, void *data)
 	return BT_MESH_CDB_ITER_CONTINUE;
 }
 
-void main(void)
+#if DT_NODE_HAS_STATUS(SW0_NODE, okay)
+static const struct gpio_dt_spec button = GPIO_DT_SPEC_GET_OR(SW0_NODE, gpios, {0});
+static struct gpio_callback button_cb_data;
+
+static void button_pressed(const struct device *dev, struct gpio_callback *cb, uint32_t pins)
+{
+	k_sem_give(&sem_button_pressed);
+}
+
+static void button_init(void)
+{
+	int ret;
+
+	if (!gpio_is_ready_dt(&button)) {
+		printk("Error: button device %s is not ready\n", button.port->name);
+		return;
+	}
+	ret = gpio_pin_configure_dt(&button, GPIO_INPUT);
+	if (ret != 0) {
+		printk("Error %d: failed to configure %s pin %d\n", ret, button.port->name,
+		       button.pin);
+		return;
+	}
+	ret = gpio_pin_interrupt_configure_dt(&button, GPIO_INT_EDGE_TO_ACTIVE);
+	if (ret != 0) {
+		printk("Error %d: failed to configure interrupt on %s pin %d\n", ret,
+		       button.port->name, button.pin);
+		return;
+	}
+	gpio_init_callback(&button_cb_data, button_pressed, BIT(button.pin));
+	gpio_add_callback(button.port, &button_cb_data);
+}
+#endif
+
+int main(void)
 {
 	char uuid_hex_str[32 + 1];
 	int err;
@@ -305,11 +360,15 @@ void main(void)
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	printk("Bluetooth initialized\n");
 	bt_ready();
+
+#if DT_NODE_HAS_STATUS(SW0_NODE, okay)
+	button_init();
+#endif
 
 	while (1) {
 		k_sem_reset(&sem_unprov_beacon);
@@ -323,6 +382,16 @@ void main(void)
 		}
 
 		bin2hex(node_uuid, 16, uuid_hex_str, sizeof(uuid_hex_str));
+
+#if DT_NODE_HAS_STATUS(SW0_NODE, okay)
+		k_sem_reset(&sem_button_pressed);
+		printk("Device %s detected, press button 1 to provision.\n", uuid_hex_str);
+		err = k_sem_take(&sem_button_pressed, K_SECONDS(30));
+		if (err == -EAGAIN) {
+			printk("Timed out, button 1 wasn't pressed in time.\n");
+			continue;
+		}
+#endif
 
 		printk("Provisioning %s\n", uuid_hex_str);
 		err = bt_mesh_provision_adv(node_uuid, net_idx, 0, 0);
@@ -340,4 +409,5 @@ void main(void)
 
 		printk("Added node 0x%04x\n", node_addr);
 	}
+	return 0;
 }

@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig PWM
-	bool "PWM (Pulse Width Modulation) Drivers"
+	bool "Pulse Width Modulation (PWM) drivers"
 	help
 	  Enable config options for PWM drivers.
 
@@ -14,9 +14,14 @@ module = PWM
 module-str = pwm
 source "subsys/logging/Kconfig.template.log_config"
 
+config PWM_INIT_PRIORITY
+	int "PWM initialization priority"
+	default KERNEL_INIT_PRIORITY_DEVICE
+	help
+	  System initialization priority for PWM drivers.
+
 config PWM_SHELL
-	bool "Enable PWM shell"
-	default y
+	bool "PWM shell"
 	depends on SHELL
 	help
 	  Enable the PWM related shell commands.
@@ -29,11 +34,13 @@ config PWM_CAPTURE
 
 source "drivers/pwm/Kconfig.b91"
 
+source "drivers/pwm/Kconfig.cc13xx_cc26xx_timer"
+
 source "drivers/pwm/Kconfig.stm32"
 
 source "drivers/pwm/Kconfig.sifive"
 
-source "drivers/pwm/Kconfig.nrf5_sw"
+source "drivers/pwm/Kconfig.nrf_sw"
 
 source "drivers/pwm/Kconfig.nrfx"
 
@@ -68,5 +75,29 @@ source "drivers/pwm/Kconfig.xlnx"
 source "drivers/pwm/Kconfig.mcux_pwt"
 
 source "drivers/pwm/Kconfig.gecko"
+
+source "drivers/pwm/Kconfig.gd32"
+
+source "drivers/pwm/Kconfig.rcar"
+
+source "drivers/pwm/Kconfig.pca9685"
+
+source "drivers/pwm/Kconfig.max31790"
+
+source "drivers/pwm/Kconfig.test"
+
+source "drivers/pwm/Kconfig.rpi_pico"
+
+source "drivers/pwm/Kconfig.intel_blinky"
+
+source "drivers/pwm/Kconfig.xmc4xxx_ccu4"
+
+source "drivers/pwm/Kconfig.xmc4xxx_ccu8"
+
+source "drivers/pwm/Kconfig.mcux_ctimer"
+
+source "drivers/pwm/Kconfig.numaker"
+
+source "drivers/pwm/Kconfig.nxp_s32_emios"
 
 endif # PWM

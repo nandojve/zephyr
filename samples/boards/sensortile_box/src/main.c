@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
-#include <drivers/gpio.h>
-#include <drivers/led.h>
-#include <drivers/i2c.h>
-#include <drivers/spi.h>
-#include <drivers/sensor.h>
-#include <usb/usb_device.h>
-#include <drivers/uart.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/usb/usb_device.h>
+#include <zephyr/drivers/uart.h>
 
 #include <stdio.h>
 
@@ -247,17 +247,18 @@ static void iis3dhhc_config(const struct device *iis3dhhc)
 #endif
 }
 
-void main(void)
+int main(void)
 {
-	static const struct device *led0, *led1;
-	const struct device *dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
+	static const struct gpio_dt_spec led0_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
+	static const struct gpio_dt_spec led1_gpio = GPIO_DT_SPEC_GET(DT_ALIAS(led1), gpios);
+	const struct device *const dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_console));
 	int i, on = 1;
 	int cnt = 1;
 	uint32_t dtr = 0;
 
 	/* Application must enable USB by itself */
 	if (!device_is_ready(dev) || usb_enable(NULL)) {
-		return;
+		return 0;
 	}
 
 	/* Poll if the DTR flag was set, optional */
@@ -265,70 +266,65 @@ void main(void)
 		uart_line_ctrl_get(dev, UART_LINE_CTRL_DTR, &dtr);
 	}
 
-	led0 = device_get_binding(DT_GPIO_LABEL(DT_ALIAS(led0), gpios));
-	gpio_pin_configure(led0, DT_GPIO_PIN(DT_ALIAS(led0), gpios),
-			   GPIO_OUTPUT_ACTIVE |
-			   DT_GPIO_FLAGS(DT_ALIAS(led0), gpios));
+	if (!gpio_is_ready_dt(&led0_gpio)) {
+		printk("%s: device not ready.\n", led0_gpio.port->name);
+		return 0;
+	}
+	gpio_pin_configure_dt(&led0_gpio, GPIO_OUTPUT_ACTIVE);
 
-	led1 = device_get_binding(DT_GPIO_LABEL(DT_ALIAS(led1), gpios));
-	gpio_pin_configure(led1, DT_GPIO_PIN(DT_ALIAS(led1), gpios),
-			   GPIO_OUTPUT_INACTIVE |
-			   DT_GPIO_FLAGS(DT_ALIAS(led1), gpios));
+	if (!gpio_is_ready_dt(&led1_gpio)) {
+		printk("%s: device not ready.\n", led1_gpio.port->name);
+		return 0;
+	}
+	gpio_pin_configure_dt(&led1_gpio, GPIO_OUTPUT_INACTIVE);
 
 	for (i = 0; i < 6; i++) {
-		gpio_pin_set(led0, DT_GPIO_PIN(DT_ALIAS(led0), gpios), on);
-		gpio_pin_set(led1, DT_GPIO_PIN(DT_ALIAS(led1), gpios), !on);
+		gpio_pin_set_dt(&led0_gpio, on);
+		gpio_pin_set_dt(&led1_gpio, !on);
 		k_sleep(K_MSEC(100));
 		on = (on == 1) ? 0 : 1;
 	}
 
-	gpio_pin_set(led0, DT_GPIO_PIN(DT_ALIAS(led0), gpios), 0);
-	gpio_pin_set(led1, DT_GPIO_PIN(DT_ALIAS(led1), gpios), 1);
+	gpio_pin_set_dt(&led0_gpio, 0);
+	gpio_pin_set_dt(&led1_gpio, 1);
 
 	printk("SensorTile.box test!!\n");
 
-	const struct device *hts221 = device_get_binding(DT_LABEL(DT_INST(0, st_hts221)));
-	const struct device *lis2dw12 = device_get_binding(DT_LABEL(DT_INST(0, st_lis2dw12)));
-	const struct device *lps22hh = device_get_binding(DT_LABEL(DT_INST(0, st_lps22hh)));
-	const struct device *lsm6dso = device_get_binding(DT_LABEL(DT_INST(0, st_lsm6dso)));
-	const struct device *stts751 = device_get_binding(DT_LABEL(DT_INST(0, st_stts751)));
-	const struct device *iis3dhhc = device_get_binding(DT_LABEL(DT_INST(0, st_iis3dhhc)));
-	const struct device *lis2mdl = device_get_binding(DT_LABEL(DT_INST(0, st_lis2mdl)));
+	const struct device *const hts221 = DEVICE_DT_GET_ONE(st_hts221);
+	const struct device *const lis2dw12 = DEVICE_DT_GET_ONE(st_lis2dw12);
+	const struct device *const lps22hh = DEVICE_DT_GET_ONE(st_lps22hh);
+	const struct device *const lsm6dso = DEVICE_DT_GET_ONE(st_lsm6dso);
+	const struct device *const stts751 = DEVICE_DT_GET_ONE(st_stts751);
+	const struct device *const iis3dhhc = DEVICE_DT_GET_ONE(st_iis3dhhc);
+	const struct device *const lis2mdl = DEVICE_DT_GET_ONE(st_lis2mdl);
 
-	if (!hts221) {
-		printk("Could not get pointer to %s sensor\n",
-			DT_LABEL(DT_INST(0, st_hts221)));
-		return;
+	if (!device_is_ready(hts221)) {
+		printk("%s: device not ready.\n", hts221->name);
+		return 0;
 	}
-
-	if (!lis2dw12) {
-		printf("Could not get LIS2DW12 device\n");
-		return;
+	if (!device_is_ready(lis2dw12)) {
+		printk("%s: device not ready.\n", lis2dw12->name);
+		return 0;
 	}
-
-	if (lps22hh == NULL) {
-		printf("Could not get LPS22HH device\n");
-		return;
+	if (!device_is_ready(lps22hh)) {
+		printk("%s: device not ready.\n", lps22hh->name);
+		return 0;
 	}
-
-	if (lsm6dso == NULL) {
-		printf("Could not get LSM6DSO device\n");
-		return;
+	if (!device_is_ready(lsm6dso)) {
+		printk("%s: device not ready.\n", lsm6dso->name);
+		return 0;
 	}
-
-	if (stts751 == NULL) {
-		printf("Could not get STTS751 device\n");
-		return;
+	if (!device_is_ready(stts751)) {
+		printk("%s: device not ready.\n", stts751->name);
+		return 0;
 	}
-
-	if (iis3dhhc == NULL) {
-		printf("Could not get IIS3DHHC device\n");
-		return;
+	if (!device_is_ready(iis3dhhc)) {
+		printk("%s: device not ready.\n", iis3dhhc->name);
+		return 0;
 	}
-
-	if (lis2mdl == NULL) {
-		printf("Could not get LIS2MDL device\n");
-		return;
+	if (!device_is_ready(lis2mdl)) {
+		printk("%s: device not ready.\n", lis2mdl->name);
+		return 0;
 	}
 
 	lis2dw12_config(lis2dw12);
@@ -349,48 +345,48 @@ void main(void)
 		/* handle HTS221 sensor */
 		if (sensor_sample_fetch(hts221) < 0) {
 			printf("HTS221 Sensor sample update error\n");
-			return;
+			return 0;
 		}
 
 #ifndef CONFIG_LIS2DW12_TRIGGER
 		/* handle LIS2DW12 sensor */
 		if (sensor_sample_fetch(lis2dw12) < 0) {
 			printf("LIS2DW12 Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 
 #ifndef CONFIG_LSM6DSO_TRIGGER
 		if (sensor_sample_fetch(lsm6dso) < 0) {
 			printf("LSM6DSO Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 
 #ifndef CONFIG_LPS22HH_TRIGGER
 		if (sensor_sample_fetch(lps22hh) < 0) {
 			printf("LPS22HH Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 
 #ifndef CONFIG_STTS751_TRIGGER
 		if (sensor_sample_fetch(stts751) < 0) {
 			printf("STTS751 Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 
 #ifndef CONFIG_IIS3DHHC_TRIGGER
 		if (sensor_sample_fetch(iis3dhhc) < 0) {
 			printf("IIS3DHHC Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 
 		if (sensor_sample_fetch(lis2mdl) < 0) {
 			printf("LIS2MDL Sensor sample update error\n");
-			return;
+			return 0;
 		}
 
 		sensor_channel_get(hts221, SENSOR_CHAN_HUMIDITY, &hts221_hum);

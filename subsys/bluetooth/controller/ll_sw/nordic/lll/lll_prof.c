@@ -8,13 +8,15 @@
 #include <stddef.h>
 #include <errno.h>
 
-#include <toolchain.h>
+#include <zephyr/toolchain.h>
 
 #include "hal/ccm.h"
 #include "hal/radio.h"
 
 #include "util/memq.h"
 
+#include "pdu_df.h"
+#include "pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -87,7 +89,7 @@ void lll_prof_latency_capture(void)
 	radio_tmr_sample();
 }
 
-#if defined(CONFIG_BT_CTLR_GPIO_PA_PIN)
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
 static uint32_t timestamp_radio_end;
 
 uint32_t lll_prof_radio_end_backup(void)
@@ -99,7 +101,7 @@ uint32_t lll_prof_radio_end_backup(void)
 
 	return timestamp_radio_end;
 }
-#endif /* !CONFIG_BT_CTLR_GPIO_PA_PIN */
+#endif /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 
 void lll_prof_cputime_capture(void)
 {
@@ -146,8 +148,7 @@ void lll_prof_reserve_send(struct node_rx_pdu *rx)
 		if (err) {
 			rx->hdr.type = NODE_RX_TYPE_PROFILE;
 
-			ull_rx_put(rx->hdr.link, rx);
-			ull_rx_sched();
+			ull_rx_put_sched(rx->hdr.link, rx);
 		}
 	}
 }
@@ -162,11 +163,11 @@ static int send(struct node_rx_pdu *rx)
 	/* calculate the elapsed time in us since on-air radio packet end
 	 * to ISR entry
 	 */
-#if defined(CONFIG_BT_CTLR_GPIO_PA_PIN)
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
 	latency = timestamp_latency - timestamp_radio_end;
-#else /* !CONFIG_BT_CTLR_GPIO_PA_PIN */
+#else /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 	latency = timestamp_latency - radio_tmr_end_get();
-#endif /* !CONFIG_BT_CTLR_GPIO_PA_PIN */
+#endif /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 
 	/* check changes in min, avg and max of latency */
 	if (latency > latency_max) {
@@ -236,8 +237,7 @@ static int send(struct node_rx_pdu *rx)
 	p->ull_high = cputime_ull_high;
 	p->ull_low = cputime_ull_low;
 
-	ull_rx_put(rx->hdr.link, rx);
-	ull_rx_sched();
+	ull_rx_put_sched(rx->hdr.link, rx);
 
 	return 0;
 }

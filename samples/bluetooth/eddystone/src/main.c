@@ -10,16 +10,16 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/util.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/gatt.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/gatt.h>
 
 #define NUMBER_OF_SLOTS 1
 #define EDS_VERSION 0x00
@@ -40,55 +40,55 @@ static const struct bt_data ad[] = {
 
 /* Eddystone Service Variables */
 /* Service UUID a3c87500-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87500, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87501-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_caps_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_caps_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87501, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87502-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_slot_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_slot_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87502, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87503-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_intv_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_intv_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87503, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87504-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_tx_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_tx_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87504, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87505-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_adv_tx_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_adv_tx_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87505, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87506-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_lock_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_lock_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87506, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87507-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_unlock_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_unlock_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87507, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87508-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_ecdh_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_ecdh_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87508, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c87509-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_eid_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_eid_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c87509, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c8750a-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_data_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_data_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c8750a, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c8750b-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_reset_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_reset_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c8750b, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 /* Characteristic UUID a3c8750c-8ed3-4bdf-8a39-a01bebede295 */
-static struct bt_uuid_128 eds_connectable_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 eds_connectable_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xa3c8750c, 0x8ed3, 0x4bdf, 0x8a39, 0xa01bebede295));
 
 enum {
@@ -490,7 +490,7 @@ static ssize_t write_adv_data(struct bt_conn *conn,
 		 */
 		slot->ad[2].data_len = MIN(slot->ad[2].data_len,
 					   len + EDS_URL_WRITE_OFFSET);
-		memcpy(&slot->ad[2].data + EDS_URL_WRITE_OFFSET, buf,
+		memcpy((uint8_t *) slot->ad[2].data + EDS_URL_WRITE_OFFSET, buf,
 		       slot->ad[2].data_len - EDS_URL_WRITE_OFFSET);
 
 		/* Restart slot */
@@ -681,7 +681,7 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.disconnected = disconnected,
 };
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -692,4 +692,5 @@ void main(void)
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
 	}
+	return 0;
 }

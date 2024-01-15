@@ -9,10 +9,8 @@ Overview
 The OLIMEX-STM32-E407 board is open source hardware and is based on
 the STMicroelectronics STM32F407ZG ARM Cortex-M4 CPU.
 
-.. figure:: img/olimex_stm32_e407.png
-     :width: 540px
+.. figure:: img/olimex_stm32_e407.jpg
      :align: center
-     :height: 454px
      :alt: OLIMEX-STM32-E407
 
      OLIMEX-STM32-E407
@@ -48,15 +46,13 @@ hardware features:
 | USB OTG HS | on-chip    | USB device           |
 +------------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Pin Mapping
 ===========
 
-.. figure:: img/olimex-stm32-e407-front.png
-     :width: 739px
+.. figure:: img/olimex-stm32-e407-front.jpg
      :align: center
-     :height: 530px
      :alt: OLIMEX-STM32-E407 connectors
 
      OLIMEX-STM32-E407 connectors
@@ -379,4 +375,4 @@ way.  Here is an example for the :ref:`hello_world` application.
    https://www.olimex.com/Products/ARM/ST/STM32-E407/resources/STM32-E407.pdf
 
 .. _ST STM32F407ZG Datasheet:
-   http://www.st.com/resource/en/reference_manual/dm00031020.pdf
+   https://www.st.com/resource/en/reference_manual/dm00031020.pdf

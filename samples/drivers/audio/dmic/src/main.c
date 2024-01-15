@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <audio/dmic.h>
+#include <zephyr/kernel.h>
+#include <zephyr/audio/dmic.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(dmic_sample);
 
 #define MAX_SAMPLE_RATE  16000
@@ -26,7 +26,7 @@ LOG_MODULE_REGISTER(dmic_sample);
  */
 #define MAX_BLOCK_SIZE   BLOCK_SIZE(MAX_SAMPLE_RATE, 2)
 #define BLOCK_COUNT      4
-static K_MEM_SLAB_DEFINE(mem_slab, MAX_BLOCK_SIZE, BLOCK_COUNT, 4);
+K_MEM_SLAB_DEFINE_STATIC(mem_slab, MAX_BLOCK_SIZE, BLOCK_COUNT, 4);
 
 static int do_pdm_transfer(const struct device *dmic_dev,
 			   struct dmic_cfg *cfg,
@@ -52,7 +52,6 @@ static int do_pdm_transfer(const struct device *dmic_dev,
 	for (int i = 0; i < block_count; ++i) {
 		void *buffer;
 		uint32_t size;
-		int ret;
 
 		ret = dmic_read(dmic_dev, 0, &buffer, &size, READ_TIMEOUT);
 		if (ret < 0) {
@@ -62,7 +61,7 @@ static int do_pdm_transfer(const struct device *dmic_dev,
 
 		LOG_INF("%d - got buffer %p of %u bytes", i, buffer, size);
 
-		k_mem_slab_free(&mem_slab, &buffer);
+		k_mem_slab_free(&mem_slab, buffer);
 	}
 
 	ret = dmic_trigger(dmic_dev, DMIC_TRIGGER_STOP);
@@ -74,16 +73,16 @@ static int do_pdm_transfer(const struct device *dmic_dev,
 	return ret;
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *dmic_dev = DEVICE_DT_GET(DT_NODELABEL(dmic_dev));
+	const struct device *const dmic_dev = DEVICE_DT_GET(DT_NODELABEL(dmic_dev));
 	int ret;
 
 	LOG_INF("DMIC sample");
 
 	if (!device_is_ready(dmic_dev)) {
 		LOG_ERR("%s is not ready", dmic_dev->name);
-		return;
+		return 0;
 	}
 
 	struct pcm_stream_cfg stream = {
@@ -116,7 +115,7 @@ void main(void)
 
 	ret = do_pdm_transfer(dmic_dev, &cfg, 2 * BLOCK_COUNT);
 	if (ret < 0) {
-		return;
+		return 0;
 	}
 
 	cfg.channel.req_num_chan = 2;
@@ -129,8 +128,9 @@ void main(void)
 
 	ret = do_pdm_transfer(dmic_dev, &cfg, 2 * BLOCK_COUNT);
 	if (ret < 0) {
-		return;
+		return 0;
 	}
 
 	LOG_INF("Exiting");
+	return 0;
 }

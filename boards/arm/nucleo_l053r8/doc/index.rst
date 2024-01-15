@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_l053r8.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo L053R8
 
@@ -110,10 +108,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_l053r8_connectors.png
-   :width: 800px
+.. image:: img/nucleo_l053r8_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo L053R8 connectors
 
 Default Zephyr Peripheral Mapping:
@@ -144,7 +140,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application to Nucleo L053R8
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -171,10 +167,10 @@ References
 .. target-notes::
 
 .. _Nucleo L053R8 website:
-   http://www.st.com/en/evaluation-tools/nucleo-l053r8.html
+   https://www.st.com/en/evaluation-tools/nucleo-l053r8.html
 
 .. _STM32L0x3 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00095744.pdf
+   https://www.st.com/resource/en/reference_manual/dm00095744.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf

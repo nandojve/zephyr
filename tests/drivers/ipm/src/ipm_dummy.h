@@ -8,9 +8,9 @@
 
 #ifndef _IPM_DUMMY_H_
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/ipm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/ipm.h>
 
 /* Arbitrary */
 #define DUMMY_IPM_DATA_WORDS    4
@@ -27,6 +27,4 @@ struct ipm_dummy_driver_data {
 	void *cb_context;
 	volatile struct ipm_dummy_regs regs;
 };
-
-int ipm_dummy_init(const struct device *d);
 #endif

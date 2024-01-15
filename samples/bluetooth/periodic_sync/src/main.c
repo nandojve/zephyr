@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <devicetree.h>
-#include <drivers/gpio.h>
-#include <bluetooth/bluetooth.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/bluetooth/bluetooth.h>
 
 #define TIMEOUT_SYNC_CREATE K_SECONDS(10)
 #define NAME_LEN            30
@@ -155,7 +155,7 @@ static struct bt_le_per_adv_sync_cb sync_callbacks = {
 	.recv = recv_cb
 };
 
-void main(void)
+int main(void)
 {
 	struct bt_le_per_adv_sync_param sync_create_param;
 	struct bt_le_per_adv_sync *sync;
@@ -165,9 +165,9 @@ void main(void)
 
 #if defined(HAS_LED)
 	printk("Checking LED device...");
-	if (!device_is_ready(led.port)) {
+	if (!gpio_is_ready_dt(&led)) {
 		printk("failed.\n");
-		return;
+		return 0;
 	}
 	printk("done.\n");
 
@@ -175,7 +175,7 @@ void main(void)
 	err = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
 	if (err) {
 		printk("failed.\n");
-		return;
+		return 0;
 	}
 	printk("done.\n");
 
@@ -186,7 +186,7 @@ void main(void)
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	printk("Scan callbacks register...");
@@ -201,7 +201,7 @@ void main(void)
 	err = bt_le_scan_start(BT_LE_SCAN_ACTIVE, NULL);
 	if (err) {
 		printk("failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 	printk("success.\n");
 
@@ -220,7 +220,7 @@ void main(void)
 		err = k_sem_take(&sem_per_adv, K_FOREVER);
 		if (err) {
 			printk("failed (err %d)\n", err);
-			return;
+			return 0;
 		}
 		printk("Found periodic advertising.\n");
 
@@ -229,11 +229,11 @@ void main(void)
 		sync_create_param.options = 0;
 		sync_create_param.sid = per_sid;
 		sync_create_param.skip = 0;
-		sync_create_param.timeout = 0xa;
+		sync_create_param.timeout = 0xaa;
 		err = bt_le_per_adv_sync_create(&sync_create_param, &sync);
 		if (err) {
 			printk("failed (err %d)\n", err);
-			return;
+			return 0;
 		}
 		printk("success.\n");
 
@@ -246,7 +246,7 @@ void main(void)
 			err = bt_le_per_adv_sync_delete(sync);
 			if (err) {
 				printk("failed (err %d)\n", err);
-				return;
+				return 0;
 			}
 			continue;
 		}
@@ -265,7 +265,7 @@ void main(void)
 		err = k_sem_take(&sem_per_sync_lost, K_FOREVER);
 		if (err) {
 			printk("failed (err %d)\n", err);
-			return;
+			return 0;
 		}
 		printk("Periodic sync lost.\n");
 	} while (true);

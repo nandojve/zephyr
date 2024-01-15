@@ -11,14 +11,10 @@ with a wide range of connectivity support and configurations. There are
 multiple version of this board like ``stm32f103_mini``.
 
 .. image:: img/stm32f103_mini_yellow.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: STM32F103 Mini Yellow
 
 .. image:: img/stm32f103_mini_blue.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: STM32F103 Mini Blue
 
@@ -77,6 +73,10 @@ The Zephyr stm32f103_mini board configuration supports the following hardware fe
 +-----------+------------+-------------------------------------+
 | USB       | on-chip    | USB device                          |
 +-----------+------------+-------------------------------------+
+| COUNTER   | on-chip    | rtc                                 |
++-----------+------------+-------------------------------------+
+| RTC       | on-chip    | rtc                                 |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
 
@@ -94,9 +94,7 @@ capable except for analog inputs.
 Board connectors:
 -----------------
 .. image:: img/stm32f103_mini_pin.jpg
-   :width: 800px
    :align: center
-   :height: 619px
    :alt: Nucleo F103RB connectors
 
 Default Zephyr Peripheral Mapping:
@@ -135,7 +133,7 @@ pattern, which can be triggered by using the BOOT0 pin.
 Flashing an application to stm32f103 mini
 -----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -148,7 +146,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -162,7 +160,7 @@ References
 .. target-notes::
 
 .. _STM32F103 reference manual:
-   http://www.st.com/resource/en/reference_manual/cd00171190.pdf
+   https://www.st.com/resource/en/reference_manual/cd00171190.pdf
 
 .. _STM32F103 data sheet:
-   http://www.st.com/resource/en/datasheet/stm32f103rc.pdf
+   https://www.st.com/resource/en/datasheet/stm32f103rc.pdf

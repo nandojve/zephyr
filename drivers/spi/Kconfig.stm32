@@ -5,7 +5,8 @@
 
 menuconfig SPI_STM32
 	bool "STM32 MCU SPI controller driver"
-	depends on SOC_FAMILY_STM32
+	default y
+	depends on DT_HAS_ST_STM32_SPI_ENABLED
 	select USE_STM32_LL_SPI
 	help
 	  Enable SPI support on the STM32 family of processors.
@@ -20,6 +21,7 @@ config SPI_STM32_INTERRUPT
 config SPI_STM32_DMA
 	bool "STM32 MCU SPI DMA Support"
 	select DMA
+	select CACHE_MANAGEMENT if CPU_HAS_DCACHE
 	help
 	  Enable the SPI DMA mode for SPI instances
 	  that enable dma channels in their device tree node.
@@ -30,5 +32,22 @@ config SPI_STM32_USE_HW_SS
 	help
 	  Use Slave Select pin instead of software Slave Select.
 
+config SPI_STM32F7_ERRATA_BUSY
+	bool
+	default y
+	depends on SOC_STM32F745XX || SOC_STM32F746XX || \
+		   SOC_STM32F750XX || SOC_STM32F756XX
+	help
+	  Handles erratum "BSY bit may stay high at the end of a data
+	  transfer in Slave mode".
+	  Seen in Errata Sheet 0290 §2.11.2
+
+if SPI_STM32F7_ERRATA_BUSY
+
+config SPI_STM32_BUSY_FLAG_TIMEOUT
+	int "timeout in us for the STM32 busy flag workaround"
+	default 10000
+
+endif # SPI_STM32F7_ERRATA_BUSY
 
 endif # SPI_STM32

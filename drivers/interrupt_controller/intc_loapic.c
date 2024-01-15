@@ -3,24 +3,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+
+#define DT_DRV_COMPAT intel_loapic
+
 /*
  * driver for x86 CPU local APIC (as an interrupt controller)
  */
 
-#include <kernel.h>
-#include <kernel_structs.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/pm/device.h>
 #include <zephyr/types.h>
 #include <string.h>
-#include <sys/__assert.h>
-#include <arch/x86/msr.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/arch/x86/msr.h>
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <drivers/interrupt_controller/loapic.h> /* public API declarations */
-#include <device.h>
-#include <drivers/interrupt_controller/sysapic.h>
-#include <drivers/interrupt_controller/ioapic.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/drivers/interrupt_controller/loapic.h> /* public API declarations */
+#include <zephyr/device.h>
+#include <zephyr/drivers/interrupt_controller/sysapic.h>
+#include <zephyr/drivers/interrupt_controller/ioapic.h>
 
 /* Local APIC Version Register Bits */
 
@@ -58,18 +62,14 @@
 #define LOAPIC_SPURIOUS_VECTOR_ID CONFIG_LOAPIC_SPURIOUS_VECTOR_ID
 #endif
 
-#define LOPIC_SSPND_BITS_PER_IRQ  1  /* Just the one for enable disable*/
-#define LOPIC_SUSPEND_BITS_REQD (ROUND_UP((LOAPIC_IRQ_COUNT * LOPIC_SSPND_BITS_PER_IRQ), 32))
+#define LOAPIC_SSPND_BITS_PER_IRQ  1  /* Just the one for enable disable*/
+#define LOAPIC_SUSPEND_BITS_REQD (ROUND_UP((LOAPIC_IRQ_COUNT * LOAPIC_SSPND_BITS_PER_IRQ), 32))
 #ifdef CONFIG_PM_DEVICE
-#include <pm/device.h>
 __pinned_bss
-uint32_t loapic_suspend_buf[LOPIC_SUSPEND_BITS_REQD / 32] = {0};
+uint32_t loapic_suspend_buf[LOAPIC_SUSPEND_BITS_REQD / 32] = {0};
 #endif
 
-#ifdef DEVICE_MMIO_IS_IN_RAM
-__pinned_bss
-mm_reg_t z_loapic_regs;
-#endif
+DEVICE_MMIO_TOPLEVEL(LOAPIC_REGS_STR, DT_DRV_INST(0));
 
 __pinned_func
 void send_eoi(void)
@@ -86,11 +86,8 @@ __pinned_func
 void z_loapic_enable(unsigned char cpu_number)
 {
 	int32_t loApicMaxLvt; /* local APIC Max LVT */
+	DEVICE_MMIO_TOPLEVEL_MAP(LOAPIC_REGS_STR, K_MEM_CACHE_NONE);
 
-#ifdef DEVICE_MMIO_IS_IN_RAM
-	device_map(&z_loapic_regs, CONFIG_LOAPIC_BASE_ADDRESS, 0x1000,
-		   K_MEM_CACHE_NONE);
-#endif /* DEVICE_MMIO_IS_IN_RAM */
 #ifndef CONFIG_X2APIC
 	/*
 	 * in xAPIC and flat model, bits 24-31 in LDR (Logical APIC ID) are
@@ -142,9 +139,6 @@ void z_loapic_enable(unsigned char cpu_number)
 
 	/* program Local Vector Table for the Virtual Wire Mode */
 
-	/* skip LINT0/LINT1 for Jailhouse guest case, because we won't
-	 * ever be waiting for interrupts on those
-	 */
 	/* set LINT0: extInt, high-polarity, edge-trigger, not-masked */
 
 	x86_write_loapic(LOAPIC_LINT0, (x86_read_loapic(LOAPIC_LINT0) &
@@ -182,7 +176,6 @@ void z_loapic_enable(unsigned char cpu_number)
 }
 
 /**
- *
  * @brief Dummy initialization function.
  *
  * The local APIC is initialized via z_loapic_enable() long before the
@@ -203,12 +196,9 @@ uint32_t z_loapic_irq_base(void)
 }
 
 /**
- *
  * @brief Set the vector field in the specified RTE
  *
  * This associates an IRQ with the desired vector in the IDT.
- *
- * @return N/A
  */
 __boot_func
 void z_loapic_int_vec_set(unsigned int irq, /* IRQ number of the interrupt */
@@ -240,14 +230,11 @@ void z_loapic_int_vec_set(unsigned int irq, /* IRQ number of the interrupt */
 }
 
 /**
- *
  * @brief Enable an individual LOAPIC interrupt (IRQ)
  *
  * @param irq the IRQ number of the interrupt
  *
  * This routine clears the interrupt mask bit in the LVT for the specified IRQ
- *
- * @return N/A
  */
 __pinned_func
 void z_loapic_irq_enable(unsigned int irq)
@@ -269,14 +256,11 @@ void z_loapic_irq_enable(unsigned int irq)
 }
 
 /**
- *
  * @brief Disable an individual LOAPIC interrupt (IRQ)
  *
  * @param irq the IRQ number of the interrupt
  *
  * This routine clears the interrupt mask bit in the LVT for the specified IRQ
- *
- * @return N/A
  */
 __pinned_func
 void z_loapic_irq_disable(unsigned int irq)
@@ -335,7 +319,7 @@ int z_irq_controller_isr_vector_get(void)
 	 */
 	for (block = 7; likely(block > 0); block--) {
 		pReg = x86_read_loapic(LOAPIC_ISR + (block * 0x10));
-		if (pReg) {
+		if (pReg != 0) {
 			return (block * 32) + (find_msb_set(pReg) - 1);
 		}
 
@@ -352,7 +336,7 @@ static int loapic_suspend(const struct device *port)
 
 	ARG_UNUSED(port);
 
-	(void)memset(loapic_suspend_buf, 0, (LOPIC_SUSPEND_BITS_REQD >> 3));
+	(void)memset(loapic_suspend_buf, 0, (LOAPIC_SUSPEND_BITS_REQD >> 3));
 
 	for (loapic_irq = 0; loapic_irq < LOAPIC_IRQ_COUNT; loapic_irq++) {
 
@@ -426,13 +410,12 @@ static int loapic_pm_action(const struct device *dev,
 
 	return ret;
 }
+#endif /* CONFIG_PM_DEVICE */
 
-SYS_DEVICE_DEFINE("loapic", loapic_init, loapic_pm_action, PRE_KERNEL_1,
-		  CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
-#else
-SYS_INIT(loapic_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
-#endif   /* CONFIG_PM_DEVICE */
+PM_DEVICE_DT_INST_DEFINE(0, loapic_pm_action);
 
+DEVICE_DT_INST_DEFINE(0, loapic_init, PM_DEVICE_DT_INST_GET(0), NULL, NULL,
+		      PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY, NULL);
 
 #if CONFIG_LOAPIC_SPURIOUS_VECTOR
 extern void z_loapic_spurious_handler(void);

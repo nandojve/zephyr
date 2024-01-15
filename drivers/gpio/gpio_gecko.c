@@ -7,11 +7,38 @@
 #define DT_DRV_COMPAT silabs_gecko_gpio_port
 
 #include <errno.h>
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/irq.h>
 #include <soc.h>
 #include <em_gpio.h>
+#ifdef CONFIG_SOC_GECKO_DEV_INIT
+#include <em_cmu.h>
+#endif
 
-#include "gpio_utils.h"
+#include <zephyr/drivers/gpio/gpio_utils.h>
+
+#if CONFIG_GPIO_GECKO_COMMON_INIT_PRIORITY >= CONFIG_GPIO_INIT_PRIORITY
+#error CONFIG_GPIO_GECKO_COMMON_INIT_PRIORITY must be less than \
+	CONFIG_GPIO_INIT_PRIORITY.
+#endif
+
+#if DT_NODE_HAS_PROP(id, peripheral_id)
+#define GET_GECKO_GPIO_INDEX(id) DT_INST_PROP(id, peripheral_id)
+#else
+#if defined(CONFIG_SOC_SERIES_EFR32BG22) || \
+	defined(CONFIG_SOC_SERIES_EFR32BG27) || \
+	defined(CONFIG_SOC_SERIES_EFR32MG21) || \
+	defined(CONFIG_SOC_SERIES_EFR32MG24)
+#define GECKO_GPIO_PORT_ADDR_SPACE_SIZE sizeof(GPIO_PORT_TypeDef)
+#else
+#define GECKO_GPIO_PORT_ADDR_SPACE_SIZE sizeof(GPIO_P_TypeDef)
+#endif
+/* Assumption for calculating gpio index:
+ * 1. Address space of the first GPIO port is the address space for GPIO port A
+ */
+#define GET_GECKO_GPIO_INDEX(id) (DT_INST_REG_ADDR(id) - DT_REG_ADDR(DT_NODELABEL(gpioa))) \
+	/ GECKO_GPIO_PORT_ADDR_SPACE_SIZE
+#endif /* DT_NODE_HAS_PROP(id, peripheral_id) */
 
 /*
  * Macros to set the GPIO MODE registers
@@ -124,6 +151,77 @@ static int gpio_gecko_configure(const struct device *dev,
 	return 0;
 }
 
+#ifdef CONFIG_GPIO_GET_CONFIG
+static int gpio_gecko_get_config(const struct device *dev,
+				 gpio_pin_t pin,
+				 gpio_flags_t *out_flags)
+{
+	const struct gpio_gecko_config *config = dev->config;
+	GPIO_Port_TypeDef gpio_index = config->gpio_index;
+	GPIO_Mode_TypeDef mode;
+	unsigned int out;
+	gpio_flags_t flags = 0;
+
+	mode = GPIO_PinModeGet(gpio_index, pin);
+	out = GPIO_PinOutGet(gpio_index, pin);
+
+	switch (mode) {
+	case gpioModeWiredAnd:
+		flags = GPIO_OUTPUT | GPIO_OPEN_DRAIN;
+
+		if (out) {
+			flags |= GPIO_OUTPUT_HIGH;
+		} else {
+			flags |= GPIO_OUTPUT_LOW;
+		}
+
+		break;
+	case gpioModeWiredOr:
+		flags = GPIO_OUTPUT | GPIO_OPEN_SOURCE;
+
+		if (out) {
+			flags |= GPIO_OUTPUT_HIGH;
+		} else {
+			flags |= GPIO_OUTPUT_LOW;
+		}
+
+		break;
+	case gpioModePushPull:
+		flags = GPIO_OUTPUT | GPIO_PUSH_PULL;
+
+		if (out) {
+			flags |= GPIO_OUTPUT_HIGH;
+		} else {
+			flags |= GPIO_OUTPUT_LOW;
+		}
+
+		break;
+	case gpioModeInputPull:
+		flags = GPIO_INPUT;
+
+		if (out) {
+			flags |= GPIO_PULL_UP;
+		} else {
+			flags |= GPIO_PULL_DOWN;
+		}
+
+		break;
+	case gpioModeInput:
+		flags = GPIO_INPUT;
+		break;
+	case gpioModeDisabled:
+		flags = GPIO_DISCONNECTED;
+		break;
+	default:
+		break;
+	}
+
+	*out_flags = flags;
+
+	return 0;
+}
+#endif
+
 static int gpio_gecko_port_get_raw(const struct device *dev, uint32_t *value)
 {
 	const struct gpio_gecko_config *config = dev->config;
@@ -214,7 +312,7 @@ static int gpio_gecko_pin_interrupt_configure(const struct device *dev,
 			falling_edge = false;
 		} /* default is GPIO_INT_TRIG_BOTH */
 
-		GPIO_IntConfig(config->gpio_index, pin,
+		GPIO_ExtIntConfig(config->gpio_index, pin, pin,
 			       rising_edge, falling_edge, true);
 	}
 
@@ -262,6 +360,9 @@ static void gpio_gecko_common_isr(const struct device *dev)
 
 static const struct gpio_driver_api gpio_gecko_driver_api = {
 	.pin_configure = gpio_gecko_configure,
+#ifdef CONFIG_GPIO_GET_CONFIG
+	.pin_get_config = gpio_gecko_get_config,
+#endif
 	.port_get_raw = gpio_gecko_port_get_raw,
 	.port_set_masked_raw = gpio_gecko_port_set_masked_raw,
 	.port_set_bits_raw = gpio_gecko_port_set_bits_raw,
@@ -286,11 +387,14 @@ DEVICE_DT_DEFINE(DT_INST(0, silabs_gecko_gpio),
 		    gpio_gecko_common_init,
 		    NULL,
 		    &gpio_gecko_common_data, &gpio_gecko_common_config,
-		    POST_KERNEL, CONFIG_GPIO_GECKO_COMMON_INIT_PRIORITY,
+		    PRE_KERNEL_1, CONFIG_GPIO_GECKO_COMMON_INIT_PRIORITY,
 		    &gpio_gecko_common_driver_api);
 
 static int gpio_gecko_common_init(const struct device *dev)
 {
+#ifdef CONFIG_SOC_GECKO_DEV_INIT
+	CMU_ClockEnable(cmuClock_GPIO, true);
+#endif
 	gpio_gecko_common_data.count = 0;
 	IRQ_CONNECT(GPIO_EVEN_IRQn,
 		    DT_IRQ_BY_NAME(DT_INST(0, silabs_gecko_gpio), gpio_even, priority),
@@ -315,7 +419,7 @@ static const struct gpio_gecko_config gpio_gecko_port##idx##_config = { \
 	.common = { \
 		.port_pin_mask = (gpio_port_pins_t)(-1), \
 	}, \
-	.gpio_index = DT_INST_PROP(idx, peripheral_id), \
+	.gpio_index = GET_GECKO_GPIO_INDEX(idx), \
 }; \
 \
 static struct gpio_gecko_data gpio_gecko_port##idx##_data; \
@@ -325,7 +429,7 @@ DEVICE_DT_INST_DEFINE(idx, \
 		    NULL, \
 		    &gpio_gecko_port##idx##_data, \
 		    &gpio_gecko_port##idx##_config, \
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, \
+		    POST_KERNEL, CONFIG_GPIO_INIT_PRIORITY, \
 		    &gpio_gecko_driver_api); \
 \
 static int gpio_gecko_port##idx##_init(const struct device *dev) \

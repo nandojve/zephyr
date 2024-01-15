@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 static void process_sample(const struct device *dev)
 {
@@ -48,13 +48,13 @@ static void lps22hh_handler(const struct device *dev,
 	process_sample(dev);
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = device_get_binding("LPS22HH");
+	const struct device *const dev = DEVICE_DT_GET_ONE(st_lps22hh);
 
-	if (dev == NULL) {
-		printf("Could not get LPS22HH device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	if (IS_ENABLED(CONFIG_LPS22HH_TRIGGER)) {
@@ -69,11 +69,11 @@ void main(void)
 		if (sensor_attr_set(dev, SENSOR_CHAN_ALL,
 				    SENSOR_ATTR_SAMPLING_FREQUENCY, &attr) < 0) {
 			printf("Cannot configure sampling rate\n");
-			return;
+			return 0;
 		}
 		if (sensor_trigger_set(dev, &trig, lps22hh_handler) < 0) {
 			printf("Cannot configure trigger\n");
-			return;
+			return 0;
 		}
 		printk("Configured for triggered collection at %u Hz\n",
 		       attr.val1);
@@ -84,4 +84,5 @@ void main(void)
 		k_sleep(K_MSEC(2000));
 	}
 	k_sleep(K_FOREVER);
+	return 0;
 }

@@ -10,7 +10,7 @@
 #ifndef _ZEPHYR_DRIVERS_ETHERNET_PHY_XLNX_GEM_H_
 #define _ZEPHYR_DRIVERS_ETHERNET_PHY_XLNX_GEM_H_
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
 
 /* Event codes used to indicate a particular state change to the driver */
@@ -59,7 +59,7 @@
 #define PHY_MRVL_MDIX_CONFIG_MASK			0x0003
 #define PHY_MRVL_MDIX_CONFIG_SHIFT			5
 #define PHY_MRVL_MDIX_AUTO_CROSSOVER_ENABLE		0x0003
-#define PHY_MRVL_MODE_CONFIG_MASK			0x0003
+#define PHY_MRVL_MODE_CONFIG_MASK			0x0007
 #define PHY_MRVL_MODE_CONFIG_SHIFT			0
 
 #define PHY_MRVL_COPPER_SPEED_CHANGED_INT_BIT		(1 << 14)
@@ -153,5 +153,3 @@ struct phy_xlnx_gem_supported_dev {
 int phy_xlnx_gem_detect(const struct device *dev);
 
 #endif /* _ZEPHYR_DRIVERS_ETHERNET_PHY_XLNX_GEM_H_ */
-
-/* EOF */

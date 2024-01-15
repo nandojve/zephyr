@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/ztest.h>
+#include <zephyr/arch/cpu.h>
+#include <cmsis_core.h>
+#include <zephyr/sys/barrier.h>
 
 /* Offset for the Direct interrupt used in this test. */
 #define DIRECT_ISR_OFFSET (CONFIG_NUM_IRQS - 1)
@@ -27,7 +28,7 @@ void arm_direct_isr_handler_1(const void *args)
 	test_flag = 2;
 }
 
-void test_arm_dynamic_direct_interrupts(void)
+ZTEST(arm_irq_advanced_features, test_arm_dynamic_direct_interrupts)
 {
 	int post_flag = 0;
 
@@ -53,8 +54,8 @@ void test_arm_dynamic_direct_interrupts(void)
 	 * Instruction barriers to make sure the NVIC IRQ is
 	 * set to pending state before 'test_flag' is checked.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Confirm test flag is set by the dynamic direct ISR handler. */
 	post_flag = test_flag;
@@ -77,8 +78,8 @@ void test_arm_dynamic_direct_interrupts(void)
 	 * Instruction barriers to make sure the NVIC IRQ is
 	 * set to pending state before 'test_flag' is checked.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Confirm test flag is set by the dynamic direct ISR handler. */
 	post_flag = test_flag;

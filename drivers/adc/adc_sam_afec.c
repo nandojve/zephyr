@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2017 comsuisse AG
  * Copyright (c) 2018 Justin Watson
+ * Copyright (c) 2023 Gerson Fernando Budke
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,23 +16,28 @@
  */
 
 #include <errno.h>
-#include <sys/__assert.h>
-#include <sys/util.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <drivers/adc.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER
 #include "adc_context.h"
 
 #define LOG_LEVEL CONFIG_ADC_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(adc_sam_afec);
 
 #define NUM_CHANNELS 12
-
 #define CONF_ADC_PRESCALER ((SOC_ATMEL_SAM_MCK_FREQ_HZ / 15000000) - 1)
+#ifndef AFEC_MR_ONE
+#define AFEC_MR_ONE AFEC_MR_ANACH
+#endif
 
 typedef void (*cfg_func_t)(const struct device *dev);
 
@@ -58,20 +64,14 @@ struct adc_sam_data {
 struct adc_sam_cfg {
 	Afec *regs;
 	cfg_func_t cfg_func;
-	uint32_t periph_id;
-	struct soc_gpio_pin afec_trg_pin;
+	const struct atmel_sam_pmc_config clock_cfg;
+	const struct pinctrl_dev_config *pcfg;
 };
-
-#define DEV_CFG(dev) \
-	((const struct adc_sam_cfg *const)(dev)->config)
-
-#define DEV_DATA(dev) \
-	((struct adc_sam_data *)(dev)->data)
 
 static int adc_sam_channel_setup(const struct device *dev,
 				 const struct adc_channel_cfg *channel_cfg)
 {
-	const struct adc_sam_cfg * const cfg = DEV_CFG(dev);
+	const struct adc_sam_cfg * const cfg = dev->config;
 	Afec *const afec = cfg->regs;
 
 	uint8_t channel_id = channel_cfg->channel_id;
@@ -109,19 +109,21 @@ static int adc_sam_channel_setup(const struct device *dev,
 		return -EINVAL;
 	}
 
+#ifdef AFEC_11147
 	/* Set single ended channels to unsigned and differential channels
 	 * to signed conversions.
 	 */
 	afec->AFEC_EMR &= ~(AFEC_EMR_SIGNMODE(
 			  AFEC_EMR_SIGNMODE_SE_UNSG_DF_SIGN_Val));
+#endif
 
 	return 0;
 }
 
 static void adc_sam_start_conversion(const struct device *dev)
 {
-	const struct adc_sam_cfg *const cfg = DEV_CFG(dev);
-	struct adc_sam_data *data = DEV_DATA(dev);
+	const struct adc_sam_cfg *const cfg = dev->config;
+	struct adc_sam_data *data = dev->data;
 	Afec *const afec = cfg->regs;
 
 	data->channel_id = find_lsb_set(data->channels) - 1;
@@ -186,7 +188,7 @@ static int check_buffer_size(const struct adc_sequence *sequence,
 static int start_read(const struct device *dev,
 		      const struct adc_sequence *sequence)
 {
-	struct adc_sam_data *data = DEV_DATA(dev);
+	struct adc_sam_data *data = dev->data;
 	int error = 0;
 	uint32_t channels = sequence->channels;
 
@@ -251,7 +253,7 @@ static int start_read(const struct device *dev,
 static int adc_sam_read(const struct device *dev,
 			const struct adc_sequence *sequence)
 {
-	struct adc_sam_data *data = DEV_DATA(dev);
+	struct adc_sam_data *data = dev->data;
 	int error;
 
 	adc_context_lock(&data->ctx, false, NULL);
@@ -263,9 +265,10 @@ static int adc_sam_read(const struct device *dev,
 
 static int adc_sam_init(const struct device *dev)
 {
-	const struct adc_sam_cfg *const cfg = DEV_CFG(dev);
-	struct adc_sam_data *data = DEV_DATA(dev);
+	const struct adc_sam_cfg *const cfg = dev->config;
+	struct adc_sam_data *data = dev->data;
 	Afec *const afec = cfg->regs;
+	int retval;
 
 	/* Reset the AFEC. */
 	afec->AFEC_CR = AFEC_CR_SWRST;
@@ -286,11 +289,22 @@ static int adc_sam_init(const struct device *dev)
 	}
 
 	/* Enable PGA and Current Bias. */
-	afec->AFEC_ACR = AFEC_ACR_PGA0EN
+	afec->AFEC_ACR = AFEC_ACR_IBCTL(1)
+#ifdef AFEC_11147
+		       | AFEC_ACR_PGA0EN
 		       | AFEC_ACR_PGA1EN
-		       | AFEC_ACR_IBCTL(1);
+#endif
+		       ;
 
-	soc_pmc_peripheral_enable(cfg->periph_id);
+	/* Enable AFEC clock in PMC */
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&cfg->clock_cfg);
+
+	/* Connect pins to the peripheral */
+	retval = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	if (retval < 0) {
+		return retval;
+	}
 
 	cfg->cfg_func(dev);
 
@@ -298,7 +312,7 @@ static int adc_sam_init(const struct device *dev)
 
 	adc_context_unlock_unconditionally(&data->ctx);
 
-	return 0;
+	return retval;
 }
 
 #ifdef CONFIG_ADC_ASYNC
@@ -306,7 +320,7 @@ static int adc_sam_read_async(const struct device *dev,
 			      const struct adc_sequence *sequence,
 			      struct k_poll_signal *async)
 {
-	struct adc_sam_data *data = DEV_DATA(dev);
+	struct adc_sam_data *data = dev->data;
 	int error;
 
 	adc_context_lock(&data->ctx, true, async);
@@ -327,8 +341,8 @@ static const struct adc_driver_api adc_sam_api = {
 
 static void adc_sam_isr(const struct device *dev)
 {
-	struct adc_sam_data *data = DEV_DATA(dev);
-	const struct adc_sam_cfg *const cfg = DEV_CFG(dev);
+	struct adc_sam_data *data = dev->data;
+	const struct adc_sam_cfg *const cfg = dev->config;
 	Afec *const afec = cfg->regs;
 	uint16_t result;
 
@@ -350,13 +364,14 @@ static void adc_sam_isr(const struct device *dev)
 }
 
 #define ADC_SAM_INIT(n)							\
+	PINCTRL_DT_INST_DEFINE(n);					\
 	static void adc##n##_sam_cfg_func(const struct device *dev);	\
 									\
 	static const struct adc_sam_cfg adc##n##_sam_cfg = {		\
 		.regs = (Afec *)DT_INST_REG_ADDR(n),			\
 		.cfg_func = adc##n##_sam_cfg_func,			\
-		.periph_id = DT_INST_PROP(n, peripheral_id),		\
-		.afec_trg_pin = ATMEL_SAM_DT_INST_PIN(n, 0),		\
+		.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(n),		\
+		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),		\
 	};								\
 									\
 	static struct adc_sam_data adc##n##_sam_data = {		\

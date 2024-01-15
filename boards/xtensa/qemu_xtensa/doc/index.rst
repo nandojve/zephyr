@@ -9,18 +9,11 @@ Overview
 The QEMU board configuration is used to emulate the Xtensa architecture. This board
 configuration provides support for the Xtensa simulation environment.
 
-.. figure:: qemu_xtensa.png
-   :width: 600px
-   :align: center
-   :alt: Qemu
-
-   Qemu (Credit: qemu.org)
-
 Programming and Debugging
 *************************
 
 Use this configuration to run basic Zephyr applications and kernel tests in the QEMU
-emulated environment, for example, with the :ref:`synchronization_sample`:
+emulated environment, for example, with the :zephyr:code-sample:`synchronization` sample:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/synchronization

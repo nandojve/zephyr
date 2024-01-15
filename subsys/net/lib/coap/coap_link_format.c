@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(net_coap, CONFIG_COAP_LOG_LEVEL);
 
 #include <stdlib.h>
@@ -14,12 +14,12 @@ LOG_MODULE_DECLARE(net_coap, CONFIG_COAP_LOG_LEVEL);
 #include <stdbool.h>
 #include <errno.h>
 
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <net/coap.h>
-#include <net/coap_link_format.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/coap_link_format.h>
 
 static inline bool append_u8(struct coap_packet *cpkt, uint8_t data)
 {
@@ -84,7 +84,6 @@ static bool match_path_uri(const char * const *path,
 
 	p = path;
 	plen = *p ? strlen(*p) : 0;
-	j = 0;
 
 	if (plen == 0) {
 		return false;
@@ -433,10 +432,11 @@ int clear_more_flag(struct coap_packet *cpkt)
 	return 0;
 }
 
-int coap_well_known_core_get(struct coap_resource *resource,
-			      struct coap_packet *request,
-			      struct coap_packet *response,
-			      uint8_t *data, uint16_t len)
+int coap_well_known_core_get_len(struct coap_resource *resources,
+				 size_t resources_len,
+				 struct coap_packet *request,
+				 struct coap_packet *response,
+				 uint8_t *data, uint16_t len)
 {
 	static struct coap_block_context ctx;
 	struct coap_option query;
@@ -447,9 +447,9 @@ int coap_well_known_core_get(struct coap_resource *resource,
 	uint16_t id;
 	uint8_t tkl;
 	int r;
-	bool more = false;
+	bool more = false, first = true;
 
-	if (!resource || !request || !response || !data || !len) {
+	if (!resources || !request || !response || !data || !len) {
 		return -EINVAL;
 	}
 
@@ -506,28 +506,30 @@ int coap_well_known_core_get(struct coap_resource *resource,
 	offset = 0;
 	remaining = coap_block_size_to_bytes(ctx.block_size);
 
-	while (resource++ && resource->path) {
+	for (size_t i = 0; i < resources_len; ++i) {
 		if (!remaining) {
 			more = true;
 			break;
 		}
 
-		if (!match_queries_resource(resource, &query, num_queries)) {
+		if (!match_queries_resource(&resources[i], &query, num_queries)) {
 			continue;
 		}
 
-		r = format_resource(resource, response, &remaining, &offset,
-				    ctx.current, &more);
-		if (r < 0) {
-			goto end;
-		}
-
-		if ((resource + 1) && (resource + 1)->path) {
+		if (first) {
+			first = false;
+		} else {
 			r = append_to_coap_pkt(response, ",", 1, &remaining,
 					       &offset, ctx.current);
 			if (!r) {
 				goto end;
 			}
+		}
+
+		r = format_resource(&resources[i], response, &remaining, &offset,
+				    ctx.current, &more);
+		if (r < 0) {
+			goto end;
 		}
 	}
 
@@ -632,10 +634,11 @@ static int format_resource(const struct coap_resource *resource,
 	return format_attributes(attributes, response);
 }
 
-int coap_well_known_core_get(struct coap_resource *resource,
-			     struct coap_packet *request,
-			     struct coap_packet *response,
-			     uint8_t *data, uint16_t len)
+int coap_well_known_core_get_len(struct coap_resource *resources,
+				 size_t resources_len,
+				 const struct coap_packet *request,
+				 struct coap_packet *response,
+				 uint8_t *data, uint16_t data_len)
 {
 	struct coap_option query;
 	uint8_t token[COAP_TOKEN_MAX_LEN];
@@ -643,8 +646,9 @@ int coap_well_known_core_get(struct coap_resource *resource,
 	uint8_t tkl;
 	uint8_t num_queries;
 	int r;
+	bool first = true;
 
-	if (!resource || !request || !response || !data || !len) {
+	if (!resources || !request || !response || !data || !data_len) {
 		return -EINVAL;
 	}
 
@@ -661,7 +665,7 @@ int coap_well_known_core_get(struct coap_resource *resource,
 
 	num_queries = r;
 
-	r = coap_packet_init(response, data, len, COAP_VERSION_1, COAP_TYPE_ACK,
+	r = coap_packet_init(response, data, data_len, COAP_VERSION_1, COAP_TYPE_ACK,
 			     tkl, token, COAP_RESPONSE_CODE_CONTENT, id);
 	if (r < 0) {
 		return r;
@@ -678,27 +682,49 @@ int coap_well_known_core_get(struct coap_resource *resource,
 		return -EINVAL;
 	}
 
-	while (resource++ && resource->path) {
-		if (!match_queries_resource(resource, &query, num_queries)) {
+	for (size_t i = 0; i < resources_len; ++i) {
+		if (!match_queries_resource(&resources[i], &query, num_queries)) {
 			continue;
 		}
 
-		r = format_resource(resource, response);
-		if (r < 0) {
-			return r;
-		}
-
-		if ((resource + 1) && (resource + 1)->path) {
+		if (first) {
+			first = false;
+		} else {
 			r = append_u8(response, (uint8_t) ',');
 			if (!r) {
 				return -ENOMEM;
 			}
+		}
+
+		r = format_resource(&resources[i], response);
+		if (r < 0) {
+			return r;
 		}
 	}
 
 	return 0;
 }
 #endif
+
+int coap_well_known_core_get(struct coap_resource *resource,
+			     const struct coap_packet *request,
+			     struct coap_packet *response,
+			     uint8_t *data, uint16_t data_len)
+{
+	struct coap_resource *resources = resource + 1;
+	size_t resources_len = 0;
+
+	if (resource == NULL) {
+		return -EINVAL;
+	}
+
+	while (resources[resources_len].path) {
+		resources_len++;
+	}
+
+	return coap_well_known_core_get_len(resources, resources_len, request, response, data,
+					    data_len);
+}
 
 /* Exposing some of the APIs to CoAP unit tests in tests/net/lib/coap */
 #if defined(CONFIG_COAP_TEST_API_ENABLE)

@@ -12,9 +12,8 @@ The board comes with 3 different USB connector options: USB Type-C plug,
 USB Type-C socket and USB Type-A plug.
 
 .. image:: img/serpente.jpg
-     :width: 640px
      :align: center
-     :alt: Serpente Baords
+     :alt: Serpente Boards
 
 Hardware
 ********
@@ -76,7 +75,7 @@ USB Device Port
 
 The SAMD21 MCU has a USB device port that can be used to communicate
 with a host PC.  See the :ref:`usb-samples` sample applications for
-more, such as the :ref:`usb_cdc-acm` sample which prints "Hello World!"
+more, such as the :zephyr:code-sample:`usb-cdc-acm` sample which prints "Hello World!"
 to the host PC.
 
 Programming and Debugging
@@ -88,7 +87,7 @@ can be entered by quickly tapping the reset button twice.
 Flashing
 ========
 
-#. Build the Zephyr kernel and the :ref:`blinky-sample` sample application:
+#. Build the Zephyr kernel and the :zephyr:code-sample:`blinky` sample application:
 
    .. zephyr-app-commands::
       :zephyr-app: samples/basic/blinky
@@ -117,10 +116,10 @@ References
 .. target-notes::
 
 .. _Serpente documentation:
-    https://serpente.solder.party/r2/
+    https://www.solder.party/docs/serpente/r2/
 
 .. _pinouts:
-    https://serpente.solder.party/r2/docs/pinout/
+    https://www.solder.party/docs/serpente/r2/pinout/
 
 .. _schematic:
-    https://serpente.solder.party/r2/docs/downloads/
+    https://www.solder.party/docs/serpente/r2/downloads/

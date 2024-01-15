@@ -7,11 +7,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <arch/cpu.h>
-#include <drivers/gpio/gpio_mmio32.h>
-#include <init.h>
+#include <zephyr/drivers/gpio/gpio_mmio32.h>
 #include <soc.h>
-#include <linker/linker-defs.h>
+#include <zephyr/linker/linker-defs.h>
 
 
 /* Setup GPIO drivers for accessing FPGAIO registers */
@@ -37,7 +35,7 @@ FPGAIO_INIT(2);
 /* The base address that the application image will start at on the secondary
  * (non-TrustZone) Cortex-M33 mcu.
  */
-#define CPU1_FLASH_ADDRESS      (0x100000)
+#define CPU1_FLASH_ADDRESS      (0x38B000)
 
 /* The memory map offset for the application image, which is used
  * to determine the location of the reset vector at startup.
@@ -45,7 +43,7 @@ FPGAIO_INIT(2);
 #define CPU1_FLASH_OFFSET       (0x10000000)
 
 /**
- * @brief Wake up CPU 1 from another CPU, this is plaform specific.
+ * @brief Wake up CPU 1 from another CPU, this is platform specific.
  */
 void wakeup_cpu1(void)
 {
@@ -60,7 +58,7 @@ void wakeup_cpu1(void)
 }
 
 /**
- * @brief Get the current CPU ID, this is plaform specific.
+ * @brief Get the current CPU ID, this is platform specific.
  *
  * @return Current CPU ID
  */
@@ -70,23 +68,3 @@ uint32_t sse_200_platform_get_cpu_id(void)
 
 	return (uint32_t)*p_cpu_id;
 }
-
-/**
- * @brief Perform basic hardware initialization at boot.
- *
- * @return 0
- */
-static int arm_mps2_init(const struct device *arg)
-{
-	ARG_UNUSED(arg);
-
-	/*
-	 * Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	return 0;
-}
-
-SYS_INIT(arm_mps2_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

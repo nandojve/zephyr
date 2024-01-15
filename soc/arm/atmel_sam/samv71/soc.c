@@ -1,6 +1,6 @@
 /*
- * Copyright (c) 2019 Gerson Fernando Budke
  * Copyright (c) 2016 Piotr Mienkowski
+ * Copyright (c) 2019-2023 Gerson Fernando Budke <nandojve@gmail.com>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,12 +11,12 @@
  * for the Atmel SAM V71 MCU.
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
-#include <logging/log.h>
+#include <cmsis_core.h>
+#include <zephyr/logging/log.h>
 
 #define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
 LOG_MODULE_REGISTER(soc);
@@ -178,6 +178,14 @@ static ALWAYS_INLINE void clock_init(void)
 		;
 	}
 
+	/* Setup UPLL */
+	PMC->CKGR_UCKR = CKGR_UCKR_UPLLCOUNT(0x3Fu) | CKGR_UCKR_UPLLEN;
+
+	/* Wait for PLL lock */
+	while (!(PMC->PMC_SR & PMC_SR_LOCKU)) {
+		;
+	}
+
 	/*
 	 * Final setup of the Master Clock
 	 */
@@ -216,26 +224,17 @@ static ALWAYS_INLINE void clock_init(void)
 	}
 }
 
-/**
- * @brief Perform basic hardware initialization at boot.
- *
- * This needs to be run at the very beginning.
- * So the init priority has to be 0 (zero).
- *
- * @return 0
- */
-static int atmel_samv71_init(const struct device *arg)
+void z_arm_platform_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
-	SCB_EnableICache();
-
-	if (!(SCB->CCR & SCB_CCR_DC_Msk)) {
+	if (IS_ENABLED(CONFIG_CACHE_MANAGEMENT) && IS_ENABLED(CONFIG_ICACHE)) {
+		SCB_EnableICache();
+	} else {
+		SCB_DisableICache();
+	}
+	if (IS_ENABLED(CONFIG_CACHE_MANAGEMENT) && IS_ENABLED(CONFIG_DCACHE)) {
 		SCB_EnableDCache();
+	} else {
+		SCB_DisableDCache();
 	}
 
 	/*
@@ -248,14 +247,18 @@ static int atmel_samv71_init(const struct device *arg)
 
 	/* Setup system clocks */
 	clock_init();
+}
 
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
-
+/**
+ * @brief Perform basic hardware initialization at boot.
+ *
+ * This needs to be run at the very beginning.
+ * So the init priority has to be 0 (zero).
+ *
+ * @return 0
+ */
+static int atmel_samv71_init(void)
+{
 	/* Check that the CHIP CIDR matches the HAL one */
 	if (CHIPID->CHIPID_CIDR != CHIP_CIDR) {
 		LOG_WRN("CIDR mismatch: chip = 0x%08x vs HAL = 0x%08x",

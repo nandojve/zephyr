@@ -14,6 +14,7 @@ supported:
   - lps22hb
   - lsm6dsl
   - pwm
+  - counter
   - gpio
   - ble
   - spi
@@ -21,6 +22,9 @@ supported:
   - vl53l0x
   - watchdog
   - adc
+  - dac
+  - qspi
   - dma
 ram: 96
 flash: 1024
+vendor: st

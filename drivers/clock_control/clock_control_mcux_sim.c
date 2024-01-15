@@ -7,18 +7,24 @@
 #define DT_DRV_COMPAT nxp_kinetis_sim
 #include <errno.h>
 #include <soc.h>
-#include <drivers/clock_control.h>
-#include <dt-bindings/clock/kinetis_sim.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/dt-bindings/clock/kinetis_sim.h>
 #include <fsl_clock.h>
 
 #define LOG_LEVEL CONFIG_CLOCK_CONTROL_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(clock_control);
 
 static int mcux_sim_on(const struct device *dev,
 		       clock_control_subsys_t sub_system)
 {
 	clock_ip_name_t clock_ip_name = (clock_ip_name_t) sub_system;
+
+#ifdef CONFIG_ETH_NXP_ENET
+	if ((uint32_t)sub_system == KINETIS_SIM_ENET_CLK) {
+		clock_ip_name = kCLOCK_Enet0;
+	}
+#endif
 
 	CLOCK_EnableClock(clock_ip_name);
 
@@ -45,6 +51,9 @@ static int mcux_sim_get_subsys_rate(const struct device *dev,
 	case KINETIS_SIM_LPO_CLK:
 		clock_name = kCLOCK_LpoClk;
 		break;
+	case KINETIS_SIM_ENET_CLK:
+		clock_name = kCLOCK_CoreSysClk;
+		break;
 	default:
 		clock_name = (clock_name_t) sub_system;
 		break;
@@ -57,7 +66,6 @@ static int mcux_sim_get_subsys_rate(const struct device *dev,
 
 #if DT_NODE_HAS_STATUS(DT_INST(0, nxp_kinetis_ke1xf_sim), okay)
 #define NXP_KINETIS_SIM_NODE DT_INST(0, nxp_kinetis_ke1xf_sim)
-#define NXP_KINETIS_SIM_LABEL DT_LABEL(DT_INST(0, nxp_kinetis_ke1xf_sim))
 #if DT_NODE_HAS_PROP(DT_INST(0, nxp_kinetis_ke1xf_sim), clkout_source)
 	#define NXP_KINETIS_SIM_CLKOUT_SOURCE \
 			DT_PROP(DT_INST(0, nxp_kinetis_ke1xf_sim), clkout_source)
@@ -67,7 +75,6 @@ static int mcux_sim_get_subsys_rate(const struct device *dev,
 			DT_PROP(DT_INST(0, nxp_kinetis_ke1xf_sim), clkout_divider)
 #endif
 #else
-#define NXP_KINETIS_SIM_LABEL DT_LABEL(DT_INST(0, nxp_kinetis_sim))
 #define NXP_KINETIS_SIM_NODE DT_INST(0, nxp_kinetis_sim)
 #if DT_NODE_HAS_PROP(DT_INST(0, nxp_kinetis_sim), clkout_source)
 	#define NXP_KINETIS_SIM_CLKOUT_SOURCE \

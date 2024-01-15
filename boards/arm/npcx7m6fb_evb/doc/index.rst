@@ -1,7 +1,7 @@
 .. _npcx7m6fb_evb:
 
-NPCX7M6FB_EVB
-###################
+Nuvoton NPCX7M6FB_EVB
+#####################
 
 Overview
 ********
@@ -10,8 +10,7 @@ The NPCX7M6FB_EVB kit is a development platform to evaluate the
 Nuvoton NPCX7 series microcontrollers. This board needs to be mated with
 part number NPCX796FB.
 
-.. image:: ./npcx7m6fb_evb.png
-     :width: 800px
+.. image:: npcx7m6fb_evb.jpg
      :align: center
      :alt: NPCX7M6FB Evaluation Board
 
@@ -80,10 +79,20 @@ JTAG only sessions.
 Flashing
 ========
 
-Build application as usual for the ``npcx7m6fb_evb`` board, and flash
-using Servo V2, μServo, or Servo V4 (CCD). See the
+If the correct IDC headers are installed, this board supports both J-TAG and
+also the ChromiumOS servo.
+
+To flash using Servo V2, μServo, or Servo V4 (CCD), see the
 `Chromium EC Flashing Documentation`_ for more information.
 
+To flash with J-TAG, install the drivers for your programmer, for example:
+SEGGER J-link's drivers are at https://www.segger.com/downloads/jlink/
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: npcx7m6fb_evb
+   :maybe-skip-config:
+   :goals: build flash
 
 Debugging
 =========

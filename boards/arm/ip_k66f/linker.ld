@@ -1,8 +1,10 @@
 /*
- * Copyright (c) 2021 DENX Software Engineeering GmbH
+ * Copyright (c) 2021 DENX Software Engineering GmbH
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include <zephyr/linker/iterable_sections.h>
 
 /**
  * @file
@@ -42,4 +44,4 @@ ITERABLE_SECTION_RAM(net_if_dev, 4)                             \
 ITERABLE_SECTION_RAM(net_l2, 4)                                 \
 ITERABLE_SECTION_RAM(eth_bridge, 4)
 
-#include <arch/arm/aarch32/cortex_m/scripts/linker.ld>
+#include <zephyr/arch/arm/cortex_m/scripts/linker.ld>

@@ -6,7 +6,7 @@
 
 /dts-v1/;
 #include <nordic/nrf5340_cpuapp_qkaa.dtsi>
-#include "thingy53_nrf5340_common.dts"
+#include "thingy53_nrf5340_common.dtsi"
 
 / {
 	model = "Nordic Thingy53 NRF5340 Application";
@@ -19,9 +19,8 @@
 		zephyr,sram-secure-partition = &sram0_s;
 		zephyr,sram-non-secure-partition = &sram0_ns;
 	};
-};
 
-zephyr_udc0: &usbd {
-	compatible = "nordic,nrf-usbd";
-	status = "okay";
+	aliases {
+		watchdog0 = &wdt0;
+	};
 };

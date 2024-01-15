@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/pinctrl.h>
 
 #include <nrfx_spim.h>
 #include <nrfx_uarte.h>
 #include <drivers/src/prs/nrfx_prs.h>
+#include <zephyr/irq.h>
 
 #define TRANSFER_LENGTH 10
 
@@ -79,7 +81,7 @@ static bool init_buttons(void)
 		const struct button_spec *btn = &btn_spec[i];
 		int ret;
 
-		if (!device_is_ready(btn->gpio.port)) {
+		if (!gpio_is_ready_dt(&btn->gpio)) {
 			printk("%s is not ready\n", btn->gpio.port->name);
 			return false;
 		}
@@ -117,6 +119,11 @@ static void spim_handler(const nrfx_spim_evt_t *p_event, void *p_context)
 
 static bool switch_to_spim(void)
 {
+	int ret;
+	nrfx_err_t err;
+
+	PINCTRL_DT_DEFINE(SPIM_NODE);
+
 	if (spim_initialized) {
 		return true;
 	}
@@ -129,15 +136,20 @@ static bool switch_to_spim(void)
 		uarte_initialized = false;
 	}
 
-	nrfx_err_t err;
 	nrfx_spim_config_t spim_config = NRFX_SPIM_DEFAULT_CONFIG(
-		/* Take pin numbers from devicetree. */
-		DT_PROP(SPIM_NODE, sck_pin),
-		DT_PROP(SPIM_NODE, mosi_pin),
-		DT_PROP(SPIM_NODE, miso_pin),
+		NRF_SPIM_PIN_NOT_CONNECTED,
+		NRF_SPIM_PIN_NOT_CONNECTED,
+		NRF_SPIM_PIN_NOT_CONNECTED,
 		NRF_DT_GPIOS_TO_PSEL(SPIM_NODE, cs_gpios));
 	spim_config.frequency = NRF_SPIM_FREQ_1M;
-	spim_config.miso_pull = NRF_GPIO_PIN_PULLDOWN;
+	spim_config.skip_gpio_cfg = true;
+	spim_config.skip_psel_cfg = true;
+
+	ret = pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(SPIM_NODE),
+				  PINCTRL_STATE_DEFAULT);
+	if (ret < 0) {
+		return ret;
+	}
 
 	err = nrfx_spim_init(&spim, &spim_config, spim_handler, NULL);
 	if (err != NRFX_SUCCESS) {
@@ -179,7 +191,7 @@ static bool spim_transfer(const uint8_t *tx_data, size_t tx_data_len,
 static void uarte_handler(const nrfx_uarte_event_t *p_event, void *p_context)
 {
 	if (p_event->type == NRFX_UARTE_EVT_RX_DONE) {
-		received = p_event->data.rxtx.bytes;
+		received = p_event->data.rx.length;
 		k_sem_give(&transfer_finished);
 	} else if (p_event->type == NRFX_UARTE_EVT_ERROR) {
 		received = 0;
@@ -189,6 +201,11 @@ static void uarte_handler(const nrfx_uarte_event_t *p_event, void *p_context)
 
 static bool switch_to_uarte(void)
 {
+	int ret;
+	nrfx_err_t err;
+
+	PINCTRL_DT_DEFINE(UARTE_NODE);
+
 	if (uarte_initialized) {
 		return true;
 	}
@@ -201,12 +218,18 @@ static bool switch_to_uarte(void)
 		spim_initialized = false;
 	}
 
-	nrfx_err_t err;
 	nrfx_uarte_config_t uarte_config = NRFX_UARTE_DEFAULT_CONFIG(
-		/* Take pin numbers from devicetree. */
-		DT_PROP(UARTE_NODE, tx_pin),
-		DT_PROP(UARTE_NODE, rx_pin));
+		NRF_UARTE_PSEL_DISCONNECTED,
+		NRF_UARTE_PSEL_DISCONNECTED);
 	uarte_config.baudrate = NRF_UARTE_BAUDRATE_1000000;
+	uarte_config.skip_gpio_cfg = true;
+	uarte_config.skip_psel_cfg = true;
+
+	ret = pinctrl_apply_state(PINCTRL_DT_DEV_CONFIG_GET(UARTE_NODE),
+				  PINCTRL_STATE_DEFAULT);
+	if (ret < 0) {
+		return ret;
+	}
 
 	err = nrfx_uarte_init(&uarte, &uarte_config, uarte_handler);
 	if (err != NRFX_SUCCESS) {
@@ -230,7 +253,7 @@ static bool uarte_transfer(const uint8_t *tx_data, size_t tx_data_len,
 		return false;
 	}
 
-	err = nrfx_uarte_tx(&uarte, tx_data, tx_data_len);
+	err = nrfx_uarte_tx(&uarte, tx_data, tx_data_len, 0);
 	if (err != NRFX_SUCCESS) {
 		printk("nrfx_uarte_tx() failed: 0x%08x\n", err);
 		return false;
@@ -243,7 +266,7 @@ static bool uarte_transfer(const uint8_t *tx_data, size_t tx_data_len,
 		 * fail. In such case, stop the reception and end the transfer
 		 * this way. Now taking the semaphore should be successful.
 		 */
-		nrfx_uarte_rx_abort(&uarte);
+		nrfx_uarte_rx_abort(&uarte, 0, 0);
 		if (k_sem_take(&transfer_finished, K_MSEC(10)) != 0) {
 			printk("UARTE transfer timeout\n");
 			return false;
@@ -265,16 +288,13 @@ static bool background_transfer(const struct device *spi_dev)
 {
 	static const uint8_t tx_buffer[] = "Nordic Semiconductor";
 	static uint8_t rx_buffer[sizeof(tx_buffer)];
-	static const struct spi_cs_control spi_dev_cs_ctrl = {
-		.gpio_dev = DEVICE_DT_GET(DT_GPIO_CTLR(SPI_DEV_NODE, cs_gpios)),
-		.gpio_pin = DT_GPIO_PIN(SPI_DEV_NODE, cs_gpios),
-		.gpio_dt_flags = DT_GPIO_FLAGS(SPI_DEV_NODE, cs_gpios)
-	};
 	static const struct spi_config spi_dev_cfg = {
 		.operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8) |
 			     SPI_TRANSFER_MSB,
 		.frequency = 1000000,
-		.cs = &spi_dev_cs_ctrl
+		.cs = {
+			.gpio = GPIO_DT_SPEC_GET(SPI_DEV_NODE, cs_gpios),
+		},
 	};
 	static const struct spi_buf tx_buf = {
 		.buf = (void *)tx_buffer,
@@ -309,18 +329,18 @@ static bool background_transfer(const struct device *spi_dev)
 	return true;
 }
 
-void main(void)
+int main(void)
 {
 	printk("nrfx PRS example on %s\n", CONFIG_BOARD);
 
 	static uint8_t tx_buffer[TRANSFER_LENGTH];
 	static uint8_t rx_buffer[sizeof(tx_buffer)];
 	uint8_t fill_value = 0;
-	const struct device *spi_dev = DEVICE_DT_GET(SPI_DEV_NODE);
+	const struct device *const spi_dev = DEVICE_DT_GET(SPI_DEV_NODE);
 
 	if (!device_is_ready(spi_dev)) {
 		printk("%s is not ready\n", spi_dev->name);
-		return;
+		return 0;
 	}
 
 	/* Install a shared interrupt handler for peripherals used via
@@ -329,18 +349,17 @@ void main(void)
 	 */
 	BUILD_ASSERT(
 		DT_IRQ(SPIM_NODE, priority) == DT_IRQ(UARTE_NODE, priority),
-		"Interrupt priorities for " DT_LABEL(SPIM_NODE) " and "
-		DT_LABEL(UARTE_NODE) " need to be equal.");
+		"Interrupt priorities for SPIM_NODE and UARTE_NODE need to be equal.");
 	IRQ_CONNECT(DT_IRQN(SPIM_NODE), DT_IRQ(SPIM_NODE, priority),
 		    nrfx_isr, nrfx_prs_box_2_irq_handler, 0);
 
 	if (!init_buttons()) {
-		return;
+		return 0;
 	}
 
 	/* Initially use the SPIM. */
 	if (!switch_to_spim()) {
-		return;
+		return 0;
 	}
 
 	for (;;) {
@@ -350,7 +369,7 @@ void main(void)
 		 */
 		if (k_sem_take(&button_pressed, K_MSEC(5000)) != 0) {
 			if (!background_transfer(spi_dev)) {
-				return;
+				return 0;
 			}
 		} else {
 			bool res;
@@ -373,7 +392,7 @@ void main(void)
 							rx_buffer,
 							sizeof(rx_buffer)));
 				if (!res) {
-					return;
+					return 0;
 				}
 
 				printk("Tx:");
@@ -387,10 +406,11 @@ void main(void)
 				       ? switch_to_uarte()
 				       : switch_to_spim());
 				if (!res) {
-					return;
+					return 0;
 				}
 				break;
 			}
 		}
 	}
+	return 0;
 }

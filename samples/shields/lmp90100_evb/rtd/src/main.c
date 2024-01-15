@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/adc.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/adc.h>
 #include <stdio.h>
 #include <math.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
 /* Nominal RTD (PT100) resistance in ohms */
@@ -25,24 +25,6 @@ LOG_MODULE_REGISTER(main);
 
 /* Bottom resistor value in ohms */
 #define BOTTOM_RESISTANCE 2000
-
-#ifndef CONFIG_NEWLIB_LIBC
-static double sqrt(double value)
-{
-	double sqrt = value / 3;
-	int i;
-
-	if (value <= 0) {
-		return 0;
-	}
-
-	for (i = 0; i < 6; i++) {
-		sqrt = (sqrt + value / sqrt) / 2;
-	}
-
-	return sqrt;
-}
-#endif /* CONFIG_NEWLIB_LIBC */
 
 static double rtd_temperature(int nom, double resistance)
 {
@@ -58,9 +40,9 @@ static double rtd_temperature(int nom, double resistance)
 	return temp;
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *lmp90100 = DEVICE_DT_GET_ONE(ti_lmp90100);
+	const struct device *const lmp90100 = DEVICE_DT_GET_ONE(ti_lmp90100);
 	double resistance;
 	int32_t buffer;
 	int err;
@@ -85,13 +67,13 @@ void main(void)
 
 	if (!device_is_ready(lmp90100)) {
 		LOG_ERR("LMP90100 device not ready");
-		return;
+		return 0;
 	}
 
 	err = adc_channel_setup(lmp90100, &ch_cfg);
 	if (err) {
 		LOG_ERR("failed to setup ADC channel (err %d)", err);
-		return;
+		return 0;
 	}
 
 	while (true) {
@@ -108,4 +90,5 @@ void main(void)
 
 		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

@@ -12,11 +12,11 @@
 #define LOG_MODULE_NAME net_ipso_button
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdint.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -88,7 +88,6 @@ static int state_post_write_cb(uint16_t obj_inst_id,
 			       bool last_block, size_t total_size)
 {
 	int i;
-	char path[MAX_RESOURCE_LEN];
 
 	i = get_button_index(obj_inst_id);
 	if (i < 0) {
@@ -98,17 +97,16 @@ static int state_post_write_cb(uint16_t obj_inst_id,
 	if (button_data[i].state && !button_data[i].last_state) {
 		/* off to on transition, increment the counter */
 		int64_t counter = button_data[i].counter + 1;
+		struct lwm2m_obj_path path = LWM2M_OBJ(IPSO_OBJECT_PUSH_BUTTON_ID, obj_inst_id,
+						       DIGITAL_INPUT_COUNTER_RID);
 
 		if (counter < 0) {
 			counter = 0;
 		}
 
-		snprintk(path, sizeof(path), "%u/%u/%u",
-			 IPSO_OBJECT_PUSH_BUTTON_ID, obj_inst_id,
-			 DIGITAL_INPUT_COUNTER_RID);
-
-		if (lwm2m_engine_set_s64(path, counter) < 0) {
-			LOG_ERR("Failed to increment counter resource %s", path);
+		if (lwm2m_set_s64(&path, counter) < 0) {
+			LOG_ERR("Failed to increment counter resource %d/%d/%d", path.obj_id,
+				path.obj_inst_id, path.res_id);
 		}
 	}
 
@@ -173,7 +171,7 @@ static struct lwm2m_engine_obj_inst *button_create(uint16_t obj_inst_id)
 	return &inst[avail];
 }
 
-static int ipso_button_init(const struct device *dev)
+static int ipso_button_init(void)
 {
 	onoff_switch.obj_id = IPSO_OBJECT_PUSH_BUTTON_ID;
 	onoff_switch.version_major = BUTTON_VERSION_MAJOR;

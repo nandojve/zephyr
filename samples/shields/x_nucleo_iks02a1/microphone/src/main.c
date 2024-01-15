@@ -5,10 +5,10 @@
  */
 
 #include <string.h>
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
-#include <audio/dmic.h>
+#include <zephyr/audio/dmic.h>
 
 /* uncomment if you want PCM output in ascii */
 /*#define PCM_OUTPUT_IN_ASCII		1  */
@@ -43,29 +43,29 @@ struct dmic_cfg cfg = {
 void *rx_block[NUM_MS];
 size_t rx_size = PCM_BLK_SIZE_MS;
 
-void main(void)
+int main(void)
 {
 	int i;
 	uint32_t ms;
 	int ret;
 
-	const struct device *mic_dev = device_get_binding(DT_LABEL(DT_INST(0, st_mpxxdtyy)));
+	const struct device *const mic_dev = DEVICE_DT_GET_ONE(st_mpxxdtyy);
 
-	if (!mic_dev) {
-		printk("Could not get pointer to mic device\n");
-		return;
+	if (!device_is_ready(mic_dev)) {
+		printk("%s: device not ready.\n", mic_dev->name);
+		return 0;
 	}
 
 	ret = dmic_configure(mic_dev, &cfg);
 	if (ret < 0) {
 		printk("microphone configuration error\n");
-		return;
+		return 0;
 	}
 
 	ret = dmic_trigger(mic_dev, DMIC_TRIGGER_START);
 	if (ret < 0) {
 		printk("microphone start trigger error\n");
-		return;
+		return 0;
 	}
 
 	/* Acquire microphone audio */
@@ -73,14 +73,14 @@ void main(void)
 		ret = dmic_read(mic_dev, 0, &rx_block[ms], &rx_size, 2000);
 		if (ret < 0) {
 			printk("microphone audio read error\n");
-			return;
+			return 0;
 		}
 	}
 
 	ret = dmic_trigger(mic_dev, DMIC_TRIGGER_STOP);
 	if (ret < 0) {
 		printk("microphone stop trigger error\n");
-		return;
+		return 0;
 	}
 
 	/* print PCM stream */
@@ -112,4 +112,5 @@ void main(void)
 		}
 	}
 #endif
+	return 0;
 }

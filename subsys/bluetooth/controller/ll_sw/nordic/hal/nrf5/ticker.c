@@ -5,9 +5,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdint.h>
 #include <stdbool.h>
-#include <sys/dlist.h>
-#include <sys/util.h>
+
+#include <zephyr/sys/util.h>
 
 #include "hal/cntr.h"
 
@@ -18,9 +19,6 @@
 
 #include "ll_sw/lll.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_hal_ticker
-#include "common/log.h"
 #include "hal/debug.h"
 
 #define TICKER_MAYFLY_CALL_ID_ISR     TICKER_USER_ID_LLL

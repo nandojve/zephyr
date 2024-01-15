@@ -15,8 +15,6 @@ The X-NUCLEO-IKS01A2 interfaces with the STM32 microcontroller via the I2C pin,
 and it is possible to change the default I2C port.
 
 .. image:: img/x-nucleo-iks01a2.jpg
-     :width: 350px
-     :height: 489px
      :align: center
      :alt: X-NUCLEO-IKS01A2
 
@@ -59,7 +57,7 @@ Mode 1: Standard Mode
 =====================
 
 In standard I2C mode the two buses are connected together. As a consequence, all devices on the shield
-reside on the same I2C bus and are accessible from the main board thru I2C bus.
+reside on the same I2C bus and are accessible from the main board through I2C bus.
 
 The jumper configuration to activate this mode is:
 
@@ -71,7 +69,7 @@ Mode 2: SensorHub Mode
 ======================
 
 In SensorHub mode LSM6DSL is connected to I2C2 and is accessible from the main board.
-All the other devices are connected to LSM6DSL master thru I2C1.
+All the other devices are connected to LSM6DSL master through I2C1.
 
 The jumper configuration to activate this mode is:
 
@@ -87,9 +85,9 @@ Programming
 
 Two samples are provided as examples for ``x-nucleo-iks01a2`` shield:
 
-- :ref:`x-nucleo-iks01a2-std-sample` application, to be used when the shield is configured
+- :zephyr:code-sample:`x-nucleo-iks01a2-std` sample application, to be used when the shield is configured
   in Standard Mode
-- :ref:`x-nucleo-iks01a2-shub-sample` application, to be used when the shield is configured
+- :zephyr:code-sample:`x-nucleo-iks01a2-shub` sample application, to be used when the shield is configured
   in SensorHub Mode
 
 See also :ref:`shields` for more details.
@@ -100,7 +98,7 @@ References
 .. target-notes::
 
 .. _X-NUCLEO-IKS01A2 website:
-   http://www.st.com/en/ecosystems/x-nucleo-iks01a2.html
+   https://www.st.com/en/ecosystems/x-nucleo-iks01a2.html
 
 .. _X-NUCLEO-IKS01A2 databrief:
-   http://www.st.com/resource/en/data_brief/x-nucleo-iks01a2.pdf
+   https://www.st.com/resource/en/data_brief/x-nucleo-iks01a2.pdf

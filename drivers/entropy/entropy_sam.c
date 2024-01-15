@@ -1,24 +1,24 @@
 /*
  * Copyright (c) 2018 Aurelien Jarno
+ * Copyright (c) 2023 Gerson Fernando Budke
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define DT_DRV_COMPAT atmel_sam_trng
 
-#include <device.h>
-#include <drivers/entropy.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/entropy.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 #include <errno.h>
-#include <init.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
 #include <string.h>
 
 struct trng_sam_dev_cfg {
 	Trng *regs;
 };
-
-#define DEV_CFG(dev) \
-	((const struct trng_sam_dev_cfg *const)(dev)->config)
 
 static inline bool _ready(Trng * const trng)
 {
@@ -39,7 +39,7 @@ static inline uint32_t _data(Trng * const trng)
 #endif
 }
 
-static int entropy_sam_wait_ready(Trng * const trng, uint32_t flags)
+static int entropy_sam_wait_ready(Trng * const trng)
 {
 	/* According to the reference manual, the generator provides
 	 * one 32-bit random value every 84 peripheral clock cycles.
@@ -56,17 +56,6 @@ static int entropy_sam_wait_ready(Trng * const trng, uint32_t flags)
 		if (timeout-- == 0) {
 			return -ETIMEDOUT;
 		}
-
-		if ((flags & ENTROPY_BUSYWAIT) == 0U) {
-			/* This internal function is used by both get_entropy,
-			 * and get_entropy_isr APIs. The later may call this
-			 * function with the ENTROPY_BUSYWAIT flag set. In
-			 * that case make no assumption that the kernel is
-			 * initialized when the function is called; so, just
-			 * do busy-wait for the random data to be ready.
-			 */
-			k_yield();
-		}
 	}
 
 	return 0;
@@ -74,16 +63,17 @@ static int entropy_sam_wait_ready(Trng * const trng, uint32_t flags)
 
 static int entropy_sam_get_entropy_internal(const struct device *dev,
 					    uint8_t *buffer,
-					    uint16_t length, uint32_t flags)
+					    uint16_t length)
 {
-	Trng *const trng = DEV_CFG(dev)->regs;
+	const struct trng_sam_dev_cfg *config = dev->config;
+	Trng *const trng = config->regs;
 
 	while (length > 0) {
 		size_t to_copy;
 		uint32_t value;
 		int res;
 
-		res = entropy_sam_wait_ready(trng, flags);
+		res = entropy_sam_wait_ready(trng);
 		if (res < 0) {
 			return res;
 		}
@@ -102,7 +92,7 @@ static int entropy_sam_get_entropy_internal(const struct device *dev,
 static int entropy_sam_get_entropy(const struct device *dev, uint8_t *buffer,
 				   uint16_t length)
 {
-	return entropy_sam_get_entropy_internal(dev, buffer, length, 0);
+	return entropy_sam_get_entropy_internal(dev, buffer, length);
 }
 
 static int entropy_sam_get_entropy_isr(const struct device *dev,
@@ -113,10 +103,10 @@ static int entropy_sam_get_entropy_isr(const struct device *dev,
 
 
 	if ((flags & ENTROPY_BUSYWAIT) == 0U) {
-
+		const struct trng_sam_dev_cfg *config = dev->config;
 		/* No busy wait; return whatever data is available. */
 
-		Trng * const trng = DEV_CFG(dev)->regs;
+		Trng * const trng = config->regs;
 
 		do {
 			size_t to_copy;
@@ -143,7 +133,7 @@ static int entropy_sam_get_entropy_isr(const struct device *dev,
 		/* Allowed to busy-wait */
 		int ret =
 			entropy_sam_get_entropy_internal(dev,
-				buffer, length, flags);
+				buffer, length);
 
 		if (ret == 0) {
 			/* Data retrieved successfully. */
@@ -156,7 +146,8 @@ static int entropy_sam_get_entropy_isr(const struct device *dev,
 
 static int entropy_sam_init(const struct device *dev)
 {
-	Trng *const trng = DEV_CFG(dev)->regs;
+	const struct trng_sam_dev_cfg *config = dev->config;
+	Trng *const trng = config->regs;
 
 #ifdef MCLK
 	/* Enable the MCLK */
@@ -165,8 +156,10 @@ static int entropy_sam_init(const struct device *dev)
 	/* Enable the TRNG */
 	trng->CTRLA.bit.ENABLE = 1;
 #else
-	/* Enable the user interface clock */
-	soc_pmc_peripheral_enable(DT_INST_PROP(0, peripheral_id));
+	/* Enable TRNG in PMC */
+	const struct atmel_sam_pmc_config clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(0);
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&clock_cfg);
 
 	/* Enable the TRNG */
 	trng->TRNG_CR = TRNG_CR_KEY_PASSWD | TRNG_CR_ENABLE;

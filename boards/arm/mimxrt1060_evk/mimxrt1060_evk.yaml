@@ -16,17 +16,20 @@ ram: 32768
 flash: 8192
 supported:
   - arduino_gpio
+  - arduino_i2c
   - arduino_serial
+  - arduino_spi
   - counter
   - display
+  - dma
   - gpio
   - i2c
   - netif:eth
   - sdhc
   - spi
   - usb_device
-  - kscan:touch
   - dma
   - can
   - watchdog
   - adc
+vendor: nxp

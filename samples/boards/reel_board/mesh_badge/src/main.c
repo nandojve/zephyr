@@ -4,16 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 
 #include <string.h>
 
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/gatt.h>
-#include <drivers/sensor.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/drivers/sensor.h>
 
 #include "mesh.h"
 #include "board.h"
@@ -59,10 +59,10 @@ static ssize_t write_name(struct bt_conn *conn, const struct bt_gatt_attr *attr,
 	return len;
 }
 
-static struct bt_uuid_128 name_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 name_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef0));
 
-static struct bt_uuid_128 name_enc_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 name_enc_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef1));
 
 #define CPF_FORMAT_UTF8 0x19
@@ -113,6 +113,9 @@ static void pairing_failed(struct bt_conn *conn, enum bt_security_err reason)
 const struct bt_conn_auth_cb auth_cb = {
 	.passkey_display = passkey_display,
 	.cancel = passkey_cancel,
+};
+
+static struct bt_conn_auth_info_cb auth_info_cb = {
 	.pairing_complete = pairing_complete,
 	.pairing_failed = pairing_failed,
 };
@@ -165,6 +168,7 @@ static void bt_ready(int err)
 	printk("Mesh initialized\n");
 
 	bt_conn_auth_cb_register(&auth_cb);
+	bt_conn_auth_info_cb_register(&auth_info_cb);
 
 	if (IS_ENABLED(CONFIG_SETTINGS)) {
 		settings_load();
@@ -187,14 +191,14 @@ static void bt_ready(int err)
 	printk("Board started\n");
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	err = board_init();
 	if (err) {
 		printk("board init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	printk("Starting Board Demo\n");
@@ -203,12 +207,13 @@ void main(void)
 	err = bt_enable(bt_ready);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	err = periphs_init();
 	if (err) {
-		printk("perpherals initialization failed (err %d)\n", err);
-		return;
+		printk("peripherals initialization failed (err %d)\n", err);
+		return 0;
 	}
+	return 0;
 }

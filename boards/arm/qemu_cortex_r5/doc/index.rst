@@ -9,13 +9,6 @@ Overview
 This board configuration will use QEMU to emulate the Xilinx Zynq UltraScale+
 (ZynqMP) platform.
 
-.. figure:: qemu_cortex_r5.png
-   :width: 600px
-   :align: center
-   :alt: Qemu
-
-   Qemu (Credit: qemu.org)
-
 This configuration provides support for an ARM Cortex-R5 CPU and these devices:
 
 * ARM PL-390 Generic Interrupt Controller
@@ -71,7 +64,7 @@ Programming and Debugging
 *************************
 
 Use this configuration to run basic Zephyr applications and kernel tests in the
-QEMU emulated environment, for example, with the :ref:`synchronization_sample`:
+QEMU emulated environment, for example, with the :zephyr:code-sample:`synchronization` sample:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/synchronization

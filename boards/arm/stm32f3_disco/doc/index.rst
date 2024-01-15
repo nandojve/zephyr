@@ -33,12 +33,10 @@ started quickly. Here are some highlights of the STM32F3DISCOVERY board:
   acceleration sensor and a 3D digital magnetic sensor;
 
 .. HINT::
-   Recent PCB revisions (E and newer) are shiped with I3G4250D and LSM303AGR.
+   Recent PCB revisions (E and newer) are shipped with I3G4250D and LSM303AGR.
 
 .. image:: img/stm32f3_disco.jpg
-     :width: 350px
      :align: center
-     :height: 531px
      :alt: STM32F3DISCOVERY
 
 More information about the board can be found at the
@@ -108,6 +106,8 @@ features:
 | DAC       | on-chip    | dac                                 |
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | Direct Memory Access                |
++-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
 +-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on Zephyr porting.
@@ -194,7 +194,7 @@ CAN
 ===
 The STM32F3DISCOVERY does not have an onboard CAN transceiver. In
 order to use the CAN bus on the this board, an external CAN bus
-tranceiver must be connected to ``PD0`` (``CAN1_RX``) and ``PD1``
+transceiver must be connected to ``PD0`` (``CAN1_RX``) and ``PD1``
 (``CAN1_TX``).
 
 Programming and Debugging
@@ -269,13 +269,13 @@ Again you have to use the adapted command for newer PCB revisions (E and newer):
    :goals: debug
 
 .. _STM32F3DISCOVERY website:
-   http://www.st.com/en/evaluation-tools/stm32f3discovery.html
+   https://www.st.com/en/evaluation-tools/stm32f3discovery.html
 
 .. _STM32F3DISCOVERY board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00063382.pdf
+   https://www.st.com/resource/en/user_manual/dm00063382.pdf
 
 .. _STM32F303VC on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f303vc.html
+   https://www.st.com/en/microcontrollers/stm32f303vc.html
 
 .. _STM32F303xC reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00043574.pdf
+   https://www.st.com/resource/en/reference_manual/dm00043574.pdf

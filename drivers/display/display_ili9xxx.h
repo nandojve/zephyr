@@ -9,9 +9,9 @@
 #ifndef ZEPHYR_DRIVERS_DISPLAY_DISPLAY_ILI9XXX_H_
 #define ZEPHYR_DRIVERS_DISPLAY_DISPLAY_ILI9XXX_H_
 
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
-#include <sys/util.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/util.h>
 
 /* Commands/registers. */
 #define ILI9XXX_SWRESET 0x01
@@ -54,7 +54,18 @@
 /** Reset wait time (ms), ref 15.4 of ILI9XXX manual. */
 #define ILI9XXX_RESET_WAIT_TIME 5
 
+enum madctl_cmd_set {
+	CMD_SET_1,	/* Default for most of ILI9xxx display controllers */
+	CMD_SET_2,	/* Used by ILI9342c */
+};
+
+struct ili9xxx_quirks {
+	enum madctl_cmd_set cmd_set;
+};
+
 struct ili9xxx_config {
+	const struct ili9xxx_quirks *quirks;
+
 	struct spi_dt_spec spi;
 	struct gpio_dt_spec cmd_data;
 	struct gpio_dt_spec reset;

@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <drivers/uart.h>
+#include <zephyr/drivers/uart.h>
 #include <fsl_common.h>
 #include <fsl_clock.h>
-#include <arch/cpu.h>
 
 #define LPUART0SRC_OSCERCLK	(1)
 #define TPMSRC_MCGPLLCLK	(1)
@@ -80,33 +79,21 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 }
 
-static int kwx_init(const struct device *arg)
+static int kwx_init(void)
 {
-	ARG_UNUSED(arg);
-
-	unsigned int oldLevel; /* old interrupt lock level */
-
-	/* disable interrupts */
-	oldLevel = irq_lock();
-
 	/* Initialize system clock to 40 MHz */
 	clock_init();
 
-	/*
-	 * install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	/* restore interrupt state */
-	irq_unlock(oldLevel);
 	return 0;
 }
 
-void z_arm_watchdog_init(void)
+#ifdef CONFIG_PLATFORM_SPECIFIC_INIT
+
+void z_arm_platform_init(void)
 {
-	/* Disable the watchdog */
-	SIM->COPC = 0;
+	SystemInit();
 }
+
+#endif /* CONFIG_PLATFORM_SPECIFIC_INIT */
 
 SYS_INIT(kwx_init, PRE_KERNEL_1, 0);

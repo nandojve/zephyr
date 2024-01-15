@@ -12,8 +12,6 @@ The full range of hardware features on the board can help the user evaluate all 
 Extension headers make it possible to easily connect a daughter board or wrapping board for a specific application.
 
 .. image:: img/stm32373c_eval.jpg
-     :width: 350px
-     :height: 489px
      :align: center
      :alt: STM32373C-EVAL
 
@@ -99,9 +97,7 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/stm32373c_eval_connectors.png
-     :width: 664px
-     :height: 820px
+.. image:: img/stm32373c_eval_connectors.jpg
      :align: center
      :alt: STM32373C_EVAL connectors
 
@@ -130,7 +126,7 @@ This interface is supported by the openocd version included in Zephyr SDK.
 Flashing an application to STM32373C-EVAL
 -----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -143,7 +139,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -157,7 +153,7 @@ References
 .. target-notes::
 
 .. _STM32373C-EVAL website:
-   http://www.st.com/en/evaluation-tools/stm32373c-eval.html
+   https://www.st.com/en/evaluation-tools/stm32373c-eval.html
 
 .. _STM32F373VCT6 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00041563.pdf
+   https://www.st.com/resource/en/reference_manual/dm00041563.pdf

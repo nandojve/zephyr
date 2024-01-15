@@ -13,15 +13,15 @@
 #ifndef __ICMPV6_H
 #define __ICMPV6_H
 
-#include <sys/slist.h>
+#include <zephyr/sys/slist.h>
 #include <zephyr/types.h>
 
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
 
 struct net_icmpv6_ns_hdr {
 	uint32_t reserved;
-	struct in6_addr tgt;
+	uint8_t tgt[NET_IPV6_ADDR_SIZE];
 } __packed;
 
 struct net_icmpv6_nd_opt_hdr {
@@ -32,7 +32,7 @@ struct net_icmpv6_nd_opt_hdr {
 struct net_icmpv6_na_hdr {
 	uint8_t flags;
 	uint8_t reserved[3];
-	struct in6_addr tgt;
+	uint8_t tgt[NET_IPV6_ADDR_SIZE];
 } __packed;
 
 struct net_icmpv6_rs_hdr {
@@ -58,7 +58,7 @@ struct net_icmpv6_nd_opt_prefix_info {
 	uint32_t valid_lifetime;
 	uint32_t preferred_lifetime;
 	uint32_t reserved;
-	struct in6_addr prefix;
+	uint8_t prefix[NET_IPV6_ADDR_SIZE];
 } __packed;
 
 struct net_icmpv6_nd_opt_6co {
@@ -66,7 +66,35 @@ struct net_icmpv6_nd_opt_6co {
 	uint8_t flag; /*res:3,c:1,cid:4 */
 	uint16_t reserved;
 	uint16_t lifetime;
-	struct in6_addr prefix;
+	uint8_t prefix[NET_IPV6_ADDR_SIZE];
+} __packed;
+
+/* RFC 4191, ch. 2.3 */
+struct net_icmpv6_nd_opt_route_info {
+	uint8_t prefix_len;
+	struct {
+#ifdef CONFIG_LITTLE_ENDIAN
+		uint8_t reserved_2 :3;
+		uint8_t prf        :2;
+		uint8_t reserved_1 :3;
+#else
+		uint8_t reserved_1 :3;
+		uint8_t prf        :2;
+		uint8_t reserved_2 :3;
+#endif
+	} flags;
+	uint32_t route_lifetime;
+	/* Variable-length prefix field follows, can be 0, 8 or 16 bytes
+	 * depending on the option length.
+	 */
+} __packed;
+
+struct net_icmpv6_nd_opt_rdnss {
+	uint16_t reserved;
+	uint32_t lifetime;
+	/* Variable-length DNS server address follows,
+	 * depending on the option length.
+	 */
 } __packed;
 
 struct net_icmpv6_echo_req {
@@ -77,7 +105,7 @@ struct net_icmpv6_echo_req {
 struct net_icmpv6_mld_query {
 	uint16_t max_response_code;
 	uint16_t reserved;
-	struct in6_addr mcast_address;
+	uint8_t mcast_address[NET_IPV6_ADDR_SIZE];
 	uint16_t flagg; /*S, QRV & QQIC */
 	uint16_t num_sources;
 } __packed;
@@ -86,7 +114,7 @@ struct net_icmpv6_mld_mcast_record {
 	uint8_t record_type;
 	uint8_t aux_data_len;
 	uint16_t num_sources;
-	struct in6_addr mcast_address;
+	uint8_t mcast_address[NET_IPV6_ADDR_SIZE];
 } __packed;
 
 
@@ -116,8 +144,6 @@ struct net_icmpv6_mld_mcast_record {
 #define NET_ICMPV6_PACKET_TOO_BIG 2	/* Packet too big */
 #define NET_ICMPV6_TIME_EXCEEDED  3	/* Time exceeded */
 #define NET_ICMPV6_PARAM_PROBLEM  4	/* IPv6 header is bad */
-#define NET_ICMPV6_ECHO_REQUEST 128
-#define NET_ICMPV6_ECHO_REPLY   129
 #define NET_ICMPV6_MLD_QUERY    130	/* Multicast Listener Query */
 #define NET_ICMPV6_RS           133	/* Router Solicitation */
 #define NET_ICMPV6_RA           134	/* Router Advertisement */
@@ -128,8 +154,8 @@ struct net_icmpv6_mld_mcast_record {
 /* Codes for ICMPv6 Destination Unreachable message */
 #define NET_ICMPV6_DST_UNREACH_NO_ROUTE  0 /* No route to destination */
 #define NET_ICMPV6_DST_UNREACH_ADMIN     1 /* Admin prohibited communication */
-#define NET_ICMPV6_DST_UNREACH_SCOPE     2 /* Beoynd scope of source address */
-#define NET_ICMPV6_DST_UNREACH_NO_ADDR   3 /* Address unrechable */
+#define NET_ICMPV6_DST_UNREACH_SCOPE     2 /* Beyond scope of source address */
+#define NET_ICMPV6_DST_UNREACH_NO_ADDR   3 /* Address unreachable */
 #define NET_ICMPV6_DST_UNREACH_NO_PORT   4 /* Port unreachable */
 #define NET_ICMPV6_DST_UNREACH_SRC_ADDR  5 /* Source address failed */
 #define NET_ICMPV6_DST_UNREACH_REJ_ROUTE 6 /* Reject route to destination */
@@ -142,19 +168,7 @@ struct net_icmpv6_mld_mcast_record {
 /* ICMPv6 header has 4 unused bytes that must be zero, RFC 4443 ch 3.1 */
 #define NET_ICMPV6_UNUSED_LEN 4
 
-typedef enum net_verdict (*icmpv6_callback_handler_t)(
-						struct net_pkt *pkt,
-						struct net_ipv6_hdr *ip_hdr,
-						struct net_icmp_hdr *icmp_hdr);
-
 const char *net_icmpv6_type2str(int icmpv6_type);
-
-struct net_icmpv6_handler {
-	sys_snode_t node;
-	icmpv6_callback_handler_t handler;
-	uint8_t type;
-	uint8_t code;
-};
 
 /**
  * @brief Send ICMPv6 error message.
@@ -169,61 +183,16 @@ struct net_icmpv6_handler {
 int net_icmpv6_send_error(struct net_pkt *pkt, uint8_t type, uint8_t code,
 			  uint32_t param);
 
-/**
- * @brief Send ICMPv6 echo request message.
- *
- * @param iface Network interface.
- * @param dst IPv6 address of the target host.
- * @param identifier An identifier to aid in matching Echo Replies
- * to this Echo Request. May be zero.
- * @param sequence A sequence number to aid in matching Echo Replies
- * to this Echo Request. May be zero.
- * @param data Arbitrary payload data that will be included in the
- * Echo Reply verbatim. May be zero.
- * @param data_size Size of the Payload Data in bytes. May be zero.
- *
- * @return Return 0 if the sending succeed, <0 otherwise.
- */
 #if defined(CONFIG_NET_NATIVE_IPV6)
-int net_icmpv6_send_echo_request(struct net_if *iface,
-				 struct in6_addr *dst,
-				 uint16_t identifier,
-				 uint16_t sequence,
-				 const void *data,
-				 size_t data_size);
-#else
-static inline int net_icmpv6_send_echo_request(struct net_if *iface,
-					       struct in6_addr *dst,
-					       uint16_t identifier,
-					       uint16_t sequence,
-					       const void *data,
-					       size_t data_size)
-{
-	ARG_UNUSED(iface);
-	ARG_UNUSED(dst);
-	ARG_UNUSED(identifier);
-	ARG_UNUSED(sequence);
-	ARG_UNUSED(data);
-	ARG_UNUSED(data_size);
-
-	return -ENOTSUP;
-}
-#endif
-
-#if defined(CONFIG_NET_NATIVE_IPV6)
-void net_icmpv6_register_handler(struct net_icmpv6_handler *handler);
-void net_icmpv6_unregister_handler(struct net_icmpv6_handler *handler);
 enum net_verdict net_icmpv6_input(struct net_pkt *pkt,
 				  struct net_ipv6_hdr *ip_hdr);
 
 int net_icmpv6_create(struct net_pkt *pkt, uint8_t icmp_type, uint8_t icmp_code);
-int net_icmpv6_finalize(struct net_pkt *pkt);
+int net_icmpv6_finalize(struct net_pkt *pkt, bool force_chksum);
 
 void net_icmpv6_init(void);
 #else
 #define net_icmpv6_init(...)
-#define net_icmpv6_register_handler(...)
-#define net_icmpv6_unregister_handler(...)
 #endif
 
 #endif /* __ICMPV6_H */

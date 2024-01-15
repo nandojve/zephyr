@@ -13,16 +13,6 @@ config NET_BUF
 
 if NET_BUF
 
-config NET_BUF_USER_DATA_SIZE
-	int "Size of user_data available in every network buffer"
-	default 8 if ((BT || NET_TCP2) && 64BIT) || BT_ISO
-	default 4
-	range 4 65535 if BT || NET_TCP2
-	range 0 65535
-	help
-	  Amount of memory reserved in each network buffer for user data. In
-	  most cases this can be left as the default value.
-
 config NET_BUF_LOG
 	bool "Network buffer logging"
 	select LOG
@@ -61,15 +51,26 @@ config NET_BUF_POOL_USAGE
 	  * total size of the pool is calculated
 	  * pool name is stored and can be shown in debugging prints
 
+config NET_BUF_ALIGNMENT
+	int "Network buffer alignment restriction"
+	default 0
+	help
+	  Alignment restriction for network buffers. This is useful for
+	  some hardware IP with DMA that requires the buffers to be aligned
+	  to a certain byte boundary, or dealing with cache line restrictions.
+	  Default value of 0 means the alignment will be the size of a void pointer,
+	  any other value will force the alignment of a net buffer in bytes.
+
 endif # NET_BUF
 
 config NETWORKING
-	bool "Link layer and IP networking support"
+	bool "Link layer and networking (including IP)"
 	select NET_BUF
 	select POLL
 	select ENTROPY_GENERATOR
 	help
-	  This option enabled generic link layer and IP networking support.
+	  This option enables generic link layer and networking support
+	  and is the basis for higher level protocols (e.g. IP protocols).
 
 if NETWORKING
 
@@ -77,7 +78,6 @@ if NETWORKING
 # which supports PM properly.
 config NET_POWER_MANAGEMENT
 	bool
-	default n
 	depends on PM_DEVICE
 
 source "subsys/net/Kconfig.hostname"
@@ -86,7 +86,11 @@ source "subsys/net/l2/Kconfig"
 
 source "subsys/net/ip/Kconfig"
 
+source "subsys/net/pkt_filter/Kconfig"
+
 source "subsys/net/lib/Kconfig"
+
+source "subsys/net/conn_mgr/Kconfig"
 
 endif
 

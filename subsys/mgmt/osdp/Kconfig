@@ -9,6 +9,8 @@ menuconfig OSDP
 	select RING_BUFFER
 	imply SERIAL_SUPPORT_INTERRUPT
 	imply UART_INTERRUPT_DRIVEN
+	imply UART_USE_RUNTIME_CONFIGURE
+	select CRC
 	help
 	  Add support for Open Supervised Device Protocol (OSDP)
 
@@ -25,17 +27,6 @@ choice
 		help
 		  Configure this device to operate as a CP (Control Panel)
 endchoice
-
-# Workaround for not being able to have commas in macro arguments
-DT_CHOSEN_Z_OSDP_UART := zephyr,osdp-uart
-
-config OSDP_UART_DEV_NAME
-	string "Device name of UART device for OSDP"
-	default "$(dt_chosen_label,$(DT_CHOSEN_Z_OSDP_UART))" if HAS_DTS
-	default "UART_2"
-	help
-	  This option specifies the name of UART device to be used for
-	  OSDP
 
 config OSDP_UART_BAUD_RATE
 	int "OSDP UART baud rate"
@@ -68,9 +59,19 @@ config OSDP_PACKET_TRACE
 	  Prints bytes sent/received over OSDP to console for debugging.
 	  LOG_HEXDUMP_DBG() is used to achieve this and can be very verbose.
 
+config OSDP_SKIP_MARK_BYTE
+	bool "Skip sending the initial marking byte (0xFF)"
+	help
+	  As per the OSDP specification, the first byte in the channel has
+	  to be a MARK byte which is 0xFF. Since this is not stated in the
+	  packet structure definition, some commercial CPs and PDs do not
+	  handle the initial mark byte correctly. This option can be used to
+	  completely disable sending/expecting a mark byte to work with
+	  such non-conforming devices.
+
 config OSDP_SC_ENABLED
-	bool "Enable OSDP Secure Channel"
-	depends on CSPRING_ENABLED
+	bool "OSDP Secure Channel"
+	depends on CSPRNG_ENABLED
 	default y
 	select CRYPTO
 	select CRYPTO_MBEDTLS_SHIM

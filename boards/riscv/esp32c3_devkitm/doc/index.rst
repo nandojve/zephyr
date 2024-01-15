@@ -18,65 +18,168 @@ The features include the following:
 - 32-bit core RISC-V microcontroller with a maximum clock speed of 160 MHz
 - 400 KB of internal RAM
 - 802.11b/g/n/e/i
-- A Bluetooth LE subsystem that supports features of Bluetooth 5 and Bluetooth mesh
+- A Bluetooth LE subsystem that supports features of Bluetooth 5 and Bluetooth Mesh
 - Various peripherals:
 
-  - 12-bit ADC with up to 18 channels
+  - 12-bit ADC with up to 6 channels
   - TWAI compatible with CAN bus 2.0
   - Temperature sensor
-  - 4x SPI
-  - 2x I2S
-  - 2x I2C
-  - 3x UART
-  - LED PWM with up to 16 channels
+  - 3x SPI
+  - 1x I2S
+  - 1x I2C
+  - 2x UART
+  - LED PWM with up to 6 channels
 
 - Cryptographic hardware acceleration (RNG, ECC, RSA, SHA-2, AES)
+
+Supported Features
+==================
+
+Current Zephyr's ESP32-C3-Devkitm board supports the following features:
+
++------------+------------+-------------------------------------+
+| Interface  | Controller | Driver/Component                    |
++============+============+=====================================+
++------------+------------+-------------------------------------+
+| UART       | on-chip    | serial port                         |
++------------+------------+-------------------------------------+
+| GPIO       | on-chip    | gpio                                |
++------------+------------+-------------------------------------+
+| PINMUX     | on-chip    | pinmux                              |
++------------+------------+-------------------------------------+
+| USB-JTAG   | on-chip    | hardware interface                  |
++------------+------------+-------------------------------------+
+| SPI Master | on-chip    | spi                                 |
++------------+------------+-------------------------------------+
+| Timers     | on-chip    | counter                             |
++------------+------------+-------------------------------------+
+| Watchdog   | on-chip    | watchdog                            |
++------------+------------+-------------------------------------+
+| TRNG       | on-chip    | entropy                             |
++------------+------------+-------------------------------------+
+| LEDC       | on-chip    | pwm                                 |
++------------+------------+-------------------------------------+
+| SPI DMA    | on-chip    | spi                                 |
++------------+------------+-------------------------------------+
+| TWAI       | on-chip    | can                                 |
++------------+------------+-------------------------------------+
+| USB-CDC    | on-chip    | serial                              |
++------------+------------+-------------------------------------+
+| ADC        | on-chip    | adc                                 |
++------------+------------+-------------------------------------+
+| Wi-Fi      | on-chip    |                                     |
++------------+------------+-------------------------------------+
+| Bluetooth  | on-chip    |                                     |
++------------+------------+-------------------------------------+
 
 System requirements
 *******************
 
-Build Environment Setup
-=======================
+Prerequisites
+=============
 
-Some variables must be exported into the environment prior to building this port.
-Find more information at :ref:`env_vars` on how to keep this settings saved in you environment.
+Espressif HAL requires WiFi and Bluetooth binary blobs in order work. Run the command
+below to retrieve those files.
+
+.. code-block:: console
+
+   west blobs fetch hal_espressif
 
 .. note::
 
-   In case of manual toolchain installation, set :file:`ESPRESSIF_TOOLCHAIN_PATH` accordingly.
-   Otherwise, set toolchain path as below. If necessary.
+   It is recommended running the command above after :file:`west update`.
 
-On Linux and macOS:
+Building & Flashing
+*******************
 
-.. code-block:: console
+ESP-IDF bootloader
+==================
 
-   export ZEPHYR_TOOLCHAIN_VARIANT="espressif"
-   export ESPRESSIF_TOOLCHAIN_PATH="${HOME}/.espressif/tools/zephyr"
+The board is using the ESP-IDF bootloader as the default 2nd stage bootloader.
+It is build as a subproject at each application build. No further attention
+is expected from the user.
 
-On Windows:
+MCUboot bootloader
+==================
 
-.. code-block:: console
+User may choose to use MCUboot bootloader instead. In that case the bootloader
+must be build (and flash) at least once.
 
-  # on CMD:
-  set ESPRESSIF_TOOLCHAIN_PATH=%USERPROFILE%\.espressif\tools\zephyr
-  set ZEPHYR_TOOLCHAIN_VARIANT=espressif
+There are two options to be used when building an application:
 
-  # on PowerShell
-  $env:ESPRESSIF_TOOLCHAIN_PATH="$env:USERPROFILE\.espressif\tools\zephyr"
-  $env:ZEPHYR_TOOLCHAIN_VARIANT="espressif"
-
-Finally, retrieve required submodules to build this port. This might take a while for the first time:
-
-.. code-block:: console
-
-   west espressif update
+1. Sysbuild
+2. Manual build
 
 .. note::
 
-    It is recommended running the command above after :file:`west update` so that submodules also get updated.
+   User can select the MCUboot bootloader by adding the following line
+   to the board default configuration file.
+   ```
+   CONFIG_BOOTLOADER_MCUBOOT=y
+   ```
 
-Flashing
+Sysbuild
 ========
+
+The sysbuild makes possible to build and flash all necessary images needed to
+bootstrap the board with the ESP32 SoC.
+
+To build the sample application using sysbuild use the command:
+
+.. zephyr-app-commands::
+   :tool: west
+   :app: samples/hello_world
+   :board: esp32c3_devkitm
+   :goals: build
+   :west-args: --sysbuild
+   :compact:
+
+By default, the ESP32 sysbuild creates bootloader (MCUboot) and application
+images. But it can be configured to create other kind of images.
+
+Build directory structure created by sysbuild is different from traditional
+Zephyr build. Output is structured by the domain subdirectories:
+
+.. code-block::
+
+  build/
+  ├── hello_world
+  │   └── zephyr
+  │       ├── zephyr.elf
+  │       └── zephyr.bin
+  ├── mcuboot
+  │    └── zephyr
+  │       ├── zephyr.elf
+  │       └── zephyr.bin
+  └── domains.yaml
+
+.. note::
+
+   With ``--sysbuild`` option the bootloader will be re-build and re-flash
+   every time the pristine build is used.
+
+For more information about the system build please read the :ref:`sysbuild` documentation.
+
+Manual build
+============
+
+During the development cycle, it is intended to build & flash as quickly possible.
+For that reason, images can be build one at a time using traditional build.
+
+The instructions following are relevant for both manual build and sysbuild.
+The only difference is the structure of the build directory.
+
+.. note::
+
+   Remember that bootloader (MCUboot) needs to be flash at least once.
+
+Build and flash applications as usual (see :ref:`build_an_application` and
+:ref:`application_run` for more details).
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: esp32c3_devkitm
+   :goals: build
 
 The usual ``flash`` target will work with the ``esp32c3_devkitm`` board
 configuration. Here is an example for the :ref:`hello_world`
@@ -87,56 +190,52 @@ application.
    :board: esp32c3_devkitm
    :goals: flash
 
-Refer to :ref:`build_an_application` and :ref:`application_run` for
-more details.
+Open the serial monitor using the following command:
 
-It's impossible to determine which serial port the ESP32 board is
-connected to, as it uses a generic RS232-USB converter.  The default of
-``/dev/ttyUSB0`` is provided as that's often the assigned name on a Linux
-machine without any other such converters.
+.. code-block:: shell
 
-The baud rate of 921600bps is recommended.  If experiencing issues when
-flashing, try halving the value a few times (460800, 230400, 115200,
-etc).
+   west espressif monitor
 
-All flashing options are now handled by the :ref:`west` tool, including flashing
-with custom options such as a different serial port.  The ``west`` tool supports
-specific options for the ESP32C3 board, as listed here:
-
-  --esp-idf-path ESP_IDF_PATH
-                        path to ESP-IDF
-  --esp-device ESP_DEVICE
-                        serial port to flash, default $ESPTOOL_PORT if defined.
-                        If not, esptool will loop over available serial ports until
-                        it finds ESP32 device to flash.
-  --esp-baud-rate ESP_BAUD_RATE
-                        serial baud rate, default 921600
-  --esp-flash-size ESP_FLASH_SIZE
-                        flash size, default "detect"
-  --esp-flash-freq ESP_FLASH_FREQ
-                        flash frequency, default "40m"
-  --esp-flash-mode ESP_FLASH_MODE
-                        flash mode, default "dio"
-  --esp-tool ESP_TOOL   if given, complete path to espidf. default is to
-                        search for it in [ESP_IDF_PATH]/components/esptool_py/
-                        esptool/esptool.py
-  --esp-flash-bootloader ESP_FLASH_BOOTLOADER
-                        Bootloader image to flash
-  --esp-flash-partition_table ESP_FLASH_PARTITION_TABLE
-                        Partition table to flash
-
-For example, to flash to ``/dev/ttyUSB2``, use the following command after
-having build the application in the ``build`` directory:
-
+After the board has automatically reset and booted, you should see the following
+message in the monitor:
 
 .. code-block:: console
 
-   west flash -d build/ --skip-rebuild --esp-device /dev/ttyUSB2
+   ***** Booting Zephyr OS vx.x.x-xxx-gxxxxxxxxxxxx *****
+   Hello World! esp32c3_devkitm
 
+Debugging
+*********
+
+As with much custom hardware, the ESP32-C3 modules require patches to
+OpenOCD that are not upstreamed yet. Espressif maintains their own fork of
+the project. The custom OpenOCD can be obtained at `OpenOCD ESP32`_
+
+The Zephyr SDK uses a bundled version of OpenOCD by default. You can overwrite that behavior by adding the
+``-DOPENOCD=<path/to/bin/openocd> -DOPENOCD_DEFAULT_PATH=<path/to/openocd/share/openocd/scripts>``
+parameter when building.
+
+Here is an example for building the :ref:`hello_world` application.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: esp32c3_devkitm
+   :goals: build flash
+   :gen-args: -DOPENOCD=<path/to/bin/openocd> -DOPENOCD_DEFAULT_PATH=<path/to/openocd/share/openocd/scripts>
+
+You can debug an application in the usual way. Here is an example for the :ref:`hello_world` application.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: esp32c3_devkitm
+   :goals: debug
+
+.. _`OpenOCD ESP32`: https://github.com/espressif/openocd-esp32/releases
 
 References
 **********
 
 .. [1] https://www.espressif.com/en/products/socs/esp32-c3
-.. _`ESP32C3 Technical Reference Manual`: https://espressif.com/sites/default/files/documentation/esp32-c3_technical_reference_manual_en.pdf
-.. _`ESP32C3 Datasheet`: https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf
+.. _ESP32C3 Devkitm User Guide: https://docs.espressif.com/projects/esp-idf/en/latest/esp32c3/hw-reference/esp32c3/user-guide-devkitm-1.html
+.. _ESP32C3 Technical Reference Manual: https://espressif.com/sites/default/files/documentation/esp32-c3_technical_reference_manual_en.pdf
+.. _ESP32C3 Datasheet: https://www.espressif.com/sites/default/files/documentation/esp32-c3_datasheet_en.pdf

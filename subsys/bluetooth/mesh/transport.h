@@ -7,8 +7,11 @@
 #define TRANS_SEQ_AUTH_NVAL            0xffffffffffffffff
 
 #define BT_MESH_SDU_UNSEG_MAX          11
-#define BT_MESH_CTL_SEG_SDU_MAX        8
-#define BT_MESH_RX_CTL_MAX (CONFIG_BT_MESH_RX_SEG_MAX * BT_MESH_CTL_SEG_SDU_MAX)
+#define BT_MESH_CTL_SEG_SDU_MAX	       8
+
+#define BT_MESH_RX_CTL_MAX	       MAX((BT_MESH_RX_SEG_MAX *	\
+					    BT_MESH_CTL_SEG_SDU_MAX),	\
+					     BT_MESH_SDU_UNSEG_MAX)
 
 #define TRANS_SEQ_ZERO_MASK            ((uint16_t)BIT_MASK(13))
 #define TRANS_CTL_OP_MASK              ((uint8_t)BIT_MASK(7))
@@ -98,13 +101,4 @@ int bt_mesh_trans_send(struct bt_mesh_net_tx *tx, struct net_buf_simple *msg,
 int bt_mesh_trans_recv(struct net_buf_simple *buf, struct bt_mesh_net_rx *rx);
 
 void bt_mesh_trans_init(void);
-
 void bt_mesh_trans_reset(void);
-
-uint8_t bt_mesh_va_add(const uint8_t uuid[16], uint16_t *addr);
-
-uint8_t bt_mesh_va_del(const uint8_t uuid[16], uint16_t *addr);
-
-uint8_t *bt_mesh_va_label_get(uint16_t addr);
-
-void bt_mesh_va_pending_store(void);

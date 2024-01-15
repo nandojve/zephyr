@@ -12,9 +12,10 @@
 
 #define DT_DRV_COMPAT xlnx_gem
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <net/net_pkt.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/irq.h>
 
 #include "phy_xlnx_gem.h"
 
@@ -110,23 +111,15 @@
 #define ETH_XLNX_GEM_CKSUM_NOT_TCP_OR_UDP_ERROR		0x00000006
 #define ETH_XLNX_GEM_CKSUM_PREMATURE_END_ERROR		0x00000007
 
-#if defined(CONFIG_SOC_SERIES_XILINX_ZYNQ7000)
+#if defined(CONFIG_SOC_FAMILY_XILINX_ZYNQ7000)
 /*
  * Zynq-7000 TX clock configuration:
- *
- * SLCR unlock & lock registers, magic words:
- * comp. Zynq-7000 TRM, chapter B.28, registers SLCR_LOCK and SLCR_UNLOCK,
- * p. 1576f.
  *
  * GEMx_CLK_CTRL (SLCR) registers:
  * [25 .. 20] Reference clock divisor 1
  * [13 .. 08] Reference clock divisor 0
  * [00]       Clock active bit
  */
-#define ETH_XLNX_SLCR_LOCK_REGISTER_ADDRESS		0xF8000004
-#define ETH_XLNX_SLCR_UNLOCK_REGISTER_ADDRESS		0xF8000008
-#define ETH_XLNX_SLCR_LOCK_KEY				0x767B
-#define ETH_XLNX_SLCR_UNLOCK_KEY			0xDF0D
 #define ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR_MASK	0x0000003F
 #define ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR1_SHIFT	20
 #define ETH_XLNX_SLCR_GEMX_CLK_CTRL_DIVISOR0_SHIFT	8
@@ -152,7 +145,7 @@
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_DIVISOR0_SHIFT	8
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_RX_CLKACT_BIT    0x04000000
 #define ETH_XLNX_CRL_APB_GEMX_REF_CTRL_CLKACT_BIT       0x02000000
-#endif /* CONFIG_SOC_SERIES_XILINX_ZYNQ7000 || CONFIG_SOC_XILINX_ZYNQMP */
+#endif /* CONFIG_SOC_FAMILY_XILINX_ZYNQ7000 || CONFIG_SOC_XILINX_ZYNQMP */
 
 /*
  * Register offsets within the respective GEM's address space:
@@ -410,12 +403,6 @@
 #define ETH_XLNX_GEM_PHY_MAINT_REGISTER_ID_SHIFT	18
 #define ETH_XLNX_GEM_PHY_MAINT_DATA_MASK		0x0000FFFF
 
-/* Device configuration / run-time data resolver macros */
-#define DEV_CFG(dev) \
-	((const struct eth_xlnx_gem_dev_cfg * const)(dev->config))
-#define DEV_DATA(dev) \
-	((struct eth_xlnx_gem_dev_data *)(dev->data))
-
 /* Device initialization macro */
 #define ETH_XLNX_GEM_NET_DEV_INIT(port) \
 ETH_NET_DEVICE_DT_INST_DEFINE(port,\
@@ -518,15 +505,9 @@ struct eth_xlnx_dma_area_gem##port {\
 };
 
 /* DMA memory area instantiation macro */
-#ifdef CONFIG_SOC_SERIES_XILINX_ZYNQ7000
 #define ETH_XLNX_GEM_DMA_AREA_INST(port) \
 static struct eth_xlnx_dma_area_gem##port eth_xlnx_gem##port##_dma_area\
 	__ocm_bss_section __aligned(4096);
-#else
-#define ETH_XLNX_GEM_DMA_AREA_INST(port) \
-static struct eth_xlnx_dma_area_gem##port eth_xlnx_gem##port##_dma_area\
-	__aligned(4096);
-#endif
 
 /* Interrupt configuration function macro */
 #define ETH_XLNX_GEM_CONFIG_IRQ_FUNC(port) \
@@ -603,7 +584,7 @@ enum eth_xlnx_mdc_clock_divider {
 	MDC_DIVIDER_16,
 	MDC_DIVIDER_32,
 	MDC_DIVIDER_48,
-#ifdef CONFIG_SOC_SERIES_XILINX_ZYNQ7000
+#ifdef CONFIG_SOC_FAMILY_XILINX_ZYNQ7000
 	/* Dividers > 48 are only available in the Zynq-7000 */
 	MDC_DIVIDER_64,
 	MDC_DIVIDER_96,
@@ -786,5 +767,3 @@ struct eth_xlnx_gem_dev_data {
 };
 
 #endif /* _ZEPHYR_DRIVERS_ETHERNET_ETH_XLNX_GEM_PRIV_H_ */
-
-/* EOF */

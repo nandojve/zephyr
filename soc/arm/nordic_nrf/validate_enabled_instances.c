@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
 #define I2C_ENABLED(idx)  (IS_ENABLED(CONFIG_I2C) && \
 			   DT_NODE_HAS_STATUS(DT_NODELABEL(i2c##idx), okay))
@@ -51,7 +51,7 @@ BUILD_ASSERT(CHECK(1), MSG(1));
 BUILD_ASSERT(CHECK(2), MSG(2));
 BUILD_ASSERT(CHECK(3), MSG(3));
 
-#if IS_ENABLED(CONFIG_SOC_NRF52811)
+#if defined(CONFIG_SOC_NRF52811)
 BUILD_ASSERT(!(SPI_ENABLED(1) && I2C_ENABLED(0)),
 	     "Only one of the following peripherals can be enabled: "
 	     "SPI1, SPIM1, SPIS1, TWI0, TWIM0, TWIS0. "

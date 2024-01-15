@@ -5,16 +5,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/cpu.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/cpu.h>
+#include <offsets.h>
+#include "asm_macros.inc"
 
 /* exports */
 GTEXT(__initialize)
 GTEXT(__reset)
 
 /* imports */
-GTEXT(_PrepC)
+GTEXT(z_prep_c)
+GTEXT(riscv_cpu_wake_flag)
+GTEXT(riscv_cpu_sp)
+GTEXT(z_riscv_secondary_cpu_init)
 
 #if CONFIG_INCLUDE_RESET_VECTOR
 SECTION_FUNC(reset, __reset)
@@ -33,37 +38,31 @@ SECTION_FUNC(reset, __reset)
  * the C domain
  */
 SECTION_FUNC(TEXT, __initialize)
-	/*
-	 * This will boot master core, just halt other cores.
-	 * Note: need to be updated for complete SMP support
-	 */
 	csrr a0, mhartid
-	beqz a0, boot_master_core
+	li t0, CONFIG_RV_BOOT_HART
+	beq a0, t0, boot_first_core
+	j boot_secondary_core
 
-loop_slave_core:
-	wfi
-	j loop_slave_core
-
-boot_master_core:
+boot_first_core:
 
 #ifdef CONFIG_FPU
 	/*
 	 * Enable floating-point.
 	 */
-	li  t0, MSTATUS_FS_INIT
-	csrrs x0, mstatus, t0
+	li t0, MSTATUS_FS_INIT
+	csrs mstatus, t0
 
 	/*
 	 * Floating-point rounding mode set to IEEE-754 default, and clear
 	 * all exception flags.
 	 */
-	fscsr x0, x0
+	fscsr zero
 #endif
 
 #ifdef CONFIG_INIT_STACKS
 	/* Pre-populate all bytes in z_interrupt_stacks with 0xAA */
 	la t0, z_interrupt_stacks
-	li t1, CONFIG_ISR_STACK_SIZE
+	li t1, __z_interrupt_stack_SIZEOF
 	add t1, t1, t0
 
 	/* Populate z_interrupt_stacks with 0xaaaaaaaa */
@@ -76,20 +75,47 @@ aa_loop:
 
 	/*
 	 * Initially, setup stack pointer to
-	 * z_interrupt_stacks + CONFIG_ISR_STACK_SIZE
+	 * z_interrupt_stacks + __z_interrupt_stack_SIZEOF
 	 */
 	la sp, z_interrupt_stacks
-	li t0, CONFIG_ISR_STACK_SIZE
+	li t0, __z_interrupt_stack_SIZEOF
 	add sp, sp, t0
-
-	csrw mscratch, sp
 
 #ifdef CONFIG_WDOG_INIT
 	call _WdogInit
 #endif
 
 	/*
-	 * Jump into C domain. _PrepC zeroes BSS, copies rw data into RAM,
+	 * Jump into C domain. z_prep_c zeroes BSS, copies rw data into RAM,
 	 * and then enters kernel z_cstart
 	 */
-	call _PrepC
+	call z_prep_c
+
+boot_secondary_core:
+#if CONFIG_MP_MAX_NUM_CPUS > 1
+	la t0, riscv_cpu_wake_flag
+	li t1, -1
+	sr t1, 0(t0)
+	la t0, riscv_cpu_boot_flag
+	sr zero, 0(t0)
+
+wait_secondary_wake_flag:
+	la t0, riscv_cpu_wake_flag
+	lr t0, 0(t0)
+	bne a0, t0, wait_secondary_wake_flag
+
+	/* Set up stack */
+	la t0, riscv_cpu_sp
+	lr sp, 0(t0)
+
+	la t0, riscv_cpu_boot_flag
+	li t1, 1
+	sr t1, 0(t0)
+	j z_riscv_secondary_cpu_init
+#else
+	j loop_unconfigured_cores
+#endif
+
+loop_unconfigured_cores:
+	wfi
+	j loop_unconfigured_cores

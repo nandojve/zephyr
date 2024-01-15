@@ -28,12 +28,11 @@
  * header file.
  */
 
-#include <zephyr.h>
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <cmsis_os2.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <sys/__assert.h>
+#include <zephyr/sys/__assert.h>
 
 #include "phil_obj_abstract.h"
 
@@ -247,7 +246,7 @@ static void display_demo_description(void)
 #endif
 }
 
-void main(void)
+int main(void)
 {
 	display_demo_description();
 	init_objects();
@@ -259,4 +258,5 @@ void main(void)
 	 */
 	k_sleep(K_MSEC(5000));
 #endif
+	return 0;
 }

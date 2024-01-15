@@ -3,10 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <ztest.h>
-#include <irq_offload.h>
-#include <kernel_structs.h> /* for _THREAD_PENDING */
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/irq_offload.h>
+#include <zephyr/kernel_structs.h> /* for _THREAD_PENDING */
 
 /* Explicit preemption test.  Works by creating a set of threads in
  * each priority class (cooperative, preemptive, metairq) which all go
@@ -20,7 +20,7 @@
  * synchronous wake vs. a wake in a (offloaded) interrupt.
  */
 
-#if defined(CONFIG_SMP) && CONFIG_MP_NUM_CPUS > 1
+#if defined(CONFIG_SMP) && CONFIG_MP_MAX_NUM_CPUS > 1
 #error Preemption test requires single-CPU operation
 #endif
 
@@ -48,9 +48,9 @@ const enum { METAIRQ, COOP, PREEMPTIBLE } worker_priorities[] = {
 
 #define NUM_THREADS ARRAY_SIZE(worker_priorities)
 
-#define STACK_SIZE (640 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (640 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
-k_tid_t last_thread;
+k_tid_t last_wakeup_thread;
 
 struct k_thread manager_thread;
 
@@ -65,7 +65,7 @@ struct k_thread manager_thread;
 struct k_sem worker_sems[NUM_THREADS];
 
 /* Command to worker: who to wake up */
-int target;
+int wakeup_target;
 
 /* Command to worker: use a sched_lock()? */
 volatile int do_lock;
@@ -96,48 +96,40 @@ void wakeup_src_thread(int id)
 		return;
 	}
 
-	last_thread = NULL;
+	last_wakeup_thread = NULL;
 
 	/* A little bit of white-box inspection: check that all the
 	 * worker threads are pending.
 	 */
 	for (int i = 0; i < NUM_THREADS; i++) {
 		k_tid_t th = &worker_threads[i];
+		char buffer[16];
+		const char *str;
 
-		zassert_equal(strcmp(k_thread_state_str(th), "pending"),
-				0, "worker thread %d not pending?", i);
+		str = k_thread_state_str(th, buffer, sizeof(buffer));
+		zassert_not_null(strstr(str, "pending"),
+				 "worker thread %d not pending?", i);
 	}
 
 	/* Wake the src worker up */
-	last_thread = NULL;
+	last_wakeup_thread = NULL;
 	k_sem_give(&worker_sems[id]);
 
 	while (do_sleep && !(src_thread->base.thread_state & _THREAD_PENDING)) {
 		/* spin, waiting on the sleep timeout */
-#if defined(CONFIG_ARCH_POSIX)
-		/**
-		 * In the posix arch busy wait loops waiting for something to
-		 * happen need to halt the CPU due to the infinitely fast clock
-		 * assumption. (Or in plain English: otherwise you hang in this
-		 * loop. Because the posix arch emulates having 1 CPU by only
-		 * enabling 1 thread at a time. And because it assumes code
-		 * executes in 0 time: it always waits for the code to finish
-		 * and it letting the cpu sleep before letting time pass)
-		 */
-		k_busy_wait(50);
-#endif
+		Z_SPIN_DELAY(50);
 	}
 
 	/* We are lowest priority, SOMEONE must have run */
-	zassert_true(!!last_thread, "");
+	zassert_true(!!last_wakeup_thread, "");
 }
 
 void manager(void *p1, void *p2, void *p3)
 {
 	for (int src = 0; src < NUM_THREADS; src++) {
-		for (target = 0; target < NUM_THREADS; target++) {
+		for (wakeup_target = 0; wakeup_target < NUM_THREADS; wakeup_target++) {
 
-			if (src == target) {
+			if (src == wakeup_target) {
 				continue;
 			}
 
@@ -165,7 +157,7 @@ void manager(void *p1, void *p2, void *p3)
 void irq_waker(const void *p)
 {
 	ARG_UNUSED(p);
-	k_sem_give(&worker_sems[target]);
+	k_sem_give(&worker_sems[wakeup_target]);
 }
 
 #define PRI(n) (worker_priorities[n])
@@ -214,7 +206,7 @@ void validate_wakeup(int src, int target, k_tid_t last_thread)
 			zassert_false(!preempted && target_wins,
 				      "higher priority thread should have preempted");
 
-			/* The scheudler implements a 'first added to
+			/* The scheduler implements a 'first added to
 			 * queue' policy for threads within a single
 			 * priority, so the last thread woken up (the
 			 * target) must never run before the source
@@ -227,7 +219,7 @@ void validate_wakeup(int src, int target, k_tid_t last_thread)
 			 * policy OR the opposite ("run newly woken
 			 * threads first"), and long term we may want
 			 * to revisit this particular check and maybe
-			 * make the poilicy configurable.
+			 * make the policy configurable.
 			 */
 			zassert_false(preempted && tie,
 				      "tied priority should not preempt");
@@ -252,12 +244,12 @@ void worker(void *p1, void *p2, void *p3)
 		 */
 		k_sem_take(&worker_sems[id], K_FOREVER);
 
-		last_thread = curr;
+		last_wakeup_thread = curr;
 
-		/* If we're the wakeup target, setting last_thread is
+		/* If we're the wakeup target, setting last_wakeup_thread is
 		 * all we do
 		 */
-		if (id == target) {
+		if (id == wakeup_target) {
 			continue;
 		}
 
@@ -270,14 +262,14 @@ void worker(void *p1, void *p2, void *p3)
 			 * ISR return does the right thing
 			 */
 			irq_offload(irq_waker, NULL);
-			prev = last_thread;
+			prev = last_wakeup_thread;
 		} else {
 			/* Do the sem_give() directly to validate that
 			 * the synchronous scheduling does the right
 			 * thing
 			 */
-			k_sem_give(&worker_sems[target]);
-			prev = last_thread;
+			k_sem_give(&worker_sems[wakeup_target]);
+			prev = last_wakeup_thread;
 		}
 
 		if (do_lock) {
@@ -286,7 +278,7 @@ void worker(void *p1, void *p2, void *p3)
 
 		if (do_yield) {
 			k_yield();
-			prev = last_thread;
+			prev = last_wakeup_thread;
 		}
 
 		if (do_sleep) {
@@ -296,10 +288,10 @@ void worker(void *p1, void *p2, void *p3)
 
 			zassert_true(k_uptime_get() - start > 0,
 				     "didn't sleep");
-			prev = last_thread;
+			prev = last_wakeup_thread;
 		}
 
-		validate_wakeup(id, target, prev);
+		validate_wakeup(id, wakeup_target, prev);
 	}
 }
 
@@ -308,7 +300,7 @@ void worker(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_sched_tests
  */
-void test_preempt(void)
+ZTEST(suite_preempt, test_preempt)
 {
 	int priority;
 
@@ -343,11 +335,21 @@ void test_preempt(void)
 	 * test is done
 	 */
 	k_sem_take(&main_sem, K_FOREVER);
+
+	/* unit test clean up */
+
+	/* k_thread_abort() also works here.
+	 * But join should be more graceful.
+	 */
+	k_thread_join(&manager_thread, K_FOREVER);
+
+	/* worker threads have to be aborted.
+	 * It is difficult to make them stop gracefully.
+	 */
+	for (int i = 0; i < NUM_THREADS; i++) {
+		k_thread_abort(&worker_threads[i]);
+	}
+
 }
 
-void test_main(void)
-{
-	ztest_test_suite(suite_preempt,
-			 ztest_unit_test(test_preempt));
-	ztest_run_test_suite(suite_preempt);
-}
+ZTEST_SUITE(suite_preempt, NULL, NULL, NULL, NULL, NULL);

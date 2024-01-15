@@ -40,9 +40,7 @@ some highlights of the STM32F412G-DISCO board:
 - Comprehensive free software including a variety of examples, part of STM32Cube package
 
 .. image:: img/stm32f412g_disco.jpg
-     :width: 700px
      :align: center
-     :height: 522px
      :alt: STM32F412G-DISCO
 
 More information about the board can be found at the `32F412GDISCOVERY website`_.
@@ -192,13 +190,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _32F412GDISCOVERY website:
-   http://www.st.com/en/evaluation-tools/32f412gdiscovery.html
+   https://www.st.com/en/evaluation-tools/32f412gdiscovery.html
 
 .. _32F412GDISCOVERY board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00275919.pdf
+   https://www.st.com/resource/en/user_manual/dm00275919.pdf
 
 .. _STM32F412ZG on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f412zg.html
+   https://www.st.com/en/microcontrollers/stm32f412zg.html
 
 .. _STM32F412 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00180369.pdf
+   https://www.st.com/resource/en/reference_manual/dm00180369.pdf

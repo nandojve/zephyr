@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "lpcxpresso55s69-pinctrl.dtsi"
+
 / {
 	aliases{
 		led0 = &red_led;
@@ -16,17 +18,17 @@
 	leds {
 		compatible = "gpio-leds";
 		green_led: led_1 {
-			gpios = <&gpio1 7 0>;
+			gpios = <&gpio1 7 GPIO_ACTIVE_LOW>;
 			label = "User LD2";
 			status = "disabled";
 		};
 		blue_led: led_2 {
-			gpios = <&gpio1 4 0>;
+			gpios = <&gpio1 4 GPIO_ACTIVE_LOW>;
 			label = "User LD3";
 			status = "disabled";
 		};
 		red_led: led_3 {
-			gpios = <&gpio1 6 0>;
+			gpios = <&gpio1 6 GPIO_ACTIVE_LOW>;
 			label = "User LD4";
 			status = "disabled";
 		};
@@ -105,6 +107,8 @@
 &flexcomm0 {
 	compatible = "nxp,lpc-usart";
 	current-speed = <115200>;
+	dmas = <&dma0 4>, <&dma0 5>;
+	dma-names = "rx", "tx";
 };
 
 &flash0 {
@@ -113,28 +117,27 @@
 		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
-		/* Please enable mcuboot's swap move, no scratch */
 
 		boot_partition: partition@0 {
 			label = "mcuboot";
-			reg = <0x00000000 0x00008000>;
+			reg = <0x00000000 DT_SIZE_K(32)>;
 			read-only;
 		};
 		slot0_partition: partition@8000 {
 			label = "image-0";
-			reg = <0x00008000 0x00028000>;
+			reg = <0x00008000 DT_SIZE_K(160)>;
 		};
-		slot1_partition: partition@30000 {
+		slot0_ns_partition: partition@30000 {
+			label = "image-0-nonsecure";
+			reg = <0x00030000 DT_SIZE_K(96)>;
+		};
+		slot1_partition: partition@48000 {
 			label = "image-1";
-			reg = <0x00030000 0x00018000>;
+			reg = <0x00048000 DT_SIZE_K(160)>;
 		};
-		slot2_partition: partition@48000 {
-			label = "image-2";
-			reg = <0x00048000 0x00028000>;
-		};
-		slot3_partition: partition@70000 {
-			label = "image-3";
-			reg = <0x00070000 0x00018000>;
+		slot1_ns_partition: partition@70000 {
+			label = "image-1-nonsecure";
+			reg = <0x00070000 DT_SIZE_K(96)>;
 		};
 		/*
 		 * The flash starting at 0x88000 and ending at
@@ -142,7 +145,7 @@
 		 */
 		storage_partition: partition@88000 {
 			label = "storage";
-			reg = <0x00088000 0x0000ca00>;
+			reg = <0x00088000 DT_SIZE_K(50)>;
 		};
 	};
 };
@@ -153,10 +156,9 @@ arduino_i2c: &flexcomm4 {
 	#address-cells = <1>;
 	#size-cells = <0>;
 
-	mma8652fc@1d {
+	mma8652fc: mma8652fc@1d {
 		compatible = "nxp,fxos8700","nxp,mma8652fc";
 		reg = <0x1d>;
-		label = "MMA8652FC";
 		int1-gpios = <&gpio1 19 GPIO_ACTIVE_LOW>;
 	};
 };
@@ -172,5 +174,43 @@ arduino_spi: &hs_lspi {
 arduino_gpio: &gpio1 {
 };
 
+mikrobus_serial: &flexcomm2 {
+};
+
 mikrobus_spi: &hs_lspi {
+};
+
+&flexcomm0 {
+	pinctrl-0 = <&pinmux_flexcomm0_usart>;
+	pinctrl-names = "default";
+};
+
+&flexcomm2 {
+	pinctrl-0 = <&pinmux_flexcomm2_usart>;
+	pinctrl-names = "default";
+};
+
+&flexcomm4 {
+	pinctrl-0 = <&pinmux_flexcomm4_i2c>;
+	pinctrl-names = "default";
+};
+
+&flexcomm6 {
+	pinctrl-0 = <&pinmux_flexcomm6_i2s>;
+	pinctrl-names = "default";
+};
+
+&flexcomm7 {
+	pinctrl-0 = <&pinmux_flexcomm7_i2s>;
+	pinctrl-names = "default";
+};
+
+&hs_lspi {
+	pinctrl-0 = <&pinmux_hs_lspi_default>;
+	pinctrl-names = "default";
+};
+
+&sc_timer {
+	pinctrl-0 = <&pinmux_sctimer_default>;
+	pinctrl-names = "default";
 };

@@ -15,20 +15,20 @@
  * available in virtual address space after loading of page table.
  */
 
-#include <arch/x86/ia32/asm.h>
-#include <arch/x86/msr.h>
+#include <zephyr/arch/x86/ia32/asm.h>
+#include <zephyr/arch/x86/msr.h>
 #include <kernel_arch_data.h>
-#include <arch/cpu.h>
-#include <arch/x86/multiboot.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/arch/x86/multiboot.h>
 #include <x86_mmu.h>
-#include <sys/mem_manage.h>
+#include <zephyr/kernel/mm.h>
 
 	/* exports (private APIs) */
 
 	GTEXT(__start)
 
 	/* externs */
-	GTEXT(z_x86_prep_c)
+	GTEXT(z_prep_c)
 	GTEXT(z_bss_zero)
 	GTEXT(z_data_copy)
 
@@ -43,6 +43,12 @@
 #if defined(CONFIG_X86_SSE)
 	GDATA(_sse_mxcsr_default_value)
 #endif
+
+#if defined(CONFIG_THREAD_LOCAL_STORAGE)
+	GTEXT(z_x86_early_tls_update_gdt)
+#endif
+
+	GDATA(x86_cpu_boot_arg)
 
 .macro install_page_tables
 #ifdef CONFIG_X86_MMU
@@ -174,7 +180,7 @@ __csSet:
 	andl	$~0x400, %eax		/* CR4[OSXMMEXCPT] = 0 */
 	movl	%eax, %cr4		/* move EAX to CR4 */
 
-	ldmxcsr _sse_mxcsr_default_value   /* initialize SSE control/status reg */
+	ldmxcsr Z_MEM_PHYS_ADDR(_sse_mxcsr_default_value)   /* initialize SSE control/status reg */
 
   #endif /* CONFIG_X86_SSE */
 
@@ -250,6 +256,11 @@ __csSet:
 #endif
 #endif /* Z_VM_KERNEL */
 
+#ifdef CONFIG_THREAD_LOCAL_STORAGE
+	pushl %esp
+	call z_x86_early_tls_update_gdt
+	popl %esp
+#endif
 	/* Clear BSS */
 #ifdef CONFIG_LINKER_USE_BOOT_SECTION
 	call	z_bss_zero_boot
@@ -269,8 +280,14 @@ __csSet:
 	/* load 32-bit operand size IDT */
 	lidt	z_x86_idt
 
-	pushl	%ebx		/* pointer to multiboot info, or NULL */
-	call	z_x86_prep_c	/* enter kernel; never returns */
+	movl	$x86_cpu_boot_arg, %ebp
+	/* Boot type to multiboot, ebx content will help to mitigate */
+	movl	$MULTIBOOT_BOOT_TYPE, \
+			__x86_boot_arg_t_boot_type_OFFSET(%ebp)
+	/* pointer to multiboot info, or NULL */
+	movl	%ebx, __x86_boot_arg_t_arg_OFFSET(%ebp)
+	pushl	$x86_cpu_boot_arg
+	call	z_prep_c	/* enter kernel; never returns */
 
 #if defined(CONFIG_X86_SSE)
 

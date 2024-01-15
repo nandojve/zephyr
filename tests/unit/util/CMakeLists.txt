@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
+cmake_minimum_required(VERSION 3.20.0)
+
 project(util)
-set(SOURCES main.c maincxx.cxx ../../../lib/os/dec.c)
-find_package(ZephyrUnittest REQUIRED HINTS $ENV{ZEPHYR_BASE})
+find_package(Zephyr COMPONENTS unittest REQUIRED HINTS $ENV{ZEPHYR_BASE})
+target_sources(testbinary PRIVATE main.c ${ZEPHYR_BASE}/lib/utils/dec.c)
+
+if(CONFIG_CPP)
+  # When testing for C++ force test file C++ compilation
+  set_source_files_properties(main.c ${ZEPHYR_BASE}/lib/utils/dec.c PROPERTIES LANGUAGE CXX)
+endif()

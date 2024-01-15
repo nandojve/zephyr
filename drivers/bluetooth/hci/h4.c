@@ -9,22 +9,24 @@
 #include <errno.h>
 #include <stddef.h>
 
-#include <zephyr.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
 
-#include <init.h>
-#include <drivers/uart.h>
-#include <sys/util.h>
-#include <sys/byteorder.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/byteorder.h>
 #include <string.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <drivers/bluetooth/hci_driver.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/drivers/bluetooth/hci_driver.h>
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_driver
-#include "common/log.h"
+#define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_driver);
+
+#include "common/bt_str.h"
 
 #include "../util.h"
 
@@ -35,7 +37,7 @@
 #define H4_EVT  0x04
 #define H4_ISO  0x05
 
-static K_KERNEL_STACK_DEFINE(rx_thread_stack, CONFIG_BT_RX_STACK_SIZE);
+static K_KERNEL_STACK_DEFINE(rx_thread_stack, CONFIG_BT_DRV_RX_STACK_SIZE);
 static struct k_thread rx_thread_data;
 
 static struct {
@@ -69,13 +71,13 @@ static struct {
 	.fifo = Z_FIFO_INITIALIZER(tx.fifo),
 };
 
-static const struct device *h4_dev;
+static const struct device *const h4_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_bt_uart));
 
 static inline void h4_get_type(void)
 {
 	/* Get packet type */
 	if (uart_fifo_read(h4_dev, &rx.type, 1) != 1) {
-		BT_WARN("Unable to read H:4 packet type");
+		LOG_WRN("Unable to read H:4 packet type");
 		rx.type = H4_NONE;
 		return;
 	}
@@ -97,35 +99,46 @@ static inline void h4_get_type(void)
 		}
 		__fallthrough;
 	default:
-		BT_ERR("Unknown H:4 type 0x%02x", rx.type);
+		LOG_ERR("Unknown H:4 type 0x%02x", rx.type);
 		rx.type = H4_NONE;
+	}
+}
+
+static void h4_read_hdr(void)
+{
+	int bytes_read = rx.hdr_len - rx.remaining;
+	int ret;
+
+	ret = uart_fifo_read(h4_dev, rx.hdr + bytes_read, rx.remaining);
+	if (unlikely(ret < 0)) {
+		LOG_ERR("Unable to read from UART (ret %d)", ret);
+	} else {
+		rx.remaining -= ret;
 	}
 }
 
 static inline void get_acl_hdr(void)
 {
-	struct bt_hci_acl_hdr *hdr = &rx.acl;
-	int to_read = sizeof(*hdr) - rx.remaining;
+	h4_read_hdr();
 
-	rx.remaining -= uart_fifo_read(h4_dev, (uint8_t *)hdr + to_read,
-				       rx.remaining);
 	if (!rx.remaining) {
+		struct bt_hci_acl_hdr *hdr = &rx.acl;
+
 		rx.remaining = sys_le16_to_cpu(hdr->len);
-		BT_DBG("Got ACL header. Payload %u bytes", rx.remaining);
+		LOG_DBG("Got ACL header. Payload %u bytes", rx.remaining);
 		rx.have_hdr = true;
 	}
 }
 
 static inline void get_iso_hdr(void)
 {
-	struct bt_hci_iso_hdr *hdr = &rx.iso;
-	unsigned int to_read = sizeof(*hdr) - rx.remaining;
+	h4_read_hdr();
 
-	rx.remaining -= uart_fifo_read(h4_dev, (uint8_t *)hdr + to_read,
-				       rx.remaining);
 	if (!rx.remaining) {
-		rx.remaining = sys_le16_to_cpu(hdr->len);
-		BT_DBG("Got ISO header. Payload %u bytes", rx.remaining);
+		struct bt_hci_iso_hdr *hdr = &rx.iso;
+
+		rx.remaining = bt_iso_hdr_len(sys_le16_to_cpu(hdr->len));
+		LOG_DBG("Got ISO header. Payload %u bytes", rx.remaining);
 		rx.have_hdr = true;
 	}
 }
@@ -133,10 +146,9 @@ static inline void get_iso_hdr(void)
 static inline void get_evt_hdr(void)
 {
 	struct bt_hci_evt_hdr *hdr = &rx.evt;
-	int to_read = rx.hdr_len - rx.remaining;
 
-	rx.remaining -= uart_fifo_read(h4_dev, (uint8_t *)hdr + to_read,
-				       rx.remaining);
+	h4_read_hdr();
+
 	if (rx.hdr_len == sizeof(*hdr) && rx.remaining < sizeof(*hdr)) {
 		switch (rx.evt.evt) {
 		case BT_HCI_EVT_LE_META_EVENT:
@@ -154,14 +166,13 @@ static inline void get_evt_hdr(void)
 
 	if (!rx.remaining) {
 		if (rx.evt.evt == BT_HCI_EVT_LE_META_EVENT &&
-		    (rx.hdr[sizeof(*hdr)] == BT_HCI_EVT_LE_ADVERTISING_REPORT ||
-		     rx.hdr[sizeof(*hdr)] == BT_HCI_EVT_LE_EXT_ADVERTISING_REPORT)) {
-			BT_DBG("Marking adv report as discardable");
+		    (rx.hdr[sizeof(*hdr)] == BT_HCI_EVT_LE_ADVERTISING_REPORT)) {
+			LOG_DBG("Marking adv report as discardable");
 			rx.discardable = true;
 		}
 
 		rx.remaining = hdr->len - (rx.hdr_len - sizeof(*hdr));
-		BT_DBG("Got event header. Payload %u bytes", hdr->len);
+		LOG_DBG("Got event header. Payload %u bytes", hdr->len);
 		rx.have_hdr = true;
 	}
 }
@@ -183,7 +194,7 @@ static void reset_rx(void)
 
 static struct net_buf *get_rx(k_timeout_t timeout)
 {
-	BT_DBG("type 0x%02x, evt 0x%02x", rx.type, rx.evt.evt);
+	LOG_DBG("type 0x%02x, evt 0x%02x", rx.type, rx.evt.evt);
 
 	switch (rx.type) {
 	case H4_EVT:
@@ -207,10 +218,10 @@ static void rx_thread(void *p1, void *p2, void *p3)
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
-	BT_DBG("started");
+	LOG_DBG("started");
 
 	while (1) {
-		BT_DBG("rx.buf %p", rx.buf);
+		LOG_DBG("rx.buf %p", rx.buf);
 
 		/* We can only do the allocation if we know the initial
 		 * header, since Command Complete/Status events must use the
@@ -218,9 +229,9 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		 */
 		if (rx.have_hdr && !rx.buf) {
 			rx.buf = get_rx(K_FOREVER);
-			BT_DBG("Got rx.buf %p", rx.buf);
+			LOG_DBG("Got rx.buf %p", rx.buf);
 			if (rx.remaining > net_buf_tailroom(rx.buf)) {
-				BT_ERR("Not enough space in buffer");
+				LOG_ERR("Not enough space in buffer");
 				rx.discard = rx.remaining;
 				reset_rx();
 			} else {
@@ -235,7 +246,7 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		do {
 			uart_irq_rx_enable(h4_dev);
 
-			BT_DBG("Calling bt_recv(%p)", buf);
+			LOG_DBG("Calling bt_recv(%p)", buf);
 			bt_recv(buf);
 
 			/* Give other threads a chance to run if the ISR
@@ -253,8 +264,15 @@ static void rx_thread(void *p1, void *p2, void *p3)
 static size_t h4_discard(const struct device *uart, size_t len)
 {
 	uint8_t buf[33];
+	int err;
 
-	return uart_fifo_read(uart, buf, MIN(len, sizeof(buf)));
+	err = uart_fifo_read(uart, buf, MIN(len, sizeof(buf)));
+	if (unlikely(err < 0)) {
+		LOG_ERR("Unable to read from UART (err %d)", err);
+		return 0;
+	}
+
+	return err;
 }
 
 static inline void read_payload(void)
@@ -264,24 +282,27 @@ static inline void read_payload(void)
 	int read;
 
 	if (!rx.buf) {
+		size_t buf_tailroom;
+
 		rx.buf = get_rx(K_NO_WAIT);
 		if (!rx.buf) {
 			if (rx.discardable) {
-				BT_WARN("Discarding event 0x%02x", rx.evt.evt);
+				LOG_WRN("Discarding event 0x%02x", rx.evt.evt);
 				rx.discard = rx.remaining;
 				reset_rx();
 				return;
 			}
 
-			BT_WARN("Failed to allocate, deferring to rx_thread");
+			LOG_WRN("Failed to allocate, deferring to rx_thread");
 			uart_irq_rx_disable(h4_dev);
 			return;
 		}
 
-		BT_DBG("Allocated rx.buf %p", rx.buf);
+		LOG_DBG("Allocated rx.buf %p", rx.buf);
 
-		if (rx.remaining > net_buf_tailroom(rx.buf)) {
-			BT_ERR("Not enough space in buffer");
+		buf_tailroom = net_buf_tailroom(rx.buf);
+		if (buf_tailroom < rx.remaining) {
+			LOG_ERR("Not enough space in buffer %u/%zu", rx.remaining, buf_tailroom);
 			rx.discard = rx.remaining;
 			reset_rx();
 			return;
@@ -291,12 +312,16 @@ static inline void read_payload(void)
 	}
 
 	read = uart_fifo_read(h4_dev, net_buf_tail(rx.buf), rx.remaining);
+	if (unlikely(read < 0)) {
+		LOG_ERR("Failed to read UART (err %d)", read);
+		return;
+	}
+
 	net_buf_add(rx.buf, read);
 	rx.remaining -= read;
 
-	BT_DBG("got %d bytes, remaining %u", read, rx.remaining);
-	BT_DBG("Payload (len %u): %s", rx.buf->len,
-	       bt_hex(rx.buf->data, rx.buf->len));
+	LOG_DBG("got %d bytes, remaining %u", read, rx.remaining);
+	LOG_DBG("Payload (len %u): %s", rx.buf->len, bt_hex(rx.buf->data, rx.buf->len));
 
 	if (rx.remaining) {
 		return;
@@ -315,13 +340,15 @@ static inline void read_payload(void)
 
 	reset_rx();
 
-	if (evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO) {
-		BT_DBG("Calling bt_recv_prio(%p)", buf);
+	if (IS_ENABLED(CONFIG_BT_RECV_BLOCKING) &&
+	    (evt_flags & BT_HCI_EVT_FLAG_RECV_PRIO)) {
+		LOG_DBG("Calling bt_recv_prio(%p)", buf);
 		bt_recv_prio(buf);
 	}
 
-	if (evt_flags & BT_HCI_EVT_FLAG_RECV) {
-		BT_DBG("Putting buf %p to rx fifo", buf);
+	if ((evt_flags & BT_HCI_EVT_FLAG_RECV) ||
+	    !IS_ENABLED(CONFIG_BT_RECV_BLOCKING)) {
+		LOG_DBG("Putting buf %p to rx fifo", buf);
 		net_buf_put(&rx.fifo, buf);
 	}
 }
@@ -351,7 +378,7 @@ static inline void read_header(void)
 
 	if (rx.have_hdr && rx.buf) {
 		if (rx.remaining > net_buf_tailroom(rx.buf)) {
-			BT_ERR("Not enough space in buffer");
+			LOG_ERR("Not enough space in buffer");
 			rx.discard = rx.remaining;
 			reset_rx();
 		} else {
@@ -367,7 +394,7 @@ static inline void process_tx(void)
 	if (!tx.buf) {
 		tx.buf = net_buf_get(&tx.fifo, K_NO_WAIT);
 		if (!tx.buf) {
-			BT_ERR("TX interrupt but no pending buffer!");
+			LOG_ERR("TX interrupt but no pending buffer!");
 			uart_irq_tx_disable(h4_dev);
 			return;
 		}
@@ -388,20 +415,24 @@ static inline void process_tx(void)
 			}
 			__fallthrough;
 		default:
-			BT_ERR("Unknown buffer type");
+			LOG_ERR("Unknown buffer type");
 			goto done;
 		}
 
 		bytes = uart_fifo_fill(h4_dev, &tx.type, 1);
 		if (bytes != 1) {
-			BT_WARN("Unable to send H:4 type");
+			LOG_WRN("Unable to send H:4 type");
 			tx.type = H4_NONE;
 			return;
 		}
 	}
 
 	bytes = uart_fifo_fill(h4_dev, tx.buf->data, tx.buf->len);
-	net_buf_pull(tx.buf, bytes);
+	if (unlikely(bytes < 0)) {
+		LOG_ERR("Unable to write to UART (err %d)", bytes);
+	} else {
+		net_buf_pull(tx.buf, bytes);
+	}
 
 	if (tx.buf->len) {
 		return;
@@ -418,9 +449,8 @@ done:
 
 static inline void process_rx(void)
 {
-	BT_DBG("remaining %u discard %u have_hdr %u rx.buf %p len %u",
-	       rx.remaining, rx.discard, rx.have_hdr, rx.buf,
-	       rx.buf ? rx.buf->len : 0);
+	LOG_DBG("remaining %u discard %u have_hdr %u rx.buf %p len %u", rx.remaining, rx.discard,
+		rx.have_hdr, rx.buf, rx.buf ? rx.buf->len : 0);
 
 	if (rx.discard) {
 		rx.discard -= h4_discard(h4_dev, rx.discard);
@@ -452,7 +482,7 @@ static void bt_uart_isr(const struct device *unused, void *user_data)
 
 static int h4_send(struct net_buf *buf)
 {
-	BT_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
+	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
 
 	net_buf_put(&tx.fifo, buf);
 	uart_irq_tx_enable(h4_dev);
@@ -477,7 +507,7 @@ static int h4_open(void)
 	int ret;
 	k_tid_t tid;
 
-	BT_DBG("");
+	LOG_DBG("");
 
 	uart_irq_rx_disable(h4_dev);
 	uart_irq_tx_disable(h4_dev);
@@ -499,20 +529,38 @@ static int h4_open(void)
 	return 0;
 }
 
+#if defined(CONFIG_BT_HCI_SETUP)
+static int h4_setup(const struct bt_hci_setup_params *params)
+{
+	ARG_UNUSED(params);
+
+	/* Extern bt_h4_vnd_setup function.
+	 * This function executes vendor-specific commands sequence to
+	 * initialize BT Controller before BT Host executes Reset sequence.
+	 * bt_h4_vnd_setup function must be implemented in vendor-specific HCI
+	 * extansion module if CONFIG_BT_HCI_SETUP is enabled.
+	 */
+	extern int bt_h4_vnd_setup(const struct device *dev);
+
+	return bt_h4_vnd_setup(h4_dev);
+}
+#endif
+
 static const struct bt_hci_driver drv = {
 	.name		= "H:4",
 	.bus		= BT_HCI_DRIVER_BUS_UART,
 	.open		= h4_open,
 	.send		= h4_send,
+#if defined(CONFIG_BT_HCI_SETUP)
+	.setup		= h4_setup
+#endif
 };
 
-static int bt_uart_init(const struct device *unused)
+static int bt_uart_init(void)
 {
-	ARG_UNUSED(unused);
 
-	h4_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_bt_uart));
 	if (!device_is_ready(h4_dev)) {
-		return -EINVAL;
+		return -ENODEV;
 	}
 
 	bt_hci_driver_register(&drv);

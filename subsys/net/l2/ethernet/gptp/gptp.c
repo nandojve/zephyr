@@ -4,23 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_gptp, CONFIG_NET_GPTP_LOG_LEVEL);
 
-#include <net/net_pkt.h>
-#include <drivers/ptp_clock.h>
-#include <net/ethernet_mgmt.h>
-#include <random/rand32.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/drivers/ptp_clock.h>
+#include <zephyr/net/ethernet_mgmt.h>
+#include <zephyr/random/random.h>
 
-#include <net/gptp.h>
+#include <zephyr/net/gptp.h>
 
 #include "gptp_messages.h"
 #include "gptp_mi.h"
 #include "gptp_data_set.h"
 
 #include "gptp_private.h"
-
-#define NET_GPTP_STACK_SIZE 2048
 
 #if CONFIG_NET_GPTP_NUM_PORTS > 32
 /*
@@ -31,7 +29,7 @@ LOG_MODULE_REGISTER(net_gptp, CONFIG_NET_GPTP_LOG_LEVEL);
 #error Maximum number of ports exceeded. (Max is 32).
 #endif
 
-K_KERNEL_STACK_DEFINE(gptp_stack, NET_GPTP_STACK_SIZE);
+K_KERNEL_STACK_DEFINE(gptp_stack, CONFIG_NET_GPTP_STACK_SIZE);
 K_FIFO_DEFINE(gptp_rx_queue);
 
 static k_tid_t tid;
@@ -84,12 +82,8 @@ static void gptp_compute_clock_identity(int port)
 	}
 }
 
-/* Note that we do not use log_strdup() here when printing msg as currently the
- * msg variable is always a const string that is not allocated from the stack.
- * If this changes at some point, then add log_strdup(msg) here.
- */
 #define PRINT_INFO(msg, hdr, pkt)				\
-	NET_DBG("Received %s seq %d pkt %p", msg,		\
+	NET_DBG("Received %s seq %d pkt %p", (const char *)msg,	\
 		ntohs(hdr->sequence_id), pkt)			\
 
 
@@ -521,18 +515,23 @@ static void gptp_state_machine(void)
 	for (port = GPTP_PORT_START; port < GPTP_PORT_END; port++) {
 		struct gptp_port_ds *port_ds = GPTP_PORT_DS(port);
 
-		switch (GPTP_GLOBAL_DS()->selected_role[port]) {
-		case GPTP_PORT_DISABLED:
-		case GPTP_PORT_MASTER:
-		case GPTP_PORT_PASSIVE:
-		case GPTP_PORT_SLAVE:
-			gptp_md_state_machines(port);
-			gptp_mi_port_sync_state_machines(port);
-			gptp_mi_port_bmca_state_machines(port);
-			break;
-		default:
-			NET_DBG("%s: Unknown port state", __func__);
-			break;
+		/* If interface is down, don't move forward */
+		if (net_if_flag_is_set(GPTP_PORT_IFACE(port), NET_IF_UP)) {
+			switch (GPTP_GLOBAL_DS()->selected_role[port]) {
+			case GPTP_PORT_DISABLED:
+			case GPTP_PORT_MASTER:
+			case GPTP_PORT_PASSIVE:
+			case GPTP_PORT_SLAVE:
+				gptp_md_state_machines(port);
+				gptp_mi_port_sync_state_machines(port);
+				gptp_mi_port_bmca_state_machines(port);
+				break;
+			default:
+				NET_DBG("%s: Unknown port state", __func__);
+				break;
+			}
+		} else {
+			GPTP_GLOBAL_DS()->selected_role[port] = GPTP_PORT_DISABLED;
 		}
 
 		port_ds->prev_ptt_port_enabled = port_ds->ptt_port_enabled;
@@ -541,8 +540,12 @@ static void gptp_state_machine(void)
 	gptp_mi_state_machines();
 }
 
-static void gptp_thread(void)
+static void gptp_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	int port;
 
 	NET_DBG("Starting PTP thread");
@@ -918,7 +921,7 @@ static void init_ports(void)
 
 	tid = k_thread_create(&gptp_thread_data, gptp_stack,
 			      K_KERNEL_STACK_SIZEOF(gptp_stack),
-			      (k_thread_entry_t)gptp_thread,
+			      gptp_thread,
 			      NULL, NULL, NULL, K_PRIO_COOP(5), 0, K_NO_WAIT);
 	k_thread_name_set(&gptp_thread_data, "gptp");
 }
@@ -940,15 +943,15 @@ static void disable_port(int port)
 
 static void vlan_enabled(struct k_work *work)
 {
-	struct vlan_work *vlan = CONTAINER_OF(work,
-					      struct vlan_work,
-					      work);
+	struct vlan_work *one_vlan = CONTAINER_OF(work,
+						  struct vlan_work,
+						  work);
 	if (tid) {
 		int port;
 
-		port = gptp_get_port_number(vlan->iface);
+		port = gptp_get_port_number(one_vlan->iface);
 		if (port < 0) {
-			NET_DBG("No port found for iface %p", vlan->iface);
+			NET_DBG("No port found for iface %p", one_vlan->iface);
 			return;
 		}
 
@@ -962,14 +965,14 @@ static void vlan_enabled(struct k_work *work)
 
 static void vlan_disabled(struct k_work *work)
 {
-	struct vlan_work *vlan = CONTAINER_OF(work,
-					      struct vlan_work,
-					      work);
+	struct vlan_work *one_vlan = CONTAINER_OF(work,
+						  struct vlan_work,
+						  work);
 	int port;
 
-	port = gptp_get_port_number(vlan->iface);
+	port = gptp_get_port_number(one_vlan->iface);
 	if (port < 0) {
-		NET_DBG("No port found for iface %p", vlan->iface);
+		NET_DBG("No port found for iface %p", one_vlan->iface);
 		return;
 	}
 

@@ -14,18 +14,21 @@
  */
 
 #include <errno.h>
-#include <fcntl.h>
-#include <kernel.h>
-#include <sys/fdtable.h>
-#include <sys/speculation.h>
-#include <syscall_handler.h>
-#include <sys/atomic.h>
+#include <string.h>
+
+#include <zephyr/posix/fcntl.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/fdtable.h>
+#include <zephyr/sys/speculation.h>
+#include <zephyr/internal/syscall_handler.h>
+#include <zephyr/sys/atomic.h>
 
 struct fd_entry {
 	void *obj;
 	const struct fd_op_vtable *vtable;
 	atomic_t refcount;
 	struct k_mutex lock;
+	struct k_condvar cond;
 };
 
 #ifdef CONFIG_POSIX_API
@@ -40,17 +43,27 @@ static struct fd_entry fdtable[CONFIG_POSIX_MAX_FDS] = {
 	{
 		/* STDIN */
 		.vtable = &stdinout_fd_op_vtable,
-		.refcount = ATOMIC_INIT(1)
+		.refcount = ATOMIC_INIT(1),
+		.lock = Z_MUTEX_INITIALIZER(fdtable[0].lock),
+		.cond = Z_CONDVAR_INITIALIZER(fdtable[0].cond),
 	},
 	{
 		/* STDOUT */
 		.vtable = &stdinout_fd_op_vtable,
-		.refcount = ATOMIC_INIT(1)
+		.refcount = ATOMIC_INIT(1),
+		.lock = Z_MUTEX_INITIALIZER(fdtable[1].lock),
+		.cond = Z_CONDVAR_INITIALIZER(fdtable[1].cond),
 	},
 	{
 		/* STDERR */
 		.vtable = &stdinout_fd_op_vtable,
-		.refcount = ATOMIC_INIT(1)
+		.refcount = ATOMIC_INIT(1),
+		.lock = Z_MUTEX_INITIALIZER(fdtable[2].lock),
+		.cond = Z_CONDVAR_INITIALIZER(fdtable[2].cond),
+	},
+#else
+	{
+	0
 	},
 #endif
 };
@@ -119,6 +132,30 @@ static int _check_fd(int fd)
 	return 0;
 }
 
+#ifdef CONFIG_ZTEST
+bool fdtable_fd_is_initialized(int fd)
+{
+	struct k_mutex ref_lock;
+	struct k_condvar ref_cond;
+
+	if (fd < 0 || fd >= ARRAY_SIZE(fdtable)) {
+		return false;
+	}
+
+	ref_lock = (struct k_mutex)Z_MUTEX_INITIALIZER(fdtable[fd].lock);
+	if (memcmp(&ref_lock, &fdtable[fd].lock, sizeof(ref_lock)) != 0) {
+		return false;
+	}
+
+	ref_cond = (struct k_condvar)Z_CONDVAR_INITIALIZER(fdtable[fd].cond);
+	if (memcmp(&ref_cond, &fdtable[fd].cond, sizeof(ref_cond)) != 0) {
+		return false;
+	}
+
+	return true;
+}
+#endif /* CONFIG_ZTEST */
+
 void *z_get_fd_obj(int fd, const struct fd_op_vtable *vtable, int err)
 {
 	struct fd_entry *entry;
@@ -135,6 +172,44 @@ void *z_get_fd_obj(int fd, const struct fd_op_vtable *vtable, int err)
 	}
 
 	return entry->obj;
+}
+
+static int z_get_fd_by_obj_and_vtable(void *obj, const struct fd_op_vtable *vtable)
+{
+	int fd;
+
+	for (fd = 0; fd < ARRAY_SIZE(fdtable); fd++) {
+		if (fdtable[fd].obj == obj && fdtable[fd].vtable == vtable) {
+			return fd;
+		}
+	}
+
+	errno = ENFILE;
+	return -1;
+}
+
+bool z_get_obj_lock_and_cond(void *obj, const struct fd_op_vtable *vtable, struct k_mutex **lock,
+			     struct k_condvar **cond)
+{
+	int fd;
+	struct fd_entry *entry;
+
+	fd = z_get_fd_by_obj_and_vtable(obj, vtable);
+	if (_check_fd(fd) < 0) {
+		return false;
+	}
+
+	entry = &fdtable[fd];
+
+	if (lock) {
+		*lock = &entry->lock;
+	}
+
+	if (cond) {
+		*cond = &entry->cond;
+	}
+
+	return true;
 }
 
 void *z_get_fd_obj_and_vtable(int fd, const struct fd_op_vtable **vtable,
@@ -169,6 +244,7 @@ int z_reserve_fd(void)
 		fdtable[fd].obj = NULL;
 		fdtable[fd].vtable = NULL;
 		k_mutex_init(&fdtable[fd].lock);
+		k_condvar_init(&fdtable[fd].cond);
 	}
 
 	k_mutex_unlock(&fdtable_lock);
@@ -187,7 +263,7 @@ void z_finalize_fd(int fd, void *obj, const struct fd_op_vtable *vtable)
 	 * This call is a no-op if obj is invalid or points to something
 	 * not a kernel object.
 	 */
-	z_object_recycle(obj);
+	k_object_recycle(obj);
 #endif
 	fdtable[fd].obj = obj;
 	fdtable[fd].vtable = vtable;
@@ -224,21 +300,37 @@ int z_alloc_fd(void *obj, const struct fd_op_vtable *vtable)
 
 ssize_t read(int fd, void *buf, size_t sz)
 {
+	ssize_t res;
+
 	if (_check_fd(fd) < 0) {
 		return -1;
 	}
 
-	return fdtable[fd].vtable->read(fdtable[fd].obj, buf, sz);
+	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+
+	res = fdtable[fd].vtable->read(fdtable[fd].obj, buf, sz);
+
+	k_mutex_unlock(&fdtable[fd].lock);
+
+	return res;
 }
 FUNC_ALIAS(read, _read, ssize_t);
 
 ssize_t write(int fd, const void *buf, size_t sz)
 {
+	ssize_t res;
+
 	if (_check_fd(fd) < 0) {
 		return -1;
 	}
 
-	return fdtable[fd].vtable->write(fdtable[fd].obj, buf, sz);
+	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+
+	res = fdtable[fd].vtable->write(fdtable[fd].obj, buf, sz);
+
+	k_mutex_unlock(&fdtable[fd].lock);
+
+	return res;
 }
 FUNC_ALIAS(write, _write, ssize_t);
 
@@ -250,7 +342,11 @@ int close(int fd)
 		return -1;
 	}
 
+	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+
 	res = fdtable[fd].vtable->close(fdtable[fd].obj);
+
+	k_mutex_unlock(&fdtable[fd].lock);
 
 	z_free_fd(fd);
 

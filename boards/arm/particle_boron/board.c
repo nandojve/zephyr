@@ -5,58 +5,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
-#include <drivers/gpio.h>
-#include "board.h"
+#include <zephyr/init.h>
+#include <zephyr/drivers/gpio.h>
+
+#define ANT_UFLn_GPIO_SPEC	GPIO_DT_SPEC_GET(DT_NODELABEL(sky13351), vctl1_gpios)
 
 static inline void external_antenna(bool on)
 {
-	const struct device *gpio_dev;
+	struct gpio_dt_spec ufl_gpio = ANT_UFLn_GPIO_SPEC;
 
 	/*
 	 * On power-up the SKY13351 is left uncontrolled, so neither
 	 * PCB nor external antenna is selected.  Select the PCB
 	 * antenna.
 	 */
-	gpio_dev = device_get_binding(ANT_UFLn_GPIO_NAME);
-	if (!gpio_dev) {
+	if (!gpio_is_ready_dt(&ufl_gpio)) {
 		return;
 	}
 
-	gpio_pin_configure(gpio_dev, ANT_UFLn_GPIO_PIN,
-			   ANT_UFLn_GPIO_FLAGS
-			   | (on
-			      ? GPIO_OUTPUT_ACTIVE
-			      : GPIO_OUTPUT_INACTIVE));
+	gpio_pin_configure_dt(&ufl_gpio, (on ? GPIO_OUTPUT_ACTIVE : GPIO_OUTPUT_INACTIVE));
 }
 
-static int board_particle_boron_init(const struct device *dev)
+static int board_particle_boron_init(void)
 {
-	ARG_UNUSED(dev);
-
 	external_antenna(false);
-
-#if defined(CONFIG_MODEM_UBLOX_SARA)
-	const struct device *gpio_dev;
-
-	/* Enable the serial buffer for SARA-R4 modem */
-	gpio_dev = device_get_binding(SERIAL_BUFFER_ENABLE_GPIO_NAME);
-	if (!gpio_dev) {
-		return -ENODEV;
-	}
-
-	gpio_pin_configure(gpio_dev, V_INT_DETECT_GPIO_PIN,
-			   GPIO_INPUT | V_INT_DETECT_GPIO_FLAGS);
-
-	gpio_pin_configure(gpio_dev, SERIAL_BUFFER_ENABLE_GPIO_PIN,
-			   GPIO_OUTPUT_ACTIVE
-			   | SERIAL_BUFFER_ENABLE_GPIO_FLAGS);
-#endif
 
 	return 0;
 }
 
-/* needs to be done after GPIO driver init, which is at
- * POST_KERNEL:KERNEL_INIT_PRIORITY_DEFAULT.
- */
-SYS_INIT(board_particle_boron_init, POST_KERNEL, 99);
+SYS_INIT(board_particle_boron_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

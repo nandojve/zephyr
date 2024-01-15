@@ -1,7 +1,7 @@
 .. _cy8ckit_062_ble:
 
-PSoC63 BLE Pioneer Kit
-######################
+INFINEON PSoC63 BLE Pioneer Kit
+###############################
 
 Overview
 ********
@@ -31,7 +31,6 @@ The Cortex-M0+ is a primary core on the board's SoC. It starts first and
 enables the CM4 core.
 
 .. image:: img/cy8ckit-062-ble.jpg
-     :width: 887px
      :align: center
      :alt: CY8CKIT_062_BLE
 
@@ -133,6 +132,18 @@ USB-UART Bridge working as a serial console interface. SCB6 to P13_0, P13_1
 pins on the J3 of the Arduino Uno R3 compatible PSoC6 I/O header for general
 purposes.
 
+OpenOCD Installation
+====================
+
+To get the OpenOCD package, it is required that you
+
+1. Download the software ModusToolbox 3.1. https://softwaretools.infineon.com/tools/com.ifx.tb.tool.modustoolbox
+2. Once downloaded add the path to access the Scripts folder provided by ModusToolbox
+   export PATH=$PATH:/path/to/ModusToolbox/tools_3.1/openocd/scripts
+3. Add the OpenOCD executable file's path to west flash/debug.
+4. Flash using: west flash --openocd path/to/infineon/openocd/bin/openocd
+5. Debug using: west debug --openocd path/to/infineon/openocd/bin/openocd
+
 Programming and Debugging
 *************************
 
@@ -179,7 +190,7 @@ Cy_WDT_Disable().
 Running on Dual Core
 ********************
 
-#. Build the Zephyr kernel and the :ref:`button-sample` sample application:
+#. Build the Zephyr kernel and the :zephyr:code-sample:`button` sample application:
 
    .. zephyr-app-commands::
       :zephyr-app: samples/basic/button
@@ -238,7 +249,7 @@ revision (0.0.0) allows use of default connections.  The use of Arduino headers
 are only possible after rework the board and using the revision 1.0.0.
 
 #. Build the Zephyr kernel and the :ref:`hello_world` sample application for
-board revision 1.0.0:
+   board revision 1.0.0:
 
    .. zephyr-app-commands::
       :zephyr-app: samples/hello_world
@@ -246,10 +257,10 @@ board revision 1.0.0:
       :goals: build
       :compact:
 
-#. The diferences from version 0.0.0 to 1.0.0:
+#. The differences from version 0.0.0 to 1.0.0:
 
 +-------------+------------+------------+
-| Connecion   | 0.0.0      | 1.0.0      |
+| Connection  | 0.0.0      | 1.0.0      |
 +=============+============+============+
 | CDC-COM RX  | P5_0       | P9_0       |
 +-------------+------------+------------+

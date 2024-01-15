@@ -6,13 +6,17 @@
 
 #include "xtensa/corebits.h"
 #include "xtensa_backtrace.h"
-#include "sys/printk.h"
-#if defined(CONFIG_SOC_ESP32)
+#include <zephyr/sys/printk.h>
+#if defined(CONFIG_SOC_SERIES_ESP32)
 #include "soc/soc_memory_layout.h"
+#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
+#include "debug_helpers.h"
+#elif defined(CONFIG_SOC_XTENSA_DC233C)
+#include "backtrace_helpers.h"
 #endif
 static int mask, cause;
 
-static inline uint32_t z_xtensa_cpu_process_stack_pc(uint32_t pc)
+static inline uint32_t xtensa_cpu_process_stack_pc(uint32_t pc)
 {
 	if (pc & 0x80000000) {
 		/* Top two bits of a0 (return address) specify window increment.
@@ -30,25 +34,33 @@ static inline uint32_t z_xtensa_cpu_process_stack_pc(uint32_t pc)
 	return pc - 3;
 }
 
-static inline bool z_xtensa_stack_ptr_is_sane(uint32_t sp)
+static inline bool xtensa_stack_ptr_is_sane(uint32_t sp)
 {
-#if defined(CONFIG_SOC_ESP32)
+#if defined(CONFIG_SOC_SERIES_ESP32)
 	return esp_stack_ptr_is_sane(sp);
+#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
+	return intel_adsp_ptr_is_sane(sp);
+#elif defined(CONFIG_SOC_XTENSA_DC233C)
+	return xtensa_dc233c_stack_ptr_is_sane(sp);
 #else
-#warning "z_xtensa_stack_ptr_is_sane is not defined for this platform"
+#warning "xtensa_stack_ptr_is_sane is not defined for this platform"
 #endif
 }
 
-static inline bool z_xtensa_ptr_executable(const void *p)
+static inline bool xtensa_ptr_executable(const void *p)
 {
-#if defined(CONFIG_SOC_ESP32)
+#if defined(CONFIG_SOC_SERIES_ESP32)
 	return esp_ptr_executable(p);
+#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
+	return intel_adsp_ptr_executable(p);
+#elif defined(CONFIG_SOC_XTENSA_DC233C)
+	return xtensa_dc233c_ptr_executable(p);
 #else
-#warning "z_xtensa_ptr_executable is not defined for this platform"
+#warning "xtensa_ptr_executable is not defined for this platform"
 #endif
 }
 
-bool z_xtensa_backtrace_get_next_frame(struct z_xtensa_backtrace_frame_t *frame)
+bool xtensa_backtrace_get_next_frame(struct xtensa_backtrace_frame_t *frame)
 {
 	/* Use frame(i-1)'s BS area located below frame(i)'s
 	 * sp to get frame(i-1)'s sp and frame(i-2)'s pc
@@ -67,12 +79,12 @@ bool z_xtensa_backtrace_get_next_frame(struct z_xtensa_backtrace_frame_t *frame)
 	/* Return true if both sp and pc of frame(i-1) are sane,
 	 * false otherwise
 	 */
-	return (z_xtensa_stack_ptr_is_sane(frame->sp) &&
-			z_xtensa_ptr_executable((void *)
-				z_xtensa_cpu_process_stack_pc(frame->pc)));
+	return (xtensa_stack_ptr_is_sane(frame->sp) &&
+			xtensa_ptr_executable((void *)
+				xtensa_cpu_process_stack_pc(frame->pc)));
 }
 
-int z_xtensa_backtrace_print(int depth, int *interrupted_stack)
+int xtensa_backtrace_print(int depth, int *interrupted_stack)
 {
 	/* Check arguments */
 	if (depth <= 0) {
@@ -80,9 +92,9 @@ int z_xtensa_backtrace_print(int depth, int *interrupted_stack)
 	}
 
 	/* Initialize stk_frame with first frame of stack */
-	struct z_xtensa_backtrace_frame_t stk_frame;
+	struct xtensa_backtrace_frame_t stk_frame;
 
-	z_xtensa_backtrace_get_start(&(stk_frame.pc), &(stk_frame.sp),
+	xtensa_backtrace_get_start(&(stk_frame.pc), &(stk_frame.sp),
 			&(stk_frame.next_pc), interrupted_stack);
 	__asm__ volatile("l32i a4, a3, 0");
 	__asm__ volatile("l32i a4, a4, 4");
@@ -91,25 +103,23 @@ int z_xtensa_backtrace_print(int depth, int *interrupted_stack)
 		mask = stk_frame.pc & 0xc0000000;
 	}
 	printk("\r\n\r\nBacktrace:");
-	printk("0x%08X:0x%08X ",
-			z_xtensa_cpu_process_stack_pc(stk_frame.pc),
+	printk("0x%08x:0x%08x ",
+			xtensa_cpu_process_stack_pc(stk_frame.pc),
 			stk_frame.sp);
 
 	/* Check if first frame is valid */
-	bool corrupted = !(z_xtensa_stack_ptr_is_sane(stk_frame.sp) &&
-				(z_xtensa_ptr_executable((void *)
-				z_xtensa_cpu_process_stack_pc(stk_frame.pc)) ||
+	bool corrupted = !(xtensa_stack_ptr_is_sane(stk_frame.sp) &&
+				(xtensa_ptr_executable((void *)
+				xtensa_cpu_process_stack_pc(stk_frame.pc)) ||
 	/* Ignore the first corrupted PC in case of InstrFetchProhibited */
 				cause == EXCCAUSE_INSTR_PROHIBITED));
 
-	uint32_t i = (depth <= 0) ? INT32_MAX : depth;
-
-	while (i-- > 0 && stk_frame.next_pc != 0 && !corrupted) {
+	while (depth-- > 0 && stk_frame.next_pc != 0 && !corrupted) {
 		/* Get previous stack frame */
-		if (!z_xtensa_backtrace_get_next_frame(&stk_frame)) {
+		if (!xtensa_backtrace_get_next_frame(&stk_frame)) {
 			corrupted = true;
 		}
-		printk("0x%08X:0x%08X ", z_xtensa_cpu_process_stack_pc(stk_frame.pc), stk_frame.sp);
+		printk("0x%08x:0x%08x ", xtensa_cpu_process_stack_pc(stk_frame.pc), stk_frame.sp);
 	}
 
 	/* Print backtrace termination marker */

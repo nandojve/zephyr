@@ -11,3 +11,10 @@ toolchain:
   - zephyr
   - gnuarmemb
   - xtools
+supported:
+  - counter
+  - pwm
+  - watchdog
+  - dma
+  - spi
+vendor: gd

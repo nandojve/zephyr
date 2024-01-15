@@ -7,12 +7,13 @@
 #define DT_DRV_COMPAT microchip_xec_gpio
 
 #include <errno.h>
-#include <device.h>
-#include <drivers/gpio.h>
-#include <sys/sys_io.h>
+#include <zephyr/device.h>
+#include <zephyr/irq.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/sys_io.h>
 #include <soc.h>
 
-#include "gpio_utils.h"
+#include <zephyr/drivers/gpio/gpio_utils.h>
 
 #define XEC_GPIO_EDGE_DLY_COUNT		4
 
@@ -65,7 +66,6 @@ static int gpio_xec_configure(const struct device *dev,
 	__IO uint32_t *current_pcr1;
 	uint32_t pcr1 = 0U;
 	uint32_t mask = 0U;
-	__IO uint32_t *gpio_out_reg = GPIO_OUT_BASE(config);
 
 	/* Validate pin number range in terms of current port */
 	if ((valid_ctrl_masks[config->port_num] & BIT(pin)) == 0U) {
@@ -87,7 +87,22 @@ static int gpio_xec_configure(const struct device *dev,
 	mask |= MCHP_GPIO_CTRL_DIR_MASK;
 	mask |= MCHP_GPIO_CTRL_INPAD_DIS_MASK;
 	mask |= MCHP_GPIO_CTRL_PWRG_MASK;
-	pcr1 |= MCHP_GPIO_CTRL_DIR_INPUT;
+	mask |= MCHP_GPIO_CTRL_AOD_MASK;
+
+	current_pcr1 = config->pcr1_base + pin;
+
+	if (flags == GPIO_DISCONNECTED) {
+		pcr1 |= MCHP_GPIO_CTRL_PWRG_OFF;
+		*current_pcr1 = (*current_pcr1 & ~mask) | pcr1;
+		return 0;
+	}
+
+	pcr1 = MCHP_GPIO_CTRL_PWRG_VTR_IO;
+
+	/* Always enable input pad */
+	if (*current_pcr1 & BIT(MCHP_GPIO_CTRL_INPAD_DIS_POS)) {
+		*current_pcr1 &= ~BIT(MCHP_GPIO_CTRL_INPAD_DIS_POS);
+	}
 
 	/* Figure out the pullup/pulldown configuration and keep it in the
 	 * pcr1 variable
@@ -113,37 +128,32 @@ static int gpio_xec_configure(const struct device *dev,
 		pcr1 |= MCHP_GPIO_CTRL_BUFT_PUSHPULL;
 	}
 
-	/* Use GPIO output register to control pin output, instead of
-	 * using the control register (=> alternate output disable).
-	 */
-	mask |= MCHP_GPIO_CTRL_AOD_MASK;
-	pcr1 |= MCHP_GPIO_CTRL_AOD_DIS;
-
-	/* Make sure disconnected on first control register write */
-	if (flags == GPIO_DISCONNECTED) {
-		pcr1 |= MCHP_GPIO_CTRL_PWRG_OFF;
-	}
-
-	/* Now write contents of pcr1 variable to the PCR1 register that
-	 * corresponds to the GPIO being configured.
-	 * AOD is 1 and direction is input. HW will allow use to set the
-	 * GPIO parallel output bit for this pin and with the pin direction
-	 * as input no glitch will occur.
-	 */
-	current_pcr1 = config->pcr1_base + pin;
-	*current_pcr1 = (*current_pcr1 & ~mask) | pcr1;
-
 	if ((flags & GPIO_OUTPUT) != 0U) {
+		mask |= MCHP_GPIO_CTRL_OUTV_HI;
 		if ((flags & GPIO_OUTPUT_INIT_HIGH) != 0U) {
-			*gpio_out_reg |= BIT(pin);
+			pcr1 |= BIT(MCHP_GPIO_CTRL_OUTVAL_POS);
 		} else if ((flags & GPIO_OUTPUT_INIT_LOW) != 0U) {
-			*gpio_out_reg &= ~BIT(pin);
+			pcr1 &= ~BIT(MCHP_GPIO_CTRL_OUTVAL_POS);
+		} else { /* Copy current input state to output state */
+			if ((*current_pcr1 & MCHP_GPIO_CTRL_PWRG_MASK) ==
+			     MCHP_GPIO_CTRL_PWRG_OFF) {
+				*current_pcr1 = (*current_pcr1 &
+						 ~MCHP_GPIO_CTRL_PWRG_MASK) |
+						 MCHP_GPIO_CTRL_PWRG_VTR_IO;
+			}
+			if (*current_pcr1 & BIT(MCHP_GPIO_CTRL_INPAD_VAL_POS)) {
+				pcr1 |= BIT(MCHP_GPIO_CTRL_OUTVAL_POS);
+			} else {
+				pcr1 &= ~BIT(MCHP_GPIO_CTRL_OUTVAL_POS);
+			}
 		}
 
-		mask = MCHP_GPIO_CTRL_DIR_MASK;
-		pcr1 = MCHP_GPIO_CTRL_DIR_OUTPUT;
-		*current_pcr1 = (*current_pcr1 & ~mask) | pcr1;
+		pcr1 |= MCHP_GPIO_CTRL_DIR_OUTPUT;
 	}
+
+	*current_pcr1 = (*current_pcr1 & ~mask) | pcr1;
+	/* Control output bit becomes ready only and parallel output r/w */
+	*current_pcr1 = *current_pcr1 | BIT(MCHP_GPIO_CTRL_AOD_POS);
 
 	return 0;
 }
@@ -173,7 +183,7 @@ static int gpio_xec_pin_interrupt_configure(const struct device *dev,
 	/* Disable interrupt in the EC aggregator */
 	MCHP_GIRQ_ENCLR(config->girq_id) = BIT(pin);
 
-	/* Assemble mask for level/edge triggered interrrupts */
+	/* Assemble mask for level/edge triggered interrupts */
 	mask |= MCHP_GPIO_CTRL_IDET_MASK;
 
 	if (mode == GPIO_INT_MODE_DISABLED) {
@@ -355,7 +365,7 @@ DEVICE_DT_DEFINE(DT_NODELABEL(gpio_000_036),
 		    gpio_xec_port000_036_init,
 		    NULL,
 		    &gpio_xec_port000_036_data, &gpio_xec_port000_036_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_xec_driver_api);
 
 static int gpio_xec_port000_036_init(const struct device *dev)
@@ -401,7 +411,7 @@ DEVICE_DT_DEFINE(DT_NODELABEL(gpio_040_076),
 		    gpio_xec_port040_076_init,
 		    NULL,
 		    &gpio_xec_port040_076_data, &gpio_xec_port040_076_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_xec_driver_api);
 
 static int gpio_xec_port040_076_init(const struct device *dev)
@@ -447,7 +457,7 @@ DEVICE_DT_DEFINE(DT_NODELABEL(gpio_100_136),
 		    gpio_xec_port100_136_init,
 		    NULL,
 		    &gpio_xec_port100_136_data, &gpio_xec_port100_136_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_xec_driver_api);
 
 static int gpio_xec_port100_136_init(const struct device *dev)
@@ -493,7 +503,7 @@ DEVICE_DT_DEFINE(DT_NODELABEL(gpio_140_176),
 		    gpio_xec_port140_176_init,
 		    NULL,
 		    &gpio_xec_port140_176_data, &gpio_xec_port140_176_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_xec_driver_api);
 
 static int gpio_xec_port140_176_init(const struct device *dev)
@@ -539,7 +549,7 @@ DEVICE_DT_DEFINE(DT_NODELABEL(gpio_200_236),
 		    gpio_xec_port200_236_init,
 		    NULL,
 		    &gpio_xec_port200_236_data, &gpio_xec_port200_236_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_xec_driver_api);
 
 static int gpio_xec_port200_236_init(const struct device *dev)
@@ -585,7 +595,7 @@ DEVICE_DT_DEFINE(DT_NODELABEL(gpio_240_276),
 		    gpio_xec_port240_276_init,
 		    NULL,
 		    &gpio_xec_port240_276_data, &gpio_xec_port240_276_config,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_xec_driver_api);
 
 static int gpio_xec_port240_276_init(const struct device *dev)

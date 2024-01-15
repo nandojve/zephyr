@@ -8,11 +8,8 @@ compatible: "st,stm32-window-watchdog"
 include: base.yaml
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    label:
-      required: true
-
-    clocks:
-      required: true
+  clocks:
+    required: true

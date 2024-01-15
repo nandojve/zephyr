@@ -1,0 +1,10 @@
+sample:
+  description: Sample application to test ESP32 flash encryption
+  name: flash_encryption
+tests:
+  sample.board.esp32:
+    platform_allow:
+      - esp32_devkitc_wroom
+      - esp32_devkitc_wrover
+      - yd_esp32
+    tags: esp32

@@ -1,7 +1,7 @@
 # find the compilers for C, CPP, assembly
-find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}armclang PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
-find_program(CMAKE_CXX_COMPILER ${CROSS_COMPILE}armclang PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
-find_program(CMAKE_ASM_COMPILER ${CROSS_COMPILE}armclang PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}armclang PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_CXX_COMPILER ${CROSS_COMPILE}armclang PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_ASM_COMPILER ${CROSS_COMPILE}armclang PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
 
 # The CMAKE_REQUIRED_FLAGS variable is used by check_c_compiler_flag()
 # (and other commands which end up calling check_c_source_compiles())
@@ -10,7 +10,11 @@ find_program(CMAKE_ASM_COMPILER ${CROSS_COMPILE}armclang PATH ${TOOLCHAIN_HOME} 
 # the final executable.
 #
 include(${ZEPHYR_BASE}/cmake/gcc-m-cpu.cmake)
-set(CMAKE_SYSTEM_PROCESSOR ${GCC_M_CPU})
+include(${ZEPHYR_BASE}/cmake/gcc-m-fpu.cmake)
+
+# Strip out any trailing +<FOO> from GCC_M_CPU for cases when GCC_M_CPU is
+# 'cortex-m33+nodsp' we need that to be 'cortex-m33' for CMAKE_SYSTEM_PROCESSOR
+string(REGEX REPLACE "\\+.*" "" CMAKE_SYSTEM_PROCESSOR ${GCC_M_CPU})
 
 list(APPEND TOOLCHAIN_C_FLAGS
   -fshort-enums
@@ -30,25 +34,17 @@ else()
 
   list(APPEND TOOLCHAIN_C_FLAGS -mabi=aapcs)
 
-  # Defines a mapping from GCC_M_CPU to FPU
-
-  if(CONFIG_CPU_HAS_FPU_DOUBLE_PRECISION)
-    set(PRECISION_TOKEN)
-  else()
-    set(PRECISION_TOKEN sp-)
-  endif()
-
-  set(FPU_FOR_cortex-m4      fpv4-${PRECISION_TOKEN}d16)
-  set(FPU_FOR_cortex-m7      fpv5-${PRECISION_TOKEN}d16)
-  set(FPU_FOR_cortex-m33     fpv5-${PRECISION_TOKEN}d16)
-
   if(CONFIG_FPU)
-    list(APPEND TOOLCHAIN_C_FLAGS   -mfpu=${FPU_FOR_${GCC_M_CPU}})
+    if(NOT "${GCC_M_FPU}" STREQUAL "auto")
+      list(APPEND TOOLCHAIN_C_FLAGS   -mfpu=${GCC_M_FPU})
+    endif()
     if    (CONFIG_FP_SOFTABI)
       list(APPEND TOOLCHAIN_C_FLAGS   -mfloat-abi=softfp)
     elseif(CONFIG_FP_HARDABI)
       list(APPEND TOOLCHAIN_C_FLAGS   -mfloat-abi=hard)
     endif()
+  else()
+    list(APPEND TOOLCHAIN_C_FLAGS   -mfloat-abi=soft)
   endif()
 endif()
 

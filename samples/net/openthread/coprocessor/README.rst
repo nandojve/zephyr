@@ -1,7 +1,8 @@
-.. _coprocessor-sample:
+.. zephyr:code-sample:: coprocessor
+   :name: OpenThread co-processor
+   :relevant-api: openthread
 
-OpenThread Co-Processor
-#######################
+   Build a Thread border-router using OpenThread's co-processor designs.
 
 Overview
 ********
@@ -38,7 +39,7 @@ Build the OpenThread NCP sample application which uses CDC ACM UART device:
    :zephyr-app: samples/net/openthread/coprocessor
    :board: nrf52840dk_nrf52840
    :goals: build flash
-   :gen-args: -DDTC_OVERLAY_FILE=usb.overlay -DOVERLAY_CONFIG=overlay-usb-nrf-br.conf
+   :gen-args: -DDTC_OVERLAY_FILE=usb.overlay -DEXTRA_CONF_FILE=overlay-usb-nrf-br.conf
    :compact:
 
 Example building for the nrf52840dk_nrf52840 for RCP:
@@ -63,7 +64,7 @@ coprocessor directory:
 
 - :file:`overlay-tri-n4m-br.conf`
   This is an overlay for the dedicated Thread Border Router hardware
-  https://www.tridonic.com/com/en/products/net4more-borderROUTER-PoE-Thread.asp.
+  https://www.tridonic.com/com/en/download/data_sheets/net4more_Borderrouter_PoE-Thread_en.pdf.
   The board support is not part of the Zephyr repositories, but the
   product is based on NXP K64 and AT86RF233. This file can be used as an
   example for a development set-up based on development boards.

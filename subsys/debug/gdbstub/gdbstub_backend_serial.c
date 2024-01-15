@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <drivers/uart.h>
-#include <sys/__assert.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/sys/__assert.h>
 
 static const struct device *uart_dev;
 
@@ -21,16 +21,22 @@ int z_gdb_backend_init(void)
 		.flow_ctrl = UART_CFG_FLOW_CTRL_NONE
 	};
 
-	if (uart_dev == NULL) {
-		uart_dev = device_get_binding(
-			CONFIG_GDBSTUB_SERIAL_BACKEND_NAME);
+#ifdef CONFIG_GDBSTUB_TRACE
+	printk("gdbstub_serial:%s enter\n", __func__);
+#endif
 
-		__ASSERT(uart_dev != NULL, "Could not get uart device");
+	if (uart_dev == NULL) {
+		uart_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_gdbstub_uart));
+
+		__ASSERT(device_is_ready(uart_dev), "uart device is not ready");
 
 		ret = uart_configure(uart_dev, &uart_cfg);
 		__ASSERT(ret == 0, "Could not configure uart device");
 	}
 
+#ifdef CONFIG_GDBSTUB_TRACE
+	printk("gdbstub_serial:%s exit\n", __func__);
+#endif
 	return ret;
 }
 

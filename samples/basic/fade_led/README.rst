@@ -1,7 +1,8 @@
-.. _fade-led-sample:
+.. zephyr:code-sample:: fade-led
+   :name: Fade LED
+   :relevant-api: pwm_interface
 
-Fade LED
-########
+   Fade an LED using the PWM API.
 
 Overview
 ********
@@ -10,13 +11,15 @@ This application "fades" a LED using the :ref:`PWM API <pwm_api>`.
 
 The LED starts off increases its brightness until it is fully or nearly fully
 on. The brightness then decreases until the LED is off, completing on fade
-cycle. Each cycle takes 2.5 seconds, and the cycles repeat forever.
+cycle. Each cycle takes 2.5 seconds, and the cycles repeat forever. The PWM
+period is taken from Devicetree. It should be fast enough to be above the
+flicker fusion threshold.
 
 Requirements and Wiring
 ***********************
 
 This sample has the same requirements and wiring considerations as the
-:ref:`pwm-blinky-sample`.
+:zephyr:code-sample:`pwm-blinky` sample.
 
 Building and Running
 ********************

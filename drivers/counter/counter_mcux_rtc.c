@@ -7,9 +7,12 @@
 
 #define DT_DRV_COMPAT nxp_kinetis_rtc
 
-#include <drivers/counter.h>
+#include <zephyr/drivers/counter.h>
+#include <zephyr/irq.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys_clock.h>
 #include <fsl_rtc.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(mcux_rtc, CONFIG_COUNTER_LOG_LEVEL);
 

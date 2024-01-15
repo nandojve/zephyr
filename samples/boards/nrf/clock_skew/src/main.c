@@ -5,19 +5,17 @@
  */
 
 #include <stdio.h>
-#include <zephyr.h>
-#include <sys/timeutil.h>
-#include <drivers/clock_control.h>
-#include <drivers/clock_control/nrf_clock_control.h>
-#include <drivers/counter.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/timeutil.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/clock_control/nrf_clock_control.h>
+#include <zephyr/drivers/counter.h>
 #include <nrfx_clock.h>
 
-#define TIMER_NODE DT_NODELABEL(timer0)
-#define CLOCK_NODE DT_INST(0, nordic_nrf_clock)
 #define UPDATE_INTERVAL_S 10
 
-static const struct device *clock0;
-static const struct device *timer0;
+static const struct device *const clock0 = DEVICE_DT_GET_ONE(nordic_nrf_clock);
+static const struct device *const timer0 = DEVICE_DT_GET(DT_NODELABEL(timer0));
 static struct timeutil_sync_config sync_config;
 static uint64_t counter_ref;
 static struct timeutil_sync_state sync_state;
@@ -81,8 +79,8 @@ static void show_clocks(const char *tag)
 		[NRF_CLOCK_LFCLK_LFULP] = "LFULP",
 #endif
 		[NRF_CLOCK_LFCLK_RC] = "LFRC",
-		[NRF_CLOCK_LFCLK_Xtal] = "LFXO",
-		[NRF_CLOCK_LFCLK_Synth] = "LFSYNT",
+		[NRF_CLOCK_LFCLK_XTAL] = "LFXO",
+		[NRF_CLOCK_LFCLK_SYNTH] = "LFSYNT",
 	};
 	static const char *const hfsrc_s[] = {
 		[NRF_CLOCK_HFCLK_LOW_ACCURACY] = "HFINT",
@@ -186,7 +184,7 @@ static void sync_work_handler(struct k_work *work)
 			       us_to_text(ref_to_us(rec_ref)));
 			printf("%c%s\n", err_sign, us_to_text(err_us));
 
-			printf("Skew %f ; err %d ppb\n", skew,
+			printf("Skew %f ; err %d ppb\n", (double)skew,
 			       timeutil_sync_skew_to_ppb(skew));
 		} else if (rc < 0) {
 			printf("Sync update error: %d\n", rc);
@@ -196,17 +194,15 @@ static void sync_work_handler(struct k_work *work)
 			      K_SECONDS(UPDATE_INTERVAL_S));
 }
 
-void main(void)
+int main(void)
 {
-	const char *clock_label = DT_LABEL(CLOCK_NODE);
-	const char *timer0_label = DT_LABEL(TIMER_NODE);
 	uint32_t top;
 	int rc;
 
 	/* Grab the clock driver */
-	clock0 = device_get_binding(clock_label);
-	if (clock0 == NULL) {
-		printk("Failed to fetch clock %s\n", clock_label);
+	if (!device_is_ready(clock0)) {
+		printk("%s: device not ready.\n", clock0->name);
+		return 0;
 	}
 
 	show_clocks("Power-up clocks");
@@ -217,10 +213,9 @@ void main(void)
 	}
 
 	/* Grab the timer. */
-	timer0 = device_get_binding(timer0_label);
-	if (timer0 == NULL) {
-		printk("Failed to fetch timer0 %s\n", timer0_label);
-		return;
+	if (!device_is_ready(timer0)) {
+		printk("%s: device not ready.\n", timer0->name);
+		return 0;
 	}
 
 	/* Apparently there's no API to configure a frequency at
@@ -229,19 +224,19 @@ void main(void)
 	sync_config.ref_Hz = counter_get_frequency(timer0);
 	if (sync_config.ref_Hz == 0) {
 		printk("Timer %s has no fixed frequency\n",
-			timer0_label);
-		return;
+			timer0->name);
+		return 0;
 	}
 
 	top = counter_get_top_value(timer0);
 	if (top != UINT32_MAX) {
 		printk("Timer %s wraps at %u (0x%08x) not at 32 bits\n",
-		       timer0_label, top, top);
-		return;
+		       timer0->name, top, top);
+		return 0;
 	}
 
 	rc = counter_start(timer0);
-	printk("Start %s: %d\n", timer0_label, rc);
+	printk("Start %s: %d\n", timer0->name, rc);
 
 	show_clocks("Timer-running clocks");
 
@@ -250,7 +245,7 @@ void main(void)
 	sync_state.cfg = &sync_config;
 
 	printf("Checking %s at %u Hz against ticks at %u Hz\n",
-	       timer0_label, sync_config.ref_Hz, sync_config.local_Hz);
+	       timer0->name, sync_config.ref_Hz, sync_config.local_Hz);
 	printf("Timer wraps every %u s\n",
 	       (uint32_t)(BIT64(32) / sync_config.ref_Hz));
 
@@ -258,4 +253,5 @@ void main(void)
 	rc = k_work_schedule(&sync_work, K_NO_WAIT);
 
 	printk("Started sync: %d\n", rc);
+	return 0;
 }

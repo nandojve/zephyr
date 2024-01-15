@@ -26,7 +26,6 @@ nRF52840 ARM Cortex-M4F CPU and the following devices:
 * :abbr:`WDT (Watchdog Timer)`
 
 .. figure:: img/adafruit_feather_nrf52840.jpg
-     :width: 640px
      :align: center
      :alt: Adafruit Feather nRF52840 Express
 
@@ -81,7 +80,7 @@ following hardware features:
 | WDT       | on-chip    | watchdog             |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Connections and IOs
 ===================
@@ -114,10 +113,10 @@ Flashing
 Flashing Zephyr onto the ``adafruit_feather_nrf52480`` board requires
 an external programmer. The programmer is attached to the SWD header.
 
-Build the Zephyr kernel and the :ref:`blinky-sample` sample application.
+Build the Zephyr kernel and the :zephyr:code-sample:`blinky` sample application.
 
    .. zephyr-app-commands::
-      :zephyr-app: samples/blinky
+      :zephyr-app: samples/basic/blinky
       :board: adafruit_feather_nrf52840
       :goals: build
       :compact:
@@ -125,12 +124,12 @@ Build the Zephyr kernel and the :ref:`blinky-sample` sample application.
 Flash the image.
 
    .. zephyr-app-commands::
-      :zephyr-app: samples/blinky
+      :zephyr-app: samples/basic/blinky
       :board: adafruit_feather_nrf52840
       :goals: flash
       :compact:
 
-You should see the the red LED blink.
+You should see the red LED blink.
 
 References
 **********

@@ -29,7 +29,7 @@ some highlights of the Nucleo F207ZG board:
 - Three user LEDs
 - Two push-buttons: USER and RESET
 
-.. image:: img/nucleo_f207zg.png
+.. image:: img/nucleo_f207zg.jpg
    :align: center
    :alt: Nucleo F207ZG
 
@@ -106,6 +106,8 @@ The Zephyr nucleo_207zg board configuration supports the following hardware feat
 +-------------+------------+-------------------------------------+
 | DMA         | on-chip    | Direct Memory Access                |
 +-------------+------------+-------------------------------------+
+| die-temp    | on-chip    | die temperature sensor              |
++-------------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
 
@@ -121,25 +123,17 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_f207zg_zio_left.png
-   :width: 720px
+.. image:: img/nucleo_f207zg_zio_left.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F207ZG ZIO connectors (left)
-.. image:: img/nucleo_f207zg_zio_right.png
-   :width: 720px
+.. image:: img/nucleo_f207zg_zio_right.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F207ZG ZIO connectors (right)
-.. image:: img/nucleo_f207zg_morpho_left.png
-   :width: 720px
+.. image:: img/nucleo_f207zg_morpho_left.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F207ZG Morpho connectors (left)
-.. image:: img/nucleo_f207zg_morpho_right.png
-   :width: 720px
+.. image:: img/nucleo_f207zg_morpho_right.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F207ZG Morpho connectors (right)
 
 For more details please refer to `STM32 Nucleo-144 board User Manual`_.
@@ -200,13 +194,13 @@ This interface is supported by the openocd version included in Zephyr SDK.
 
 
 .. _Nucleo F207ZG website:
-   http://www.st.com/en/evaluation-tools/nucleo-f207zg.html
+   https://www.st.com/en/evaluation-tools/nucleo-f207zg.html
 
 .. _STM32 Nucleo-144 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00244518.pdf
+   https://www.st.com/resource/en/user_manual/dm00244518.pdf
 
 .. _STM32F207ZG on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f207zg.html
+   https://www.st.com/en/microcontrollers/stm32f207zg.html
 
 .. _STM32F207 reference manual:
-   http://www.st.com/resource/en/reference_manual/cd00225773.pdf
+   https://www.st.com/resource/en/reference_manual/cd00225773.pdf

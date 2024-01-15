@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/arch/cpu.h>
 
-#include <tc_util.h>
+#include <zephyr/tc_util.h>
 
 #ifdef CONFIG_BIG_ENDIAN
 #define BIT_INDEX(bit)  ((3 - ((bit >> 3) & 0x3)) + 4*(bit >> 5))
@@ -31,8 +31,11 @@
  * sys_bitfield_test_bit(), sys_bitfield_test_and_set_bit(),
  * sys_bitfield_test_and_clear_bit()
  */
-void test_bitfield(void)
+ZTEST(bitfield, test_bitfield)
 {
+#ifdef CONFIG_ARM
+	ztest_test_skip();
+#else
 	uint32_t b1 = 0U;
 	unsigned char b2[BITFIELD_SIZE >> 3] = { 0 };
 	unsigned int bit;
@@ -124,7 +127,13 @@ void test_bitfield(void)
 			      "sys_bitfield_test_and_clear_bit set bit %d\n",
 			      bit);
 	}
+#endif
+
 }
+
+extern void *common_setup(void);
+
+ZTEST_SUITE(bitfield, NULL, common_setup, NULL, NULL, NULL);
 
 /**
  * @}

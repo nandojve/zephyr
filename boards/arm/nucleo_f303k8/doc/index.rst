@@ -25,8 +25,6 @@ Here are some highlights of the Nucleo F303K8 board:
 - One push-buttons: RESET
 
 .. image:: img/nucleo_f303k8.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F303K8
 
@@ -109,10 +107,8 @@ for input/output, pull-up, etc.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f303k8_pinout.png
-   :width: 800px
+.. image:: img/nucleo_f303k8_pinout.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F303K8 connectors
 
 Default Zephyr Peripheral Mapping:
@@ -148,13 +144,13 @@ This interface is supported by the openocd version included in Zephyr SDK.
 
 
 .. _Nucleo F303K8 website:
-   http://www.st.com/en/evaluation-tools/nucleo-F303K8.html
+   https://www.st.com/en/evaluation-tools/nucleo-F303K8.html
 
 .. _STM32 Nucleo-32 board User Manual:
    https://www.st.com/resource/en/user_manual/dm00231744-stm32-nucleo32-boards-mb1180-stmicroelectronics.pdf
 
 .. _STM32F303K8 on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32F303K8.html
+   https://www.st.com/en/microcontrollers/stm32F303K8.html
 
 .. _STM32F303K8 reference manual:
    https://www.st.com/resource/en/reference_manual/dm00043574-stm32f303xbcde-stm32f303x68-stm32f328x8-stm32f358xc-stm32f398xe-advanced-armbased-mcus-stmicroelectronics.pdf

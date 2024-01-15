@@ -8,16 +8,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(net_ipv6, CONFIG_NET_IPV6_LOG_LEVEL);
 
 #include <errno.h>
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_stats.h>
-#include <net/net_context.h>
-#include <net/net_mgmt.h>
-#include <random/rand32.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_stats.h>
+#include <zephyr/net/net_context.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/random/random.h>
 #include "net_private.h"
 #include "connection.h"
 #include "icmpv6.h"
@@ -73,7 +73,6 @@ int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, uint16_t *next_hdr_off,
 	*next_hdr_off = offsetof(struct net_ipv6_hdr, nexthdr);
 	*last_hdr_off = sizeof(struct net_ipv6_hdr);
 
-	nexthdr = hdr->nexthdr;
 	while (!net_ipv6_is_nexthdr_upper_layer(nexthdr)) {
 		if (net_pkt_read_u8(pkt, &next_nexthdr)) {
 			goto fail;
@@ -206,16 +205,17 @@ static bool reassembly_cancel(uint32_t id,
 static void reassembly_info(char *str, struct net_ipv6_reassembly *reass)
 {
 	NET_DBG("%s id 0x%x src %s dst %s remain %d ms", str, reass->id,
-		log_strdup(net_sprint_ipv6_addr(&reass->src)),
-		log_strdup(net_sprint_ipv6_addr(&reass->dst)),
+		net_sprint_ipv6_addr(&reass->src),
+		net_sprint_ipv6_addr(&reass->dst),
 		k_ticks_to_ms_ceil32(
 			k_work_delayable_remaining_get(&reass->timer)));
 }
 
 static void reassembly_timeout(struct k_work *work)
 {
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct net_ipv6_reassembly *reass =
-		CONTAINER_OF(work, struct net_ipv6_reassembly, timer);
+		CONTAINER_OF(dwork, struct net_ipv6_reassembly, timer);
 
 	reassembly_info("Reassembly cancelled", reass);
 
@@ -338,6 +338,7 @@ static void reassemble_packet(struct net_ipv6_reassembly *reass)
 	ipv6.hdr->len = htons(len);
 
 	net_pkt_set_data(pkt, &ipv6_access);
+	net_pkt_set_ip_reassembled(pkt, true);
 
 	NET_DBG("New pkt %p IPv6 len is %d bytes", pkt,
 		len + NET_IPV6H_LEN);
@@ -491,7 +492,8 @@ enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 		goto drop;
 	}
 
-	reass = reassembly_get(id, &hdr->src, &hdr->dst);
+	reass = reassembly_get(id, (struct in6_addr *)hdr->src,
+			       (struct in6_addr *)hdr->dst);
 	if (!reass) {
 		NET_DBG("Cannot get reassembly slot, dropping pkt %p", pkt);
 		goto drop;
@@ -634,10 +636,13 @@ static int send_ipv6_fragment(struct net_pkt *pkt,
 	frag_hdr->id = net_pkt_ipv6_fragment_id(pkt);
 	frag_hdr->offset = htons(((frag_offset / 8U) << 3) | !final);
 
+	net_pkt_set_chksum_done(frag_pkt, true);
+
 	if (net_pkt_set_data(frag_pkt, &frag_access)) {
 		goto fail;
 	}
 
+	net_pkt_set_ip_hdr_len(frag_pkt, net_pkt_ip_hdr_len(pkt));
 	net_pkt_set_ipv6_ext_len(frag_pkt,
 				 net_pkt_ipv6_ext_len(pkt) +
 				 sizeof(struct net_ipv6_frag_hdr));
@@ -654,6 +659,10 @@ static int send_ipv6_fragment(struct net_pkt *pkt,
 
 	if (net_ipv6_finalize(frag_pkt, frag_pkt_next_hdr) < 0) {
 		goto fail;
+	}
+
+	if (final) {
+		net_pkt_set_context(frag_pkt, net_pkt_context(pkt));
 	}
 
 	/* If everything has been ok so far, we can send the packet. */
@@ -684,7 +693,6 @@ int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 	uint16_t frag_offset;
 	size_t length;
 	uint8_t next_hdr;
-	uint8_t last_hdr;
 	int fit_len;
 	int ret;
 
@@ -698,14 +706,12 @@ int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 	net_pkt_cursor_init(pkt);
 
 	if (net_pkt_skip(pkt, next_hdr_off) ||
-	    net_pkt_read_u8(pkt, &next_hdr) ||
-	    net_pkt_skip(pkt, last_hdr_off) ||
-	    net_pkt_read_u8(pkt, &last_hdr)) {
+	    net_pkt_read_u8(pkt, &next_hdr)) {
 		return -ENOBUFS;
 	}
 
 	/* The Maximum payload can fit into each packet after IPv6 header,
-	 * Extenstion headers and Fragmentation header.
+	 * Extension headers and Fragmentation header.
 	 */
 	fit_len = NET_IPV6_MTU - NET_IPV6_FRAGH_LEN -
 		(net_pkt_ip_hdr_len(pkt) + net_pkt_ipv6_ext_len(pkt));
@@ -718,6 +724,31 @@ int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 	}
 
 	frag_offset = 0U;
+
+	/* Calculate the L4 checksum (if not done already) before the fragmentation. */
+	if (!net_pkt_is_chksum_done(pkt)) {
+		net_pkt_cursor_init(pkt);
+		net_pkt_skip(pkt, last_hdr_off);
+
+		switch (next_hdr) {
+		case IPPROTO_ICMPV6:
+			ret = net_icmpv6_finalize(pkt, true);
+			break;
+		case IPPROTO_TCP:
+			ret = net_tcp_finalize(pkt, true);
+			break;
+		case IPPROTO_UDP:
+			ret = net_udp_finalize(pkt, true);
+			break;
+		default:
+			ret = 0;
+			break;
+		}
+
+		if (ret < 0) {
+			return ret;
+		}
+	}
 
 	length = net_pkt_get_len(pkt) -
 		(net_pkt_ip_hdr_len(pkt) + net_pkt_ipv6_ext_len(pkt));

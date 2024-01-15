@@ -155,7 +155,7 @@ Prerequisites:
 #. Install OpenOCD
 
    You can obtain OpenOCD by following these
-   :ref:`installing the latest Zephyr SDK instructions <zephyr_sdk>`.
+   :ref:`installing the latest Zephyr SDK instructions <toolchain_zephyr_sdk>`.
 
    After the installation, add the directory containing the OpenOCD executable
    to your environment's PATH variable. For example, use this command in Linux:
@@ -172,7 +172,7 @@ Prerequisites:
    to the paths of the OpenOCD binary and its scripts, before
    including the common openocd.board.cmake file:
 
-   .. code-block:: none
+   .. code-block:: cmake
 
       set(OPENOCD "/usr/local/bin/openocd" CACHE FILEPATH "" FORCE)
       set(OPENOCD_DEFAULT_PATH /usr/local/share/openocd/scripts)
@@ -244,7 +244,7 @@ It is available as a Zephyr Wi-Fi device driver in
 Usage:
 ======
 
-Set :kconfig:`CONFIG_WIFI_SIMPLELINK` and :kconfig:`CONFIG_WIFI` to ``y``
+Set :kconfig:option:`CONFIG_WIFI_SIMPLELINK` and :kconfig:option:`CONFIG_WIFI` to ``y``
 to enable Wi-Fi.
 See :zephyr_file:`samples/net/wifi/boards/cc3235sf_launchxl.conf`.
 
@@ -261,7 +261,7 @@ re-specify the SSID and password.
 To connect to an AP, first run the Zephyr Wi-Fi shell sample application,
 and connect to a known AP with SSID and password.
 
-See :ref:`wifi_sample`
+See :zephyr:code-sample:`wifi-shell`
 
 Once the connection succeeds, the network co-processor keeps the AP identity in
 its persistent memory.  Newly loaded Wi-Fi applications then need not explicitly
@@ -272,19 +272,19 @@ Secure Socket Offload
 
 The SimpleLink Wi-Fi driver provides socket operations to the Zephyr socket
 offload point, enabling Zephyr BSD socket API calls to be directed to the
-SimpleLink Wi-Fi driver, by setting :kconfig:`CONFIG_NET_SOCKETS_OFFLOAD`
+SimpleLink Wi-Fi driver, by setting :kconfig:option:`CONFIG_NET_SOCKETS_OFFLOAD`
 to ``y``.
 
 Secure socket (TLS) communication is handled as part of the socket APIs,
 and enabled by:
 
-- setting both :kconfig:`CONFIG_NET_SOCKETS_SOCKOPT_TLS`
-  and :kconfig:`CONFIG_TLS_CREDENTIAL_FILENAMES` to ``y``,
+- setting both :kconfig:option:`CONFIG_NET_SOCKETS_SOCKOPT_TLS`
+  and :kconfig:option:`CONFIG_TLS_CREDENTIAL_FILENAMES` to ``y``,
 - using the TI Uniflash tool to program the required certificates and
   keys to the secure flash filesystem, and enabling the TI Trusted
   Root-Certificate Catalog.
 
-See :ref:`sockets-http-get` and
+See :zephyr:code-sample:`sockets-http-get` and
 :zephyr_file:`samples/net/sockets/http_get/boards/cc3235sf_launchxl.conf` for an
 example.
 

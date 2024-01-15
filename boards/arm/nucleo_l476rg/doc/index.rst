@@ -27,9 +27,7 @@ some highlights of the Nucleo L476RG board:
 - Two push-buttons: USER and RESET
 
 .. image:: img/nucleo_l476rg.jpg
-   :width: 250px
    :align: center
-   :height: 250px
    :alt: Nucleo L476RG
 
 More information about the board can be found at the `Nucleo L476RG website`_.
@@ -140,15 +138,11 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_l476rg_arduino.png
-   :width: 720px
+.. image:: img/nucleo_l476rg_arduino.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo L476RG Arduino connectors
-.. image:: img/nucleo_l476rg_morpho.png
-   :width: 720px
+.. image:: img/nucleo_l476rg_morpho.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo L476RG Morpho connectors
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.
@@ -237,13 +231,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _Nucleo L476RG website:
-   http://www.st.com/en/evaluation-tools/nucleo-l476rg.html
+   https://www.st.com/en/evaluation-tools/nucleo-l476rg.html
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf
 
 .. _STM32L476RG on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32l476rg.html
+   https://www.st.com/en/microcontrollers/stm32l476rg.html
 
 .. _STM32L476 reference manual:
-   http://www.st.com/resource/en/reference_manual/DM00083560.pdf
+   https://www.st.com/resource/en/reference_manual/DM00083560.pdf

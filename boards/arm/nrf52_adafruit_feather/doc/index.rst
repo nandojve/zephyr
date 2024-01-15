@@ -18,8 +18,7 @@ the following devices:
 * RADIO (Bluetooth Low Energy)
 * Segger RTT (RTT Console)
 
-.. figure:: img/nrf52_adafruit_feather.png
-     :width: 442px
+.. figure:: img/nrf52_adafruit_feather.jpg
      :align: center
      :alt: nRF52 Adafruit Feather Board
 
@@ -67,7 +66,7 @@ hardware features:
 | RTT       | on-chip    | console              |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Connections and IOs
 ===================
@@ -149,7 +148,7 @@ Here is an example for the :ref:`hello_world` application.
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! nrf52_adafruit_feather" in your terminal.
 
 
 Debugging
@@ -167,11 +166,11 @@ Testing the LEDs and buttons on the nRF52 Adafruit Feather
 There are several samples that allow you to test that the buttons (switches) and LEDs on
 the board are working properly with Zephyr:
 
-- :ref:`blinky-sample`
-- :ref:`button-sample`
-- :ref:`fade-led-sample`
-- :ref:`blink-led-sample`
-- :ref:`96b_carbon_multi_thread_blinky`
+- :zephyr:code-sample:`blinky`
+- :zephyr:code-sample:`button`
+- :zephyr:code-sample:`fade-led`
+- :zephyr:code-sample:`pwm-blinky`
+- :zephyr:code-sample:`multi-thread-blinky`
 
 You can build and flash the examples to make sure Zephyr is running correctly on
 your board. The button and LED definitions can be found in

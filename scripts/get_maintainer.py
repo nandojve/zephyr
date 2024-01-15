@@ -34,9 +34,9 @@ import sys
 from yaml import load, YAMLError
 try:
     # Use the speedier C LibYAML parser if available
-    from yaml import CLoader as Loader
+    from yaml import CSafeLoader as SafeLoader
 except ImportError:
-    from yaml import Loader
+    from yaml import SafeLoader
 
 
 def _main():
@@ -54,7 +54,7 @@ def _parse_args():
 
     parser = argparse.ArgumentParser(
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        description=__doc__)
+        description=__doc__, allow_abbrev=False)
 
     parser.add_argument(
         "-m", "--maintainers",
@@ -106,7 +106,7 @@ def _parse_args():
         "maintainer",
         metavar="MAINTAINER",
         nargs="?",
-        help="List all areas maintained by maintaier.")
+        help="List all areas maintained by maintainer.")
 
     areas_parser.set_defaults(cmd_fn=Maintainers._areas_cmd)
 
@@ -140,9 +140,9 @@ def _parse_args():
         help="Count the number of unique maintainers")
     count_parser.add_argument(
         "-o",
-        "--count-orphaned",
+        "--count-unmaintained",
         action="store_true",
-        help="Count the number of orphaned areas")
+        help="Count the number of unmaintained areas")
     count_parser.set_defaults(cmd_fn=Maintainers._count_cmd)
 
     args = parser.parse_args()
@@ -175,12 +175,12 @@ class Maintainers:
             the top-level directory of the Git repository is used, and must
             exist.
         """
-        self._toplevel = pathlib.Path(_git("rev-parse", "--show-toplevel"))
-
-        if filename is None:
-            self.filename = self._toplevel / "MAINTAINERS.yml"
-        else:
+        if (filename is not None) and (pathlib.Path(filename).exists()):
             self.filename = pathlib.Path(filename)
+            self._toplevel = self.filename.parent
+        else:
+            self._toplevel = pathlib.Path(_git("rev-parse", "--show-toplevel"))
+            self.filename = self._toplevel / "MAINTAINERS.yml"
 
         self.areas = {}
         for area_name, area_dict in _load_maintainers(self.filename).items():
@@ -191,6 +191,8 @@ class Maintainers:
             area.collaborators = area_dict.get("collaborators", [])
             area.inform = area_dict.get("inform", [])
             area.labels = area_dict.get("labels", [])
+            area.tests = area_dict.get("tests", [])
+            area.tags = area_dict.get("tags", [])
             area.description = area_dict.get("description")
 
             # area._match_fn(path) tests if the path matches files and/or
@@ -289,22 +291,22 @@ class Maintainers:
     def _count_cmd(self, args):
         # 'count' subcommand implementation
 
-        if not (args.count_areas or args.count_collaborators or args.count_maintainers or args.count_orphaned):
+        if not (args.count_areas or args.count_collaborators or args.count_maintainers or args.count_unmaintained):
             # if no specific count is provided, print them all
             args.count_areas = True
             args.count_collaborators = True
             args.count_maintainers = True
-            args.count_orphaned = True
+            args.count_unmaintained = True
 
-        orphaned = 0
+        unmaintained = 0
         collaborators = set()
         maintainers = set()
 
         for area in self.areas.values():
             if area.status == 'maintained':
                 maintainers = maintainers.union(set(area.maintainers))
-            elif area.status == 'orphaned':
-                orphaned += 1
+            elif area.status == 'odd fixes':
+                unmaintained += 1
             collaborators = collaborators.union(set(area.collaborators))
 
         if args.count_areas:
@@ -313,8 +315,8 @@ class Maintainers:
             print('{:14}\t{}'.format('maintainers:', len(maintainers)))
         if args.count_collaborators:
             print('{:14}\t{}'.format('collaborators:', len(collaborators)))
-        if args.count_orphaned:
-            print('{:14}\t{}'.format('orphaned:', orphaned))
+        if args.count_unmaintained:
+            print('{:14}\t{}'.format('unmaintained:', unmaintained))
 
     def _list_cmd(self, args):
         # 'list' subcommand implementation
@@ -403,12 +405,16 @@ def _print_areas(areas):
 \tcollaborators: {}
 \tinform: {}
 \tlabels: {}
+\ttests: {}
+\ttags: {}
 \tdescription: {}""".format(area.name,
                             area.status,
                             ", ".join(area.maintainers),
                             ", ".join(area.collaborators),
                             ", ".join(area.inform),
                             ", ".join(area.labels),
+                            ", ".join(area.tests),
+                            ", ".join(area.tags),
                             area.description or ""))
 
 
@@ -457,7 +463,7 @@ def _load_maintainers(path):
 
     with open(path, encoding="utf-8") as f:
         try:
-            yaml = load(f, Loader=Loader)
+            yaml = load(f, Loader=SafeLoader)
         except YAMLError as e:
             raise MaintainersError("{}: YAML error: {}".format(path, e))
 
@@ -479,9 +485,9 @@ def _check_maintainers(maints_path, yaml):
 
     ok_keys = {"status", "maintainers", "collaborators", "inform", "files",
                "files-exclude", "files-regex", "files-regex-exclude",
-               "labels", "description"}
+               "labels", "description", "tests", "tags"}
 
-    ok_status = {"maintained", "odd fixes", "orphaned", "obsolete"}
+    ok_status = {"maintained", "odd fixes", "unmaintained", "obsolete"}
     ok_status_s = ", ".join('"' + s + '"' for s in ok_status)  # For messages
 
     for area_name, area_dict in yaml.items():
@@ -504,7 +510,7 @@ def _check_maintainers(maints_path, yaml):
                  "for area '{}'".format(area_name))
 
         for list_name in "maintainers", "collaborators", "inform", "files", \
-                         "files-regex", "labels":
+                         "files-regex", "labels", "tags", "tests":
             if list_name in area_dict:
                 lst = area_dict[list_name]
                 if not (isinstance(lst, list) and
@@ -524,10 +530,9 @@ def _check_maintainers(maints_path, yaml):
                              "match any files".format(glob_pattern, files_key,
                                                       area_name))
                     if not glob_pattern.endswith("/"):
-                        for path in paths:
-                            if path.is_dir():
-                                ferr("glob pattern '{}' in '{}' in area '{}' "
-                                     "matches a directory, but has no "
+                        if all(path.is_dir() for path in paths):
+                            ferr("glob pattern '{}' in '{}' in area '{}' "
+                                     "matches only directories, but has no "
                                      "trailing '/'"
                                      .format(glob_pattern, files_key,
                                              area_name))

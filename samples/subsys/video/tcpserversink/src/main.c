@@ -4,22 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 
-#include <net/socket.h>
+#include <zephyr/net/socket.h>
 
-#include <drivers/video.h>
+#include <zephyr/drivers/video.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
-
-#if defined(CONFIG_VIDEO_MCUX_CSI)
-#define VIDEO_CAPTURE_DEV DT_LABEL(DT_INST(0, nxp_imx_csi))
-#else
-#define VIDEO_CAPTURE_DEV "VIDEO_SW_GENERATOR"
-#endif
 
 #define MY_PORT 5000
 #define MAX_CLIENT_QUEUE 1
@@ -39,14 +33,14 @@ static ssize_t sendall(int sock, const void *buf, size_t len)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
 	struct sockaddr_in addr, client_addr;
 	socklen_t client_addr_len = sizeof(client_addr);
 	struct video_buffer *buffers[2], *vbuf;
 	int i, ret, sock, client;
 	struct video_format fmt;
-	const struct device *video;
+	const struct device *const video = DEVICE_DT_GET_ONE(nxp_imx_csi);
 
 	/* Prepare Network */
 	(void)memset(&addr, 0, sizeof(addr));
@@ -56,35 +50,32 @@ void main(void)
 	sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (sock < 0) {
 		LOG_ERR("Failed to create TCP socket: %d", errno);
-		return;
+		return 0;
 	}
 
 	ret = bind(sock, (struct sockaddr *)&addr, sizeof(addr));
 	if (ret < 0) {
 		LOG_ERR("Failed to bind TCP socket: %d", errno);
 		close(sock);
-		return;
+		return 0;
 	}
 
 	ret = listen(sock, MAX_CLIENT_QUEUE);
 	if (ret < 0) {
 		LOG_ERR("Failed to listen on TCP socket: %d", errno);
 		close(sock);
-		return;
+		return 0;
 	}
 
-	/* Prepare Video Capture */
-	video = device_get_binding(VIDEO_CAPTURE_DEV);
-	if (video == NULL) {
-		LOG_ERR("Video device %s not found. Aborting test.",
-			VIDEO_CAPTURE_DEV);
-		return;
+	if (!device_is_ready(video)) {
+		LOG_ERR("%s: device not ready.\n", video->name);
+		return 0;
 	}
 
 	/* Get default/native format */
 	if (video_get_format(video, VIDEO_EP_OUT, &fmt)) {
 		LOG_ERR("Unable to retrieve video format");
-		return;
+		return 0;
 	}
 
 	printk("Video device detected, format: %c%c%c%c %ux%u\n",
@@ -97,7 +88,7 @@ void main(void)
 		buffers[i] = video_buffer_alloc(fmt.pitch * fmt.height);
 		if (buffers[i] == NULL) {
 			LOG_ERR("Unable to alloc video buffer");
-			return;
+			return 0;
 		}
 	}
 
@@ -109,7 +100,7 @@ void main(void)
 				&client_addr_len);
 		if (client < 0) {
 			printk("Failed to accept: %d\n", errno);
-			return;
+			return 0;
 		}
 
 		printk("TCP: Accepted connection\n");
@@ -122,7 +113,7 @@ void main(void)
 		/* Start video capture */
 		if (video_stream_start(video)) {
 			LOG_ERR("Unable to start video");
-			return;
+			return 0;
 		}
 
 		printk("Stream started\n");
@@ -134,7 +125,7 @@ void main(void)
 					    K_FOREVER);
 			if (ret) {
 				LOG_ERR("Unable to dequeue video buf");
-				return;
+				return 0;
 			}
 
 			printk("\rSending frame %d", i++);
@@ -153,7 +144,7 @@ void main(void)
 		/* stop capture */
 		if (video_stream_stop(video)) {
 			LOG_ERR("Unable to stop video");
-			return;
+			return 0;
 		}
 
 		/* Flush remaining buffers */

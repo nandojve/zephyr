@@ -11,10 +11,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(modem_context, CONFIG_MODEM_LOG_LEVEL);
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
 #include "modem_context.h"
 
@@ -76,7 +76,7 @@ int modem_context_get_addr_port(const struct sockaddr *addr, uint16_t *port)
 /**
  * @brief  Finds modem context which owns the iface device.
  *
- * @param  *dev: device used by the modem iface.
+ * @param  dev: device used by the modem iface.
  *
  * @retval Modem context or NULL.
  */
@@ -99,7 +99,7 @@ struct modem_context *modem_context_from_iface_dev(const struct device *dev)
  * @note   Amount of stored modem contexts is determined by
  *         CONFIG_MODEM_CONTEXT_MAX_NUM.
  *
- * @param  *ctx: modem context to persist.
+ * @param  ctx: modem context to persist.
  *
  * @retval 0 if ok, < 0 if error.
  */
@@ -128,22 +128,9 @@ struct modem_context *modem_context_from_id(int id)
 
 int modem_context_register(struct modem_context *ctx)
 {
-	int ret;
-
 	if (!ctx) {
 		return -EINVAL;
 	}
 
-	ret = modem_context_get(ctx);
-	if (ret < 0) {
-		return ret;
-	}
-
-	ret = modem_pin_init(ctx);
-	if (ret < 0) {
-		LOG_ERR("modem pin init error: %d", ret);
-		return ret;
-	}
-
-	return 0;
+	return modem_context_get(ctx);
 }

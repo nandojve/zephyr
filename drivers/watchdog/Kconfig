@@ -5,8 +5,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig WATCHDOG
-	bool "Watchdog Support"
-	select HAS_DTS_WDT
+	bool "Watchdog drivers"
 	help
 	  Include support for watchdogs.
 
@@ -25,14 +24,15 @@ config HAS_WDT_MULTISTAGE
 	bool
 
 config WDT_MULTISTAGE
-	bool "Enable multistage timeouts"
+	bool "Multistage timeouts"
 	depends on HAS_WDT_MULTISTAGE
 	help
 	  Enable multistage operation of watchdog timeouts.
 
 config WDT_COUNTER
 	bool "Counter based watchdog"
-	def_bool $(dt_nodelabel_enabled,wdt_counter)
+	default y
+	depends on DT_HAS_ZEPHYR_COUNTER_WATCHDOG_ENABLED
 	select COUNTER
 	help
 	  Watchdog emulated with counter device. If counter device supports using
@@ -82,5 +82,44 @@ source "drivers/watchdog/Kconfig.npcx"
 
 source "drivers/watchdog/Kconfig.cc32xx"
 
+source "drivers/watchdog/Kconfig.cc13xx_cc26xx"
+
 source "drivers/watchdog/Kconfig.it8xxx2"
-endif
+
+source "drivers/watchdog/Kconfig.rpi_pico"
+
+source "drivers/watchdog/Kconfig.gd32"
+
+source "drivers/watchdog/Kconfig.npm1300"
+
+source "drivers/watchdog/Kconfig.npm6001"
+
+source "drivers/watchdog/Kconfig.nxp_s32"
+
+source "drivers/watchdog/Kconfig.dw"
+
+source "drivers/watchdog/Kconfig.intel_adsp"
+
+source "drivers/watchdog/Kconfig.smartbond"
+
+source "drivers/watchdog/Kconfig.ti_tps382x"
+
+source "drivers/watchdog/Kconfig.tco"
+
+source "drivers/watchdog/Kconfig.xlnx"
+
+source "drivers/watchdog/Kconfig.ifx_cat1"
+
+source "drivers/watchdog/Kconfig.opentitan"
+
+source "drivers/watchdog/Kconfig.andes_atcwdt200"
+
+source "drivers/watchdog/Kconfig.nxp_fs26"
+
+source "drivers/watchdog/Kconfig.ambiq"
+
+source "drivers/watchdog/Kconfig.shell"
+
+source "drivers/watchdog/Kconfig.xmc4xxx"
+
+endif # WATCHDOG

@@ -10,8 +10,8 @@ This sample application demonstrates using the POSIX gettimeofday()
 function to display the absolute wall clock time and local time every
 second. At system startup, the current time is queried using the SNTP
 networking protocol, enabled by setting the
-:kconfig:`CONFIG_NET_CONFIG_CLOCK_SNTP_INIT` and
-:kconfig:`CONFIG_NET_CONFIG_SNTP_INIT_SERVER` options.
+:kconfig:option:`CONFIG_NET_CONFIG_CLOCK_SNTP_INIT` and
+:kconfig:option:`CONFIG_NET_CONFIG_SNTP_INIT_SERVER` options.
 
 Requirements
 ************
@@ -34,9 +34,8 @@ on QEMU as follows:
    :goals: run
    :compact:
 
-For comparison, a version for native POSIX operating systems (e.g. Linux)
-can be built using:
+For comparison, to build directly for your host OS if it is POSIX compliant (for ex. Linux):
 
 .. code-block:: console
 
-   make -f Makefile.posix
+   make -f Makefile.host

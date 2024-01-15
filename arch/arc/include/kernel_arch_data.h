@@ -20,16 +20,16 @@
 #ifndef ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_DATA_H_
 #define ZEPHYR_ARCH_ARC_INCLUDE_KERNEL_ARCH_DATA_H_
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <arch/cpu.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/arch/cpu.h>
 #include <vector_table.h>
 
 #ifndef _ASMLANGUAGE
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <sys/util.h>
-#include <sys/dlist.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/dlist.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -144,7 +144,9 @@ struct _callee_saved_stack {
 
 #ifdef CONFIG_ARC_HAS_ACCL_REGS
 	uintptr_t r58;
+#ifndef CONFIG_64BIT
 	uintptr_t r59;
+#endif /* !CONFIG_64BIT */
 #endif
 
 #ifdef CONFIG_FPU_SHARING
@@ -156,10 +158,70 @@ struct _callee_saved_stack {
 	uintptr_t dpfp1h;
 	uintptr_t dpfp1l;
 #endif
+#endif
 
+#ifdef CONFIG_DSP_SHARING
+#ifdef CONFIG_ARC_DSP_BFLY_SHARING
+	uintptr_t dsp_fft_ctrl;
+	uintptr_t dsp_bfly0;
+#endif
+	uintptr_t acc0_ghi;
+	uintptr_t acc0_glo;
+	uintptr_t dsp_ctrl;
+#endif
+
+#ifdef CONFIG_ARC_AGU_SHARING
+	uintptr_t agu_ap0;
+	uintptr_t agu_ap1;
+	uintptr_t agu_ap2;
+	uintptr_t agu_ap3;
+	uintptr_t agu_os0;
+	uintptr_t agu_os1;
+	uintptr_t agu_mod0;
+	uintptr_t agu_mod1;
+	uintptr_t agu_mod2;
+	uintptr_t agu_mod3;
+#ifdef CONFIG_ARC_AGU_MEDIUM
+	uintptr_t agu_ap4;
+	uintptr_t agu_ap5;
+	uintptr_t agu_ap6;
+	uintptr_t agu_ap7;
+	uintptr_t agu_os2;
+	uintptr_t agu_os3;
+	uintptr_t agu_mod4;
+	uintptr_t agu_mod5;
+	uintptr_t agu_mod6;
+	uintptr_t agu_mod7;
+	uintptr_t agu_mod8;
+	uintptr_t agu_mod9;
+	uintptr_t agu_mod10;
+	uintptr_t agu_mod11;
+#endif
+#ifdef CONFIG_ARC_AGU_LARGE
+	uintptr_t agu_ap8;
+	uintptr_t agu_ap9;
+	uintptr_t agu_ap10;
+	uintptr_t agu_ap11;
+	uintptr_t agu_os4;
+	uintptr_t agu_os5;
+	uintptr_t agu_os6;
+	uintptr_t agu_os7;
+	uintptr_t agu_mod12;
+	uintptr_t agu_mod13;
+	uintptr_t agu_mod14;
+	uintptr_t agu_mod15;
+	uintptr_t agu_mod16;
+	uintptr_t agu_mod17;
+	uintptr_t agu_mod18;
+	uintptr_t agu_mod19;
+	uintptr_t agu_mod20;
+	uintptr_t agu_mod21;
+	uintptr_t agu_mod22;
+	uintptr_t agu_mod23;
+#endif
 #endif
 	/*
-	 * No need to save r31 (blink), it's either alread pushed as the pc or
+	 * No need to save r31 (blink), it's either already pushed as the pc or
 	 * blink on an irq stack frame.
 	 */
 };

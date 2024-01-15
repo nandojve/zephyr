@@ -2,12 +2,28 @@
 
 # Copyright (c) 2016 Intel Corporation.
 # Copyright (c) 2021 Nordic Semiconductor
+# Copyright (c) 2023 Arm Limited (or its affiliates). All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 menu "IP stack"
 
+# Hidden option enabled whenever an IP stack is available.
+config NET_IP
+	bool
+	default y if NET_IPV6 || NET_IPV4
+
+# Hidden option enabled whenever an IP fragmentation is enabled.
+config NET_IP_FRAGMENT
+	bool
+	default y if NET_IPV6_FRAGMENT || NET_IPV4_FRAGMENT
+
+# Hidden option selected by net connection based socket implementations
+# to draw in all code required for connection infrastructure.
+config NET_CONNECTION_SOCKETS
+	bool
+
 config NET_NATIVE
-	bool "Enable native IP stack"
+	bool "Native network stack support"
 	default y
 	help
 	  Enables Zephyr native IP stack. If you disable this, then
@@ -42,6 +58,14 @@ config NET_OFFLOAD
 	help
 	  Enables TCP/IP stack to be offload to a co-processor.
 
+config NET_OFFLOADING_SUPPORT
+	bool
+	default y if NET_OFFLOAD || NET_SOCKETS_OFFLOAD
+	help
+	  Hidden option that is set if either NET_OFFLOAD or
+	  NET_SOCKETS_OFFLOAD is set. This allows us to check
+	  only one option instead of two.
+
 if NET_OFFLOAD
 module = NET_OFFLOAD
 module-dep = NET_LOG
@@ -61,7 +85,7 @@ config NET_RAW_MODE
 
 if !NET_RAW_MODE
 
-choice
+choice NET_QEMU_NETWORKING
 	prompt "Qemu networking"
 	default NET_QEMU_PPP if NET_PPP
 	default NET_QEMU_SLIP
@@ -112,19 +136,41 @@ config NET_INIT_PRIO
 	  Network initialization priority level. This number tells how
 	  early in the boot the network stack is initialized.
 
+config NET_IP_DSCP_ECN
+	bool "DSCP/ECN processing at IP layer"
+	depends on NET_IP
+	default y
+	help
+	  Specify whether DSCP/ECN values are processed at IP layer. The values
+	  are encoded within ToS field in IPv4 and TC field in IPv6.
+
 source "subsys/net/ip/Kconfig.ipv6"
 
 source "subsys/net/ip/Kconfig.ipv4"
 
+config NET_IPV4_MAPPING_TO_IPV6
+	bool "Support IPv4 mapped on IPv6 addresses"
+	depends on NET_NATIVE_IPV6
+	help
+	  Support v4-mapped-on-v6 address type. This allows IPv4 and IPv6
+	  to share a local port space. When the application gets an IPv4
+	  connection or packet to an IPv6 socket, its source address will
+	  be mapped to IPv6. This is turned off by default which means
+	  that IPV6_V6ONLY socket option is always on. If you enable this
+	  option, then you can still control the behaviour of the socket
+	  via the IPV6_V6ONLY option at runtime.
+
 config NET_SHELL
-	bool "Enable network shell utilities"
+	bool "Network shell utilities"
 	select SHELL
+	select NET_IPV4_IGMP if NET_IPV4
+	select NET_IPV6_MLD if NET_IPV6
 	help
 	  Activate shell module that provides network commands like
 	  ping to the console.
 
 config NET_SHELL_DYN_CMD_COMPLETION
-	bool "Enable network shell dynamic command completion"
+	bool "Network shell dynamic command completion"
 	depends on NET_SHELL
 	default y
 	help
@@ -138,13 +184,23 @@ config NET_SHELL_DYN_CMD_COMPLETION
 	  length) by default. Other dynamic completion commands in
 	  net-shell require also some smaller amount of memory.
 
+config NET_SHELL_REQUIRE_TX_THREAD
+	bool
+	depends on NET_SHELL && (SHELL_BACKEND_TELNET || SHELL_BACKEND_MQTT)
+	default y if NET_ARP
+	help
+	  Hidden symbol indicating that network shell requires separate TX
+	  thread due to possible deadlocks during shell/net stack operations.
+
 config NET_TC_TX_COUNT
 	int "How many Tx traffic classes to have for each network device"
-	default 1 if USERSPACE || USB_DEVICE_NETWORK
+	default 1 if USERSPACE || USB_DEVICE_NETWORK || \
+		     NET_SHELL_REQUIRE_TX_THREAD
 	default 0
-	range 1 NET_TC_NUM_PRIORITIES if NET_TC_NUM_PRIORITIES<=8 && USERSPACE
+	range 1 NET_TC_NUM_PRIORITIES if NET_TC_NUM_PRIORITIES<=8 && \
+		(USERSPACE || NET_SHELL_REQUIRE_TX_THREAD)
 	range 0 NET_TC_NUM_PRIORITIES if NET_TC_NUM_PRIORITIES<=8
-	range 1 8 if USERSPACE
+	range 1 8 if USERSPACE || NET_SHELL_REQUIRE_TX_THREAD
 	range 0 8
 	help
 	  Define how many Tx traffic classes (queues) the system should have
@@ -192,8 +248,8 @@ config NET_TC_RX_COUNT
 config NET_TC_SKIP_FOR_HIGH_PRIO
 	bool "Push high priority packets directly to network driver"
 	help
-	  If this is set, then high priority (NET_PRIORITY_CA) net_pkt will be
-	  pushed directly to network driver and will skip the traffic class
+	  If this is set, then high priority (>= NET_PRIORITY_CA) net_pkt will
+	  be pushed directly to network driver and will skip the traffic class
 	  queues. This is currently not enabled by default.
 
 choice NET_TC_THREAD_TYPE
@@ -271,6 +327,12 @@ config NET_RX_DEFAULT_PRIORITY
 	  What is the default network RX packet priority if user has not set
 	  one. The value 0 means lowest priority and 7 is the highest.
 
+config NET_ALLOW_ANY_PRIORITY
+	bool "Allow any network packet priority to be used"
+	help
+	  If this is set, then any user given network packet priority can be used. Otherwise
+	  the network packet priorities are limited to 0-7 range.
+
 config NET_IP_ADDR_CHECK
 	bool "Check IP address validity before sending IP packet"
 	default y
@@ -320,7 +382,7 @@ config NET_MAX_NEXTHOPS
 	  This determines how many entries can be stored in nexthop table.
 
 config NET_ROUTE_MCAST
-	bool "Enable Multicast Routing / Forwarding"
+	bool "Multicast Routing / Forwarding"
 	depends on NET_ROUTE
 	help
 	  Activates multicast routing/forwarding
@@ -333,153 +395,17 @@ config NET_MAX_MCAST_ROUTES
 	  This determines how many entries can be stored in multicast
 	  routing table.
 
-config NET_TCP
-	bool "Enable TCP"
-	help
-	  The value depends on your network needs.
-
-config NET_TCP_CHECKSUM
-	bool "Check TCP checksum"
-	default y
-	depends on NET_TCP
-	help
-	  Enables TCP handler to check TCP checksum. If the checksum is invalid,
-	  then the packet is discarded.
-
-if NET_TCP
-module = NET_TCP
-module-dep = NET_LOG
-module-str = Log level for TCP
-module-help = Enables TCP handler output debug messages
-source "subsys/net/Kconfig.template.log_config.net"
-endif # NET_TCP
-
-config NET_TCP_BACKLOG_SIZE
-	int "Number of simultaneous incoming TCP connections"
-	depends on NET_TCP
-	default 1
-	range 1 128
-	help
-	  The number of simultaneous TCP connection attempts, i.e. outstanding
-	  TCP connections waiting for initial ACK.
-
-config NET_TCP_TIME_WAIT_DELAY
-	int "How long to wait in TIME_WAIT state (in milliseconds)"
-	depends on NET_TCP
-	default 250
-	help
-	  To avoid a (low-probability) issue when delayed packets from
-	  previous connection get delivered to next connection reusing
-	  the same local/remote ports, RFC 793 (TCP) suggests to keep
-	  an old, closed connection in a special "TIME_WAIT" state for
-	  the duration of 2*MSL (Maximum Segment Lifetime). The RFC
-	  suggests to use MSL of 2 minutes, but notes "This is an
-	  engineering choice, and may be changed if experience indicates
-	  it is desirable to do so." For low-resource systems, having
-	  large MSL may lead to quick resource exhaustion (and related
-	  DoS attacks). At the same time, the issue of packet misdelivery
-	  is largely alleviated in the modern TCP stacks by using random,
-	  non-repeating port numbers and initial sequence numbers. Due
-	  to this, Zephyr uses much lower value of 250ms by default.
-	  Value of 0 disables TIME_WAIT state completely.
-
-config NET_TCP_ACK_TIMEOUT
-	int "How long to wait for ACK (in milliseconds)"
-	depends on NET_TCP
-	default 1000
-	range 1 2147483647
-	help
-	  This value affects the timeout when waiting ACK to arrive in
-	  various TCP states. The value is in milliseconds. Note that
-	  having a very low value here could prevent connectivity.
-
-config NET_TCP_INIT_RETRANSMISSION_TIMEOUT
-	int "Initial value of Retransmission Timeout (RTO) (in milliseconds)"
-	depends on NET_TCP
-	default 200
-	range 100 60000
-	help
-	  This value affects the timeout between initial retransmission
-	  of TCP data packets. The value is in milliseconds.
-
-config NET_TCP_RETRY_COUNT
-	int "Maximum number of TCP segment retransmissions"
-	depends on NET_TCP
-	default 9
-	help
-	  The following formula can be used to determine the time (in ms)
-	  that a segment will be be buffered awaiting retransmission:
-	  n=NET_TCP_RETRY_COUNT
-	  Sum((1<<n) * NET_TCP_INIT_RETRANSMISSION_TIMEOUT)
-	  n=0
-	  With the default value of 9, the IP stack will try to
-	  retransmit for up to 1:42 minutes.  This is as close as possible
-	  to the minimum value recommended by RFC1122 (1:40 minutes).
-	  Only 5 bits are dedicated for the retransmission count, so accepted
-	  values are in the 0-31 range.  It's highly recommended to not go
-	  below 9, though.
-	  Should a retransmission timeout occur, the receive callback is
-	  called with -ECONNRESET error code and the context is dereferenced.
-
-config NET_TCP_MAX_SEND_WINDOW_SIZE
-	int "Maximum sending window size to use"
-	depends on NET_TCP2
-	default 0
-	range 0 65535
-	help
-	  This value affects how the TCP selects the maximum sending window
-	  size. The default value 0 lets the TCP stack select the value
-	  according to amount of network buffers configured in the system.
-
-config NET_TCP_RECV_QUEUE_TIMEOUT
-	int "How long to queue received data (in ms)"
-	depends on NET_TCP2
-	default 100
-	range 0 10000
-	help
-	  If we receive out-of-order TCP data, we queue it. This value tells
-	  how long the data is kept before it is discarded if we have not been
-	  able to pass the data to the application. If set to 0, then receive
-	  queing is not enabled. The value is in milliseconds.
-	  Note that we only queue data sequentially in current version i.e.,
-	  there should be no holes in the queue. For example, if we receive
-	  SEQs 5,4,3,6 and are waiting SEQ 2, the data in segments 3,4,5,6 is
-	  queued (in this order), and then given to application when we receive
-	  SEQ 2. But if we receive SEQs 5,4,3,7 then the SEQ 7 is discarded
-	  because the list would not be sequential as number 6 is be missing.
-
-config NET_TCP_WORKQ_STACK_SIZE
-	int "TCP work queue thread stack size"
-	default 1024
-	depends on NET_TCP
-	help
-	  Set the TCP work queue thread stack size in bytes.
-
-config NET_TCP_ISN_RFC6528
-	bool "Use ISN algorithm from RFC 6528"
-	default y
-	depends on NET_TCP
-	select MBEDTLS
-	select MBEDTLS_MD
-	select MBEDTLS_MAC_MD5_ENABLED
-	help
-	  Implement Initial Sequence Number calculation as described in
-	  RFC 6528 chapter 3. https://tools.ietf.org/html/rfc6528
-	  If this is not set, then sys_rand32_get() is used for ISN value.
-
-config NET_TCP2
-	bool
-	default y
-	depends on NET_TCP
+source "subsys/net/ip/Kconfig.tcp"
 
 config NET_TEST_PROTOCOL
-	bool "Enable JSON based test protocol (UDP)"
+	bool "JSON based test protocol (UDP)"
 	help
 	  Enable JSON based test protocol (UDP).
 
 config NET_UDP
-	bool "Enable UDP"
+	bool "UDP"
 	default y
+	depends on NET_IP
 	help
 	  The value depends on your network needs.
 
@@ -493,6 +419,7 @@ config NET_UDP_CHECKSUM
 
 config NET_UDP_MISSING_CHECKSUM
 	bool "Accept missing checksum (IPv4 only)"
+	default y
 	depends on NET_UDP && NET_IPV4
 	help
 	  RFC 768 states the possibility to have a missing checksum, for
@@ -526,7 +453,7 @@ config NET_MAX_CONTEXTS
 	  similar as one could call a network socket in some other systems.
 
 config NET_CONTEXT_NET_PKT_POOL
-	bool "Enable net_buf TX pool / context"
+	bool "Net_buf TX pool / context"
 	default y if NET_TCP && NET_6LO
 	help
 	  If enabled, then it is possible to fine-tune network packet pool
@@ -580,6 +507,51 @@ config NET_CONTEXT_SNDTIMEO
 	  sockets timeout is configured per socket with
 	  setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, ...) function.
 
+config NET_CONTEXT_RCVBUF
+	bool "Add RCVBUF support to net_context"
+	help
+	  If is possible to define the maximum socket receive buffer per socket.
+	  The default value is set by CONFIG_NET_TCP_MAX_RECV_WINDOW_SIZE. For
+	  TCP sockets, the rcvbuf will determine the receive window size.
+
+config NET_CONTEXT_SNDBUF
+	bool "Add SNDBUF support to net_context"
+	help
+	  It is possible to define the maximum socket send buffer per socket.
+	  For TCP sockets, the sndbuf will determine the total size of queued
+	  data in the TCP layer.
+
+config NET_CONTEXT_DSCP_ECN
+	bool "Add support for setting DSCP/ECN IP properties on net_context"
+	depends on NET_IP_DSCP_ECN
+	default y
+	help
+	  Allow to set Differentiated Services and Explicit Congestion
+	  Notification values on net_context. Those values are then used in
+	  IPv4/IPv6 header when sending packets over net_context.
+
+config NET_CONTEXT_REUSEADDR
+	bool "Add REUSEADDR support to net_context"
+	default y if NET_TCP || NET_UDP
+	help
+	  Allow to set the SO_REUSEADDR flag on a socket. This enables multiple
+	  sockets to bind to the same local IP address.
+
+config NET_CONTEXT_REUSEPORT
+	bool "Add REUSEPORT support to net_context"
+	default y if NET_TCP || NET_UDP
+	help
+	  Allow to set the SO_REUSEPORT flag on a socket. This enables multiple
+	  sockets to bind to the same local IP address and port combination.
+
+config NET_CONTEXT_RECV_PKTINFO
+	bool "Add receive PKTINFO support to net_context"
+	depends on NET_UDP
+	help
+	  Allow to set the IP_PKTINFO or IPV6_RECVPKTINFO flags on a socket.
+	  This way user can get extra information about the received data in the
+	  socket.
+
 config NET_TEST
 	bool "Network Testing"
 	help
@@ -600,20 +572,6 @@ config NET_SLIP_TAP
 	  needs to have tunslip6 with TAP support running in order to
 	  communicate via the SLIP driver. See net-tools project at
 	  https://github.com/zephyrproject-rtos/net-tools for more details.
-
-config NET_TRICKLE
-	bool "Enable Trickle library"
-	help
-	  Normally this is enabled automatically if needed,
-	  so say 'n' if unsure.
-
-if NET_TRICKLE
-module = NET_TRICKLE
-module-dep = NET_LOG
-module-str = Log level for Trickle algorithm
-module-help = Enables Trickle library output debug messages
-source "subsys/net/Kconfig.template.log_config.net"
-endif # NET_TRICKLE
 
 endif # NET_RAW_MODE
 
@@ -687,6 +645,15 @@ config NET_BUF_DATA_POOL_SIZE
 	  This value tell what is the size of the memory pool where each
 	  network buffer is allocated from.
 
+config NET_PKT_BUF_USER_DATA_SIZE
+	int "Size of user_data available in rx and tx network buffers"
+	default BT_CONN_TX_USER_DATA_SIZE if NET_L2_BT
+	default 4
+	range BT_CONN_TX_USER_DATA_SIZE 16 if NET_L2_BT
+	range 4 16
+	help
+	  User data size used in rx and tx network buffers.
+
 config NET_HEADERS_ALWAYS_CONTIGUOUS
 	bool
 	help
@@ -699,8 +666,12 @@ config NET_HEADERS_ALWAYS_CONTIGUOUS
 	  NET_BUF_FIXED_DATA_SIZE enabled and NET_BUF_DATA_SIZE of 128 for
 	  instance.
 
-choice
+# If we are running network tests found in tests/net, then the NET_TEST is
+# set and in that case we default to Dummy L2 layer as typically the tests
+# use that by default.
+choice NET_DEFAULT_IF
 	prompt "Default Network Interface"
+	default NET_DEFAULT_IF_DUMMY if NET_TEST
 	default NET_DEFAULT_IF_FIRST
 	help
 	  If system has multiple interfaces enabled, then user shall be able
@@ -709,6 +680,9 @@ choice
 
 config NET_DEFAULT_IF_FIRST
 	bool "First available interface"
+
+config NET_DEFAULT_IF_UP
+	bool "First interface which is up"
 
 config NET_DEFAULT_IF_ETHERNET
 	bool "Ethernet"
@@ -730,10 +704,6 @@ config NET_DEFAULT_IF_DUMMY
 	bool "Dummy testing interface"
 	depends on NET_L2_DUMMY
 
-config NET_DEFAULT_IF_CANBUS
-	bool "6LoCAN (IPv6 over CAN) interface"
-	depends on NET_L2_CANBUS
-
 config NET_DEFAULT_IF_CANBUS_RAW
 	bool "Socket CAN interface"
 	depends on NET_L2_CANBUS_RAW
@@ -742,14 +712,34 @@ config NET_DEFAULT_IF_PPP
 	bool "PPP interface"
 	depends on NET_L2_PPP
 
+config NET_DEFAULT_IF_WIFI
+	bool "WiFi interface"
+	depends on NET_L2_ETHERNET
+
 endchoice
 
+config NET_INTERFACE_NAME
+	bool "Allow setting a name to a network interface"
+	default y
+	help
+	  Allow application to set a name to the network interface in order
+	  to simplify network interface management.
+
+config NET_INTERFACE_NAME_LEN
+	int "Network interface max name length"
+	default 8
+	range 1 15
+	depends on NET_INTERFACE_NAME
+	help
+	  Maximum length of the network interface name.
+
 config NET_PKT_TIMESTAMP
-	bool "Enable network packet timestamp support"
+	bool "Network packet timestamp support"
 	help
 	  Enable network packet timestamp support. This is needed for
 	  example in gPTP which needs to know how long it takes to send
-	  a network packet.
+	  a network packet or for timed radio protocols like IEEE 802.15.4
+	  CSL and TSCH.
 
 config NET_PKT_TIMESTAMP_THREAD
 	bool "Create TX timestamp thread"
@@ -772,14 +762,14 @@ config NET_PKT_TIMESTAMP_STACK_SIZE
 	  callbacks.
 
 config NET_PKT_TXTIME
-	bool "Enable network packet TX time support"
+	bool "Network packet TX time support"
 	help
 	  Enable network packet TX time support. This is needed for
 	  when the application wants to set the exact time when the network
 	  packet should be sent.
 
 config NET_PKT_RXTIME_STATS
-	bool "Enable network packet RX time statistics"
+	bool "Network packet RX time statistics"
 	select NET_PKT_TIMESTAMP
 	select NET_STATISTICS
 	depends on (NET_UDP || NET_TCP || NET_SOCKETS_PACKET) && NET_NATIVE
@@ -802,7 +792,7 @@ config NET_PKT_RXTIME_STATS_DETAIL
 	  command.
 
 config NET_PKT_TXTIME_STATS
-	bool "Enable network packet TX time statistics"
+	bool "Network packet TX time statistics"
 	select NET_PKT_TIMESTAMP
 	select NET_STATISTICS
 	depends on (NET_UDP || NET_TCP || NET_SOCKETS_PACKET) && NET_NATIVE
@@ -827,7 +817,7 @@ config NET_PKT_TXTIME_STATS_DETAIL
 	  command.
 
 config NET_PROMISCUOUS_MODE
-	bool "Enable promiscuous mode support"
+	bool "Promiscuous mode support"
 	select NET_MGMT
 	select NET_MGMT_EVENT
 	select NET_L2_ETHERNET_MGMT if NET_L2_ETHERNET

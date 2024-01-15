@@ -16,13 +16,11 @@ of fundamental peripheral IPs.
 
 1st figure shows the green PCB is ADP-XC7K160 and 2nd figure shows the red PCB is ADP-XC7K410.
 
-.. image:: img/adp_xc7k160.png
-     :width: 600px
+.. image:: img/adp_xc7k160.jpg
      :align: center
      :alt: ADP-XC7K160
 
-.. image:: img/adp_xc7k410.png
-     :width: 600px
+.. image:: img/adp_xc7k410.jpg
      :align: center
      :alt: ADP-XC7K410
 
@@ -67,6 +65,24 @@ The ``adp_xc7k_ae350`` board configuration supports the following hardware featu
 | GPIO           | on-chip    | gpio                 |
 +----------------+------------+----------------------+
 | UART           | on-chip    | serial               |
++----------------+------------+----------------------+
+| COUNTER        | on-chip    | counter              |
++----------------+------------+----------------------+
+| SPI            | on-chip    | spi                  |
++----------------+------------+----------------------+
+| I2C            | on-chip    | i2c                  |
++----------------+------------+----------------------+
+| EEPROM         | on-chip    | eeprom               |
++----------------+------------+----------------------+
+| FLASH          | on-chip    | flash                |
++----------------+------------+----------------------+
+| HWINFO         | on-chip    | syscon               |
++----------------+------------+----------------------+
+| MAILBOX        | on-chip    | mbox                 |
++----------------+------------+----------------------+
+| DMA            | on-chip    | dma                  |
++----------------+------------+----------------------+
+| WATCHDOG       | on-chip    | wdt                  |
 +----------------+------------+----------------------+
 
 Other hardware features are not supported yet.
@@ -200,8 +216,7 @@ Connecting Andes ICE (AICE)
 AICE is used for flashing and debugging the board. Please connect AICE to both
 ADP-XC7K board and the host computer as shown in the figure.
 
-.. image:: img/connect_aice.png
-     :width: 600px
+.. image:: img/connect_aice.jpg
      :align: center
      :alt: Connect AICE
 
@@ -214,6 +229,7 @@ You can build applications in the usual way. Here is an example for
 the :ref:`hello_world` application.
 
 .. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
    :board: adp_xc7k_ae350
    :goals: build
 
@@ -249,7 +265,7 @@ and execute it.
 
    # Check the ICEman server is running
    # Load the program into RAM and execute it
-   riscv64-zephyr-elf-gdb zephyr/zephyr.elf
+   riscv64-zephyr-elf-gdb build/zephyr/zephyr.elf
    (gdb) target remote :1111
    (gdb) monitor reset halt
    (gdb) load
@@ -263,7 +279,7 @@ and execute it.
    # Check the ICEman server is running
    # Burn the program into flash and execute it
    <FLASH>/bin/target_burn_frontend \
-       -P 4444 --unlock --verify --image=zephyr/zephyr.bin \
+       -P 4444 --unlock --verify --image=build/zephyr/zephyr.bin \
        --algorithm-bin=<FLASH>/target_bin/target_SPI_v5_[32|64].bin
 
    # Note:
@@ -292,7 +308,7 @@ Debugging
 
    # Check the ICEman server is running
    # Load and debug program
-   ./riscv64-zephyr-elf-gdb zephyr/zephyr.elf
+   ./riscv64-zephyr-elf-gdb build/zephyr/zephyr.elf
    (gdb) target remote :1111
    (gdb) monitor reset halt
    (gdb) load

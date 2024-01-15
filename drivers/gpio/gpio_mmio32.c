@@ -26,7 +26,8 @@
  * gpio_port_write.
  */
 
-#include <drivers/gpio/gpio_mmio32.h>
+#include <zephyr/drivers/gpio/gpio_mmio32.h>
+#include <zephyr/irq.h>
 #include <errno.h>
 
 static int gpio_mmio32_config(const struct device *dev,
@@ -146,18 +147,6 @@ static int gpio_mmio32_port_toggle_bits(const struct device *dev,
 	return 0;
 }
 
-static int gpio_mmio32_pin_interrupt_configure(const struct device *dev,
-					       gpio_pin_t pin,
-					       enum gpio_int_mode mode,
-					       enum gpio_int_trig trig)
-{
-	if (mode != GPIO_INT_MODE_DISABLED) {
-		return -ENOTSUP;
-	}
-
-	return 0;
-}
-
 const struct gpio_driver_api gpio_mmio32_api = {
 	.pin_configure = gpio_mmio32_config,
 	.port_get_raw = gpio_mmio32_port_get_raw,
@@ -165,7 +154,6 @@ const struct gpio_driver_api gpio_mmio32_api = {
 	.port_set_bits_raw = gpio_mmio32_port_set_bits_raw,
 	.port_clear_bits_raw = gpio_mmio32_port_clear_bits_raw,
 	.port_toggle_bits = gpio_mmio32_port_toggle_bits,
-	.pin_interrupt_configure = gpio_mmio32_pin_interrupt_configure,
 };
 
 int gpio_mmio32_init(const struct device *dev)

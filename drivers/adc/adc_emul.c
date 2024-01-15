@@ -12,13 +12,12 @@
 
 #define DT_DRV_COMPAT zephyr_adc_emul
 
-#include <drivers/adc.h>
-#include <drivers/adc/adc_emul.h>
-#include <kernel.h>
-#include <logging/log.h>
-#include <sys/byteorder.h>
-#include <sys/util.h>
-#include <zephyr.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/adc/adc_emul.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(adc_emul, CONFIG_ADC_LOG_LEVEL);
 
@@ -37,7 +36,7 @@ enum adc_emul_input_source {
 /**
  * @brief Channel of emulated ADC config
  *
- * This structure contains configuration of one channel of emualted ADC.
+ * This structure contains configuration of one channel of emulated ADC.
  */
 struct adc_emul_chan_cfg {
 	/** Pointer to function used to obtain input mV */
@@ -94,7 +93,7 @@ struct adc_emul_data {
 	struct adc_emul_chan_cfg *chan_cfg;
 	/** Structure used for acquisition thread */
 	struct k_thread thread;
-	/** Semaphore used to control acquisiton thread */
+	/** Semaphore used to control acquisition thread */
 	struct k_sem sem;
 	/** Mutex used to control access to channels config and ref voltages */
 	struct k_mutex cfg_mtx;
@@ -471,8 +470,12 @@ out:
  *
  * @return This thread should not end
  */
-static void adc_emul_acquisition_thread(struct adc_emul_data *data)
+static void adc_emul_acquisition_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct adc_emul_data *data = p1;
 	int err;
 
 	while (true) {
@@ -534,7 +537,7 @@ static int adc_emul_init(const struct device *dev)
 
 	k_thread_create(&data->thread, data->stack,
 			CONFIG_ADC_EMUL_ACQUISITION_THREAD_STACK_SIZE,
-			(k_thread_entry_t)adc_emul_acquisition_thread,
+			adc_emul_acquisition_thread,
 			data, NULL, NULL,
 			CONFIG_ADC_EMUL_ACQUISITION_THREAD_PRIO,
 			0, K_NO_WAIT);
@@ -575,6 +578,6 @@ static int adc_emul_init(const struct device *dev)
 			      &adc_emul_data_##_num,			\
 			      &adc_emul_config_##_num, POST_KERNEL,	\
 			      CONFIG_ADC_INIT_PRIORITY,			\
-			      &adc_emul_api_##_num)
+			      &adc_emul_api_##_num);
 
-DT_INST_FOREACH_STATUS_OKAY(ADC_EMUL_INIT);
+DT_INST_FOREACH_STATUS_OKAY(ADC_EMUL_INIT)

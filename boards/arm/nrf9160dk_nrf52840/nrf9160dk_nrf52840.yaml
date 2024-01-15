@@ -9,4 +9,6 @@ toolchain:
   - gnuarmemb
 supported:
   - ble
-  - ieee802154
+  - netif:openthread
+  - gpio
+vendor: nordic

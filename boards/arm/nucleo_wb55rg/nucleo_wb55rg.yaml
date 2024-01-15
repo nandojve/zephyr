@@ -6,8 +6,8 @@ toolchain:
   - zephyr
   - gnuarmemb
   - xtools
-ram: 96
-flash: 1024
+ram: 192
+flash: 808
 supported:
   - gpio
   - i2c
@@ -21,3 +21,5 @@ supported:
   - arduino_i2c
   - arduino_spi
   - usb_device
+  - nvs
+vendor: st

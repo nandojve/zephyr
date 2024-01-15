@@ -8,13 +8,6 @@ Overview
 
 The LEON3 QEMU board configuration is used to emulate the LEON3 processor.
 
-.. figure:: qemu_leon3.png
-   :width: 600px
-   :align: center
-   :alt: Qemu
-
-   Qemu (Credit: qemu.org)
-
 Programming and Debugging
 *************************
 
@@ -27,7 +20,7 @@ Flashing
 
 While this board is emulated and you can't "flash" it, you can use this
 configuration to run basic Zephyr applications and kernel tests in the QEMU
-emulated environment. For example, with the :ref:`synchronization_sample`:
+emulated environment. For example, with the :zephyr:code-sample:`synchronization` sample:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/synchronization

@@ -12,7 +12,7 @@
 #ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_AICS_INTERNAL_
 #define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_AICS_INTERNAL_
 #include <zephyr/types.h>
-#include <bluetooth/gatt.h>
+#include <zephyr/bluetooth/gatt.h>
 
 #if defined(CONFIG_BT_AICS)
 #define BT_AICS_MAX_DESC_SIZE CONFIG_BT_AICS_MAX_INPUT_DESCRIPTION_SIZE
@@ -64,7 +64,6 @@ struct bt_aics_client {
 	struct bt_gatt_subscribe_params state_sub_params;
 	struct bt_gatt_subscribe_params status_sub_params;
 	struct bt_gatt_subscribe_params desc_sub_params;
-	uint8_t subscribe_cnt;
 	bool cp_retried;
 
 	bool busy;
@@ -89,6 +88,13 @@ struct bt_aics_gain_settings {
 	int8_t maximum;
 } __packed;
 
+enum bt_aics_notify {
+	AICS_NOTIFY_STATE,
+	AICS_NOTIFY_DESCRIPTION,
+	AICS_NOTIFY_STATUS,
+	AICS_NOTIFY_NUM,
+};
+
 struct bt_aics_server {
 	struct bt_aics_state state;
 	struct bt_aics_gain_settings gain_settings;
@@ -100,6 +106,9 @@ struct bt_aics_server {
 	struct bt_aics_cb *cb;
 
 	struct bt_gatt_service *service_p;
+
+	ATOMIC_DEFINE(notify, AICS_NOTIFY_NUM);
+	struct k_work_delayable notify_work;
 };
 
 /* Struct used as a common type for the api */

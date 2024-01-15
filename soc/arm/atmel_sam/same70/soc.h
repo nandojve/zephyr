@@ -13,12 +13,10 @@
 #ifndef _ATMEL_SAME70_SOC_H_
 #define _ATMEL_SAME70_SOC_H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifndef _ASMLANGUAGE
 
-/* Add include for DTS generated information */
-#include <devicetree.h>
 
 #define DONT_USE_CMSIS_INIT
 #define DONT_USE_PREDEFINED_CORE_HANDLERS
@@ -66,6 +64,7 @@
 
 #include "../common/soc_pmc.h"
 #include "../common/soc_gpio.h"
+#include "../common/soc_supc.h"
 #include "../common/atmel_sam_dt.h"
 
 /** Processor Clock (HCLK) Frequency */
@@ -74,6 +73,9 @@
 /** Master Clock (MCK) Frequency */
 #define SOC_ATMEL_SAM_MCK_FREQ_HZ \
 	(SOC_ATMEL_SAM_HCLK_FREQ_HZ / CONFIG_SOC_ATMEL_SAME70_MDIV)
+
+/** UTMI PLL clock (UPLLCK) Frequency */
+#define SOC_ATMEL_SAM_UPLLCK_FREQ_HZ MHZ(480)
 
 #endif /* _ASMLANGUAGE */
 

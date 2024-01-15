@@ -10,10 +10,10 @@
 
 #define DT_DRV_COMPAT st_iis2iclx
 
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 
 #include "iis2iclx.h"
 
@@ -101,6 +101,7 @@ int iis2iclx_trigger_set(const struct device *dev,
 
 	if (trig->chan == SENSOR_CHAN_ACCEL_XYZ) {
 		iis2iclx->handler_drdy_acc = handler;
+		iis2iclx->trig_drdy_acc = trig;
 		if (handler) {
 			return iis2iclx_enable_xl_int(dev, IIS2ICLX_EN_BIT);
 		} else {
@@ -110,6 +111,7 @@ int iis2iclx_trigger_set(const struct device *dev,
 #if defined(CONFIG_IIS2ICLX_ENABLE_TEMP)
 	else if (trig->chan == SENSOR_CHAN_DIE_TEMP) {
 		iis2iclx->handler_drdy_temp = handler;
+		iis2iclx->trig_drdy_temp = trig;
 		if (handler) {
 			return iis2iclx_enable_t_int(dev, IIS2ICLX_EN_BIT);
 		} else {
@@ -128,9 +130,6 @@ int iis2iclx_trigger_set(const struct device *dev,
 static void iis2iclx_handle_interrupt(const struct device *dev)
 {
 	struct iis2iclx_data *iis2iclx = dev->data;
-	struct sensor_trigger drdy_trigger = {
-		.type = SENSOR_TRIG_DATA_READY,
-	};
 	const struct iis2iclx_config *cfg = dev->config;
 	iis2iclx_status_reg_t status;
 
@@ -150,12 +149,12 @@ static void iis2iclx_handle_interrupt(const struct device *dev)
 		}
 
 		if ((status.xlda) && (iis2iclx->handler_drdy_acc != NULL)) {
-			iis2iclx->handler_drdy_acc(dev, &drdy_trigger);
+			iis2iclx->handler_drdy_acc(dev, iis2iclx->trig_drdy_acc);
 		}
 
 #if defined(CONFIG_IIS2ICLX_ENABLE_TEMP)
 		if ((status.tda) && (iis2iclx->handler_drdy_temp != NULL)) {
-			iis2iclx->handler_drdy_temp(dev, &drdy_trigger);
+			iis2iclx->handler_drdy_temp(dev, iis2iclx->trig_drdy_temp);
 		}
 #endif
 	}
@@ -183,8 +182,13 @@ static void iis2iclx_gpio_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_IIS2ICLX_TRIGGER_OWN_THREAD
-static void iis2iclx_thread(struct iis2iclx_data *iis2iclx)
+static void iis2iclx_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct iis2iclx_data *iis2iclx = p1;
+
 	while (1) {
 		k_sem_take(&iis2iclx->gpio_sem, K_FOREVER);
 		iis2iclx_handle_interrupt(iis2iclx->dev);
@@ -209,7 +213,7 @@ int iis2iclx_init_interrupt(const struct device *dev)
 	int ret;
 
 	/* setup data ready gpio interrupt (INT1 or INT2) */
-	if (!device_is_ready(cfg->gpio_drdy.port)) {
+	if (!gpio_is_ready_dt(&cfg->gpio_drdy)) {
 		LOG_ERR("Cannot get pointer to drdy_gpio device");
 		return -EINVAL;
 	}
@@ -219,7 +223,7 @@ int iis2iclx_init_interrupt(const struct device *dev)
 
 	k_thread_create(&iis2iclx->thread, iis2iclx->thread_stack,
 			CONFIG_IIS2ICLX_THREAD_STACK_SIZE,
-			(k_thread_entry_t)iis2iclx_thread,
+			iis2iclx_thread,
 			iis2iclx, NULL, NULL,
 			K_PRIO_COOP(CONFIG_IIS2ICLX_THREAD_PRIORITY),
 			0, K_NO_WAIT);

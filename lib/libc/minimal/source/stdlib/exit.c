@@ -5,11 +5,12 @@
  */
 
 #include <stdlib.h>
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
 void _exit(int status)
 {
 	printk("exit\n");
 	while (1) {
+		Z_SPIN_DELAY(100);
 	}
 }

@@ -2,9 +2,11 @@
 
 # Configures CMake for using ccac
 
-find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}armclang PATH ${TOOLCHAIN_HOME}/bin NO_DEFAULT_PATH)
+find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}armclang PATHS ${TOOLCHAIN_HOME}/bin NO_DEFAULT_PATH)
 
 set(triple arm-arm-none-eabi)
+
+find_package(armclang 6.17 REQUIRED)
 
 set(CMAKE_DTS_PREPROCESSOR
       ${CMAKE_C_COMPILER}
@@ -26,13 +28,13 @@ endif()
 execute_process(
   COMMAND ${CMAKE_C_COMPILER} --version
   RESULT_VARIABLE ret
-  OUTPUT_QUIET
-  ERROR_QUIET
+  OUTPUT_VARIABLE stdoutput
   )
 
 if(ret)
   message(FATAL_ERROR "Executing the below command failed. "
   "Are permissions set correctly? '${CMAKE_C_COMPILER} --version' "
+  "${stdoutput}"
   "And is the license setup correctly ?"
   )
 endif()

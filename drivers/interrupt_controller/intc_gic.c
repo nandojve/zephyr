@@ -10,18 +10,28 @@
  * NOTE: This driver implements the GICv1 and GICv2 interfaces.
  */
 
-#include <devicetree.h>
-#include <sw_isr_table.h>
-#include <dt-bindings/interrupt-controller/arm-gic.h>
-#include <drivers/interrupt_controller/gic.h>
+#include <zephyr/device.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/sw_isr_table.h>
+#include <zephyr/dt-bindings/interrupt-controller/arm-gic.h>
+#include <zephyr/drivers/interrupt_controller/gic.h>
+#include <zephyr/sys/barrier.h>
 
-#define CPU_REG_ID(cpu_node_id) DT_REG_ADDR(cpu_node_id),
+#if defined(CONFIG_GIC_V1)
+#define DT_DRV_COMPAT arm_gic_v1
+#elif defined(CONFIG_GIC_V2)
+#define DT_DRV_COMPAT arm_gic_v2
+#else
+#error "Unknown GIC controller compatible for this configuration"
+#endif
+
 static const uint64_t cpu_mpid_list[] = {
-	DT_FOREACH_CHILD_STATUS_OKAY(DT_PATH(cpus), CPU_REG_ID)
+	DT_FOREACH_CHILD_STATUS_OKAY_SEP(DT_PATH(cpus), DT_REG_ADDR, (,))
 };
 
-BUILD_ASSERT(ARRAY_SIZE(cpu_mpid_list) >= CONFIG_MP_NUM_CPUS,
-		"The count of CPU Cores nodes in dts is less than CONFIG_MP_NUM_CPUS\n");
+BUILD_ASSERT(ARRAY_SIZE(cpu_mpid_list) >= CONFIG_MP_MAX_NUM_CPUS,
+		"The count of CPU Cores nodes in dts is less than CONFIG_MP_MAX_NUM_CPUS\n");
 
 void arm_gic_irq_enable(unsigned int irq)
 {
@@ -54,6 +64,29 @@ bool arm_gic_irq_is_enabled(unsigned int irq)
 	enabler = sys_read32(GICD_ISENABLERn + int_grp * 4);
 
 	return (enabler & (1 << int_off)) != 0;
+}
+
+bool arm_gic_irq_is_pending(unsigned int irq)
+{
+	int int_grp, int_off;
+	unsigned int enabler;
+
+	int_grp = irq / 32;
+	int_off = irq % 32;
+
+	enabler = sys_read32(GICD_ISPENDRn + int_grp * 4);
+
+	return (enabler & (1 << int_off)) != 0;
+}
+
+void arm_gic_irq_clear_pending(unsigned int irq)
+{
+	int int_grp, int_off;
+
+	int_grp = irq / 32;
+	int_off = irq % 32;
+
+	sys_write32((1 << int_off), (GICD_ICPENDRn + int_grp * 4));
 }
 
 void arm_gic_irq_set_priority(
@@ -92,11 +125,11 @@ void arm_gic_eoi(unsigned int irq)
 	 * Ensure the write to peripheral registers are *complete* before the write
 	 * to GIC_EOIR.
 	 *
-	 * Note: The completion gurantee depends on various factors of system design
+	 * Note: The completion guarantee depends on various factors of system design
 	 * and the barrier is the best core can do by which execution of further
 	 * instructions waits till the barrier is alive.
 	 */
-	__DSB();
+	barrier_dsync_fence_full();
 
 	/* set to inactive */
 	sys_write32(irq, GICC_EOIR);
@@ -113,9 +146,9 @@ void gic_raise_sgi(unsigned int sgi_id, uint64_t target_aff,
 		GICD_SGIR_CPULIST(target_list & GICD_SGIR_CPULIST_MASK) |
 		sgi_id;
 
-	__DSB();
+	barrier_dsync_fence_full();
 	sys_write32(sgi_val, GICD_SGIR);
-	__ISB();
+	barrier_isync_fence_full();
 }
 
 static void gic_dist_init(void)
@@ -138,9 +171,11 @@ static void gic_dist_init(void)
 
 	/*
 	 * Enable all global interrupts distributing to CPUs listed
-	 * in dts with the count of CONFIG_MP_NUM_CPUS.
+	 * in dts with the count of arch_num_cpus().
 	 */
-	for (i = 0; i < CONFIG_MP_NUM_CPUS; i++) {
+	unsigned int num_cpus = arch_num_cpus();
+
+	for (i = 0; i < num_cpus; i++) {
 		cpu_mask |= BIT(cpu_mpid_list[i]);
 	}
 	reg_val = cpu_mask | (cpu_mask << 8) | (cpu_mask << 16)
@@ -219,20 +254,15 @@ static void gic_cpu_init(void)
 	sys_write32(val, GICC_CTLR);
 }
 
-/**
- *
- * @brief Initialize the GIC device driver
- *
- *
- * @return N/A
- */
 #define GIC_PARENT_IRQ 0
 #define GIC_PARENT_IRQ_PRI 0
 #define GIC_PARENT_IRQ_FLAGS 0
-int arm_gic_init(const struct device *unused)
-{
-	ARG_UNUSED(unused);
 
+/**
+ * @brief Initialize the GIC device driver
+ */
+int arm_gic_init(const struct device *dev)
+{
 	/* Init of Distributor interface registers */
 	gic_dist_init();
 
@@ -242,7 +272,8 @@ int arm_gic_init(const struct device *unused)
 	return 0;
 }
 
-SYS_INIT(arm_gic_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+DEVICE_DT_INST_DEFINE(0, arm_gic_init, NULL, NULL, NULL,
+		      PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY, NULL);
 
 #ifdef CONFIG_SMP
 void arm_gic_secondary_init(void)

@@ -12,10 +12,12 @@ microcontrollers. The kit includes Atmel’s Embedded Debugger (EDBG),
 which provides a full debug interface without the need for additional
 hardware.
 
-.. image:: img/atsamd20_xpro.jpg
-     :width: 500px
-     :align: center
-     :alt: ATSAMD20-XPRO
+.. figure:: img/atsamd20_xpro.jpg
+    :width: 500px
+    :align: center
+    :alt: ATSAMD20-XPRO
+
+    ATSAMD20-XPRO (Credit: `Microchip Technology`_)
 
 Hardware
 ********
@@ -34,23 +36,39 @@ Supported Features
 The atsamd20_xpro board configuration supports the following hardware
 features:
 
-+-----------+------------+------------------------------------------+
-| Interface | Controller | Driver/Component                         |
-+===========+============+==========================================+
-| NVIC      | on-chip    | nested vector interrupt controller       |
-+-----------+------------+------------------------------------------+
-| Flash     | on-chip    | Can be used with LittleFS to store files |
-+-----------+------------+------------------------------------------+
-| SYSTICK   | on-chip    | systick                                  |
-+-----------+------------+------------------------------------------+
-| WDT       | on-chip    | Watchdog                                 |
-+-----------+------------+------------------------------------------+
-| GPIO      | on-chip    | I/O ports                                |
-+-----------+------------+------------------------------------------+
-| USART     | on-chip    | Serial ports                             |
-+-----------+------------+------------------------------------------+
-| SPI       | on-chip    | Serial Peripheral Interface ports        |
-+-----------+------------+------------------------------------------+
+.. list-table::
+    :header-rows: 1
+
+    * - Interface
+      - Controller
+      - Driver / Component
+    * - NVIC
+      - on-chip
+      - nested vector interrupt controller
+    * - Flash
+      - on-chip
+      - Can be used with LittleFS to store files
+    * - SYSTICK
+      - on-chip
+      - systick
+    * - WDT
+      - on-chip
+      - Watchdog
+    * - ADC
+      - on-chip
+      - Analog to Digital Converter
+    * - GPIO
+      - on-chip
+      - I/O ports
+    * - USART
+      - on-chip
+      - Serial ports
+    * - I2C
+      - on-chip
+      - I2C ports
+    * - SPI
+      - on-chip
+      - Serial Peripheral Interface ports
 
 Other hardware features are not currently supported by Zephyr.
 
@@ -126,12 +144,15 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! atsamd20_xpro" in your terminal.
 
 References
 **********
 
 .. target-notes::
+
+.. _Microchip Technology:
+    https://www.microchip.com/DevelopmentTools/ProductDetails.aspx?PartNO=ATSAMD20-XPRO
 
 .. _Microchip website:
     https://www.microchip.com/DevelopmentTools/ProductDetails.aspx?PartNO=ATSAMD20-XPRO

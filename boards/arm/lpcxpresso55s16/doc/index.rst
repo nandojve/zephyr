@@ -13,8 +13,7 @@ with additional expansion ports around the Arduino footprint, along
 with a PMod/host interface port and MikroElektronika Click module
 site.
 
-.. image:: ./lpcxpresso55S16.jpg
-   :width: 720px
+.. image:: lpcxpresso55S16.jpg
    :align: center
    :alt: LPCXpresso55S16
 
@@ -49,8 +48,12 @@ For more information about the LPC55S16 SoC and LPCXPresso55S16 board, see:
 Supported Features
 ==================
 
-The lpcxpresso55s16 board configuration supports the following
-hardware features:
+The lpcxpresso55s16 board configuration supports the hardware features listed
+below.  For additional features not yet supported, please also refer to the
+:ref:`lpcxpresso55s69` , which is the superset board in NXP's LPC55xx series.
+NXP prioritizes enabling the superset board with NXP's Full Platform Support for
+Zephyr.  Therefore, the lpcxpresso55s69 board may have additional features
+already supported, which can also be re-used on this lpcxpresso55s16 board:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -67,11 +70,19 @@ hardware features:
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
 +-----------+------------+-------------------------------------+
-| USART     | on-chip    | serial port                         |
+| USART     | on-chip    | serial port-polling;                |
+|           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
 | SENSOR    | off-chip   | fxos8700 trigger                    |
 +-----------+------------+-------------------------------------+
 | CLOCK     | on-chip    | clock_control                       |
++-----------+------------+-------------------------------------+
+| CAN       | on-chip    | canbus                              |
++-----------+------------+-------------------------------------+
+| RNG       | on-chip    | entropy;                            |
+|           |            | random                              |
++-----------+------------+-------------------------------------+
+| IAP       | on-chip    | flash programming                   |
 +-----------+------------+-------------------------------------+
 
 Other hardware features are not currently enabled.
@@ -119,13 +130,19 @@ the functionality of a pin.
 +---------+-----------------+----------------------------+
 | PIO1_26 | GPIO            | FXOS8700 INT1              |
 +---------+-----------------+----------------------------+
+| PIO1_22 | CAN             | CAN RXD                    |
++---------+-----------------+----------------------------+
+| PIO1_27 | CAN             | CAN TXD                    |
++---------+-----------------+----------------------------+
 
 System Clock
 ============
 
-The LPC55S16 SoC is configured to use the internal FRO at 96MHz as a
-source for the system clock. Other sources for the system clock are
-provided in the SOC, depending on your system requirements.
+The LPC55S16 SoC is configured to use PLL1 clocked from the external 24MHz
+crystal, running at 144MHz as a source for the system clock. When the flash
+controller is enabled, the core clock will be reduced to 96MHz. The application
+may reconfigure clocks after initialization, provided that the core clock is
+always set to 96MHz when flash programming operations are performed.
 
 Serial Port
 ===========
@@ -209,7 +226,7 @@ should see the following message in the terminal:
    https://www.nxp.com/products/processors-and-microcontrollers/arm-microcontrollers/general-purpose-mcus/lpc5500-cortex-m33/lpc551x-s1x-baseline-arm-cortex-m33-based-microcontroller-family:LPC551X-S1X
 
 .. _LPC55S16 Datasheet:
-    https://www.nxp.com/docs/en/nxp/data-sheets/LPC55S1x_PDS.pdf
+    https://www.nxp.com/docs/en/nxp/data-sheets/LPC55S1x_LPC551x_DS.pdf
 
 .. _LPC55S16 User Manual:
    https://www.nxp.com/webapp/Download?colCode=UM11295
@@ -218,7 +235,7 @@ should see the following message in the terminal:
    https://www.nxp.com/design/development-boards/lpcxpresso-boards/lpcxpresso55s16-development-board:LPC55S16-EVK
 
 .. _LPCXpresso55S16 User Manual:
-   https://www.nxp.com/docs/en/user-guide/UMLPCXPRESSO55S16.pdf
+   https://www.nxp.com/webapp/Download?colCode=UMLPCXPRESSO55S16
 
 .. _LPCXpresso55S16 Development Board Design Files:
-   https://www.nxp.com/downloads/en/design-support/LPCXPRESSSO55S16-DESIGN-FILES.zip
+   https://www.nxp.com/webapp/Download?colCode=LPCXPRESSSO55S16-DESIGN-FILES

@@ -3,10 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <zephyr/types.h>
-#include <sys/time_units.h>
-#include <random/rand32.h>
+#include <zephyr/sys/time_units.h>
+#include <zephyr/random/random.h>
 
 #define NUM_RANDOM 100
 
@@ -30,8 +30,107 @@ struct test_rec {
 
 #define TESTREC(src, dst, round, prec) { \
 		UNIT_##src, UNIT_##dst, prec, ROUND_##round,		\
-			(void *)k_##src##_to_##dst##_##round##prec	\
+			(void *)test_##src##_to_##dst##_##round##prec	\
 	}								\
+
+#ifdef CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME
+#define TESTVAR(src, dst, round, prec)
+#else
+#define TESTVAR(src, dst, round, prec)					\
+	uint##prec##_t test_##src##_to_##dst##_##round##prec##_val =	\
+		k_##src##_to_##dst##_##round##prec(42);
+#endif
+
+#define TESTFUNC(src, dst, round, prec)					\
+	TESTVAR(src, dst, round, prec)					\
+	static uint##prec##_t test_##src##_to_##dst##_##round##prec(uint##prec##_t t) { \
+		return k_##src##_to_##dst##_##round##prec(t);		\
+	}
+
+TESTFUNC(ms, cyc, floor, 32)
+TESTFUNC(ms, cyc, floor, 64)
+TESTFUNC(ms, cyc, near, 32)
+TESTFUNC(ms, cyc, near, 64)
+TESTFUNC(ms, cyc, ceil, 32)
+TESTFUNC(ms, cyc, ceil, 64)
+TESTFUNC(ms, ticks, floor, 32)
+TESTFUNC(ms, ticks, floor, 64)
+TESTFUNC(ms, ticks, near, 32)
+TESTFUNC(ms, ticks, near, 64)
+TESTFUNC(ms, ticks, ceil, 32)
+TESTFUNC(ms, ticks, ceil, 64)
+TESTFUNC(us, cyc, floor, 32)
+TESTFUNC(us, cyc, floor, 64)
+TESTFUNC(us, cyc, near, 32)
+TESTFUNC(us, cyc, near, 64)
+TESTFUNC(us, cyc, ceil, 32)
+TESTFUNC(us, cyc, ceil, 64)
+TESTFUNC(us, ticks, floor, 32)
+TESTFUNC(us, ticks, floor, 64)
+TESTFUNC(us, ticks, near, 32)
+TESTFUNC(us, ticks, near, 64)
+TESTFUNC(us, ticks, ceil, 32)
+TESTFUNC(us, ticks, ceil, 64)
+TESTFUNC(cyc, ms, floor, 32)
+TESTFUNC(cyc, ms, floor, 64)
+TESTFUNC(cyc, ms, near, 32)
+TESTFUNC(cyc, ms, near, 64)
+TESTFUNC(cyc, ms, ceil, 32)
+TESTFUNC(cyc, ms, ceil, 64)
+TESTFUNC(cyc, us, floor, 32)
+TESTFUNC(cyc, us, floor, 64)
+TESTFUNC(cyc, us, near, 32)
+TESTFUNC(cyc, us, near, 64)
+TESTFUNC(cyc, us, ceil, 32)
+TESTFUNC(cyc, us, ceil, 64)
+TESTFUNC(cyc, ticks, floor, 32)
+TESTFUNC(cyc, ticks, floor, 64)
+TESTFUNC(cyc, ticks, near, 32)
+TESTFUNC(cyc, ticks, near, 64)
+TESTFUNC(cyc, ticks, ceil, 32)
+TESTFUNC(cyc, ticks, ceil, 64)
+TESTFUNC(ticks, ms, floor, 32)
+TESTFUNC(ticks, ms, floor, 64)
+TESTFUNC(ticks, ms, near, 32)
+TESTFUNC(ticks, ms, near, 64)
+TESTFUNC(ticks, ms, ceil, 32)
+TESTFUNC(ticks, ms, ceil, 64)
+TESTFUNC(ticks, us, floor, 32)
+TESTFUNC(ticks, us, floor, 64)
+TESTFUNC(ticks, us, near, 32)
+TESTFUNC(ticks, us, near, 64)
+TESTFUNC(ticks, us, ceil, 32)
+TESTFUNC(ticks, us, ceil, 64)
+TESTFUNC(ticks, cyc, floor, 32)
+TESTFUNC(ticks, cyc, floor, 64)
+TESTFUNC(ticks, cyc, near, 32)
+TESTFUNC(ticks, cyc, near, 64)
+TESTFUNC(ticks, cyc, ceil, 32)
+TESTFUNC(ticks, cyc, ceil, 64)
+TESTFUNC(ns, cyc, floor, 32)
+TESTFUNC(ns, cyc, floor, 64)
+TESTFUNC(ns, cyc, near, 32)
+TESTFUNC(ns, cyc, near, 64)
+TESTFUNC(ns, cyc, ceil, 32)
+TESTFUNC(ns, cyc, ceil, 64)
+TESTFUNC(ns, ticks, floor, 32)
+TESTFUNC(ns, ticks, floor, 64)
+TESTFUNC(ns, ticks, near, 32)
+TESTFUNC(ns, ticks, near, 64)
+TESTFUNC(ns, ticks, ceil, 32)
+TESTFUNC(ns, ticks, ceil, 64)
+TESTFUNC(cyc, ns, floor, 32)
+TESTFUNC(cyc, ns, floor, 64)
+TESTFUNC(cyc, ns, near, 32)
+TESTFUNC(cyc, ns, near, 64)
+TESTFUNC(cyc, ns, ceil, 32)
+TESTFUNC(cyc, ns, ceil, 64)
+TESTFUNC(ticks, ns, floor, 32)
+TESTFUNC(ticks, ns, floor, 64)
+TESTFUNC(ticks, ns, near, 32)
+TESTFUNC(ticks, ns, near, 64)
+TESTFUNC(ticks, ns, ceil, 32)
+TESTFUNC(ticks, ns, ceil, 64)
 
 static struct test_rec tests[] = {
 	 TESTREC(ms, cyc, floor, 32),
@@ -137,7 +236,7 @@ uint32_t get_hz(enum units u)
 	return 0;
 }
 
-void test_conversion(struct test_rec *t, uint64_t val)
+static void test_conversion(struct test_rec *t, uint64_t val)
 {
 	uint32_t from_hz = get_hz(t->src), to_hz = get_hz(t->dst);
 	uint64_t result;
@@ -192,7 +291,7 @@ void test_conversion(struct test_rec *t, uint64_t val)
 		     result, result, diff, diff, mindiff, maxdiff);
 }
 
-void test_time_conversions(void)
+ZTEST(timer_api, test_time_conversions)
 {
 	for (int i = 0; i < ARRAY_SIZE(tests); i++) {
 		test_conversion(&tests[i], 0);

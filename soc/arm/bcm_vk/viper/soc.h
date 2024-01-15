@@ -7,12 +7,11 @@
 #ifndef SOC_H
 #define SOC_H
 
-#include <sys/util.h>
-#include <toolchain.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/arch/arm/cortex_m/nvic.h>
 
 #ifndef _ASMLANGUAGE
-
-#include <devicetree.h>
 
 /* Interrupt Number Definition */
 typedef enum IRQn {
@@ -301,5 +300,7 @@ typedef enum IRQn {
 #define PCIE_PMON_LITE_CLK_ENABLE		(BIT(0) | BIT(2))
 #define LS_ICFG_PMON_LITE_SW_RESETN		0x482f0120
 #define PCIE_PMON_LITE_SW_RESETN		BIT(0)
+
+#include <core_cm7.h>
 
 #endif

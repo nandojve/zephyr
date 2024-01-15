@@ -47,15 +47,16 @@
 /* stdint conversions */
 #include <zephyr/types.h>
 #include <stddef.h>
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
-#include <net/net_ip.h>
-#include <sys/printk.h>
-#include <sys/util.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 #include <sys/types.h>
+#include <time.h>
 
-#include <net/coap.h>
-#include <net/lwm2m.h>
+#include <zephyr/net/coap.h>
+#include <zephyr/net/lwm2m.h>
 
 #include "buf_util.h"
 
@@ -134,9 +135,24 @@ BUILD_ASSERT(CONFIG_LWM2M_COAP_BLOCK_SIZE <= CONFIG_LWM2M_COAP_MAX_MSG_SIZE,
 #define MAX_PACKET_SIZE		(CONFIG_LWM2M_COAP_MAX_MSG_SIZE + \
 				 CONFIG_LWM2M_ENGINE_MESSAGE_HEADER_SIZE)
 
+#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
+BUILD_ASSERT(CONFIG_LWM2M_COAP_ENCODE_BUFFER_SIZE >
+		     (CONFIG_LWM2M_COAP_BLOCK_SIZE + CONFIG_LWM2M_ENGINE_MESSAGE_HEADER_SIZE),
+	     "The buffer for serializing message needs to be bigger than a message with one block");
+#endif
+
 /* buffer util macros */
 #define CPKT_BUF_WRITE(cpkt)	(cpkt)->data, &(cpkt)->offset, (cpkt)->max_len
 #define CPKT_BUF_READ(cpkt)	(cpkt)->data, (cpkt)->max_len
+#define CPKT_BUF_W_PTR(cpkt)	((cpkt)->data + (cpkt)->offset)
+#define CPKT_BUF_W_SIZE(cpkt)	((cpkt)->max_len - (cpkt)->offset)
+
+#define CPKT_BUF_W_REGION(cpkt)  CPKT_BUF_W_PTR(cpkt), CPKT_BUF_W_SIZE(cpkt)
+
+/* Input context buffer util macros */
+#define ICTX_BUF_R_LEFT_SZ(i_ctx) ((i_ctx)->in_cpkt->max_len - (i_ctx)->offset)
+#define ICTX_BUF_R_PTR(i_ctx)	  ((i_ctx)->in_cpkt->data + (i_ctx)->offset)
+#define ICTX_BUF_R_REGION(i_ctx)   ICTX_BUF_R_PTR(i_ctx), ICTX_BUF_R_LEFT_SZ(i_ctx)
 
 struct lwm2m_engine_obj;
 struct lwm2m_message;
@@ -148,14 +164,6 @@ struct lwm2m_message;
 #define LWM2M_PATH_LEVEL_RESOURCE_INST 4
 
 /* path representing object instances */
-struct lwm2m_obj_path {
-	uint16_t obj_id;
-	uint16_t obj_inst_id;
-	uint16_t res_id;
-	uint16_t res_inst_id;
-	uint8_t  level;  /* 0/1/2/3/4 (4 = resource instance) */
-};
-
 #define OBJ_FIELD(_id, _perm, _type) \
 	{ .res_id = _id, \
 	  .permissions = LWM2M_PERM_ ## _perm, \
@@ -238,14 +246,14 @@ struct lwm2m_engine_obj {
 #endif /* CONFIG_LWM2M_ENGINE_VALIDATION_BUFFER_SIZE > 0 */
 
 #define _INIT_OBJ_RES_INST(_ri_ptr, _ri_idx, _ri_count, _ri_create, \
-			   _data_ptr, _data_len) \
+			   _data_ptr, _data_sz, _data_len) \
 	do { \
 		if (_ri_ptr != NULL && _ri_count > 0) { \
 			for (int _i = 0; _i < _ri_count; _i++) { \
 				_ri_ptr[_ri_idx + _i].data_ptr = \
-						(_data_ptr + _i); \
+						((uint8_t *) _data_ptr + (_i * _data_sz)); \
 				_ri_ptr[_ri_idx + _i].max_data_len = \
-						_data_len; \
+						_data_sz; \
 				_ri_ptr[_ri_idx + _i].data_len = \
 						_data_len; \
 				if (_ri_create) { \
@@ -288,10 +296,22 @@ struct lwm2m_engine_obj {
 			      (_ri_ptr + _ri_idx), _ri_count, _multi_ri, \
 			      _r_cb, _pre_w_cb, _val_cb, _post_w_cb, _ex_cb); \
 		_INIT_OBJ_RES_INST(_ri_ptr, _ri_idx, _ri_count, _ri_create, \
-				   _data_ptr, _data_len); \
+				   _data_ptr, _data_len, _data_len); \
 	++_r_idx; \
 	} while (false)
 
+#define INIT_OBJ_RES_LEN(_id, _r_ptr, _r_idx, \
+		     _ri_ptr, _ri_idx, _ri_count, _multi_ri, _ri_create, \
+		     _data_ptr, _data_sz, _data_len, \
+		     _r_cb, _pre_w_cb, _val_cb, _post_w_cb, _ex_cb) \
+	do { \
+		_INIT_OBJ_RES(_id, _r_ptr, _r_idx, \
+			      (_ri_ptr + _ri_idx), _ri_count, _multi_ri, \
+			      _r_cb, _pre_w_cb, _val_cb, _post_w_cb, _ex_cb); \
+		_INIT_OBJ_RES_INST(_ri_ptr, _ri_idx, _ri_count, _ri_create, \
+				   _data_ptr, _data_sz, _data_len); \
+	++_r_idx; \
+	} while (false)
 
 #define INIT_OBJ_RES_OPT(_id, _r_ptr, _r_idx, \
 			 _ri_ptr, _ri_idx, _ri_count, _multi_ri, _ri_create, \
@@ -311,16 +331,27 @@ struct lwm2m_engine_obj {
 		     _ri_ptr, _ri_idx, _ri_count, true, _ri_create, \
 		     _data_ptr, _data_len, NULL, NULL, NULL, NULL, NULL)
 
+#define INIT_OBJ_RES_MULTI_DATA_LEN(_id, _r_ptr, _r_idx, \
+				_ri_ptr, _ri_idx, _ri_count, _ri_create, \
+				_data_ptr, _data_sz, _data_len) \
+	INIT_OBJ_RES_LEN(_id, _r_ptr, _r_idx, \
+		     _ri_ptr, _ri_idx, _ri_count, true, _ri_create, \
+		     _data_ptr, _data_sz, _data_len, NULL, NULL, NULL, NULL, NULL)
+
 #define INIT_OBJ_RES_MULTI_OPTDATA(_id, _r_ptr, _r_idx, \
 				   _ri_ptr, _ri_idx, _ri_count, _ri_create) \
 	INIT_OBJ_RES_OPT(_id, _r_ptr, _r_idx, \
 			 _ri_ptr, _ri_idx, _ri_count, true, _ri_create, \
 			 NULL, NULL, NULL, NULL, NULL)
 
-#define INIT_OBJ_RES_DATA(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, \
-			  _data_ptr, _data_len) \
-	INIT_OBJ_RES(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, 1U, false, true, \
-		     _data_ptr, _data_len, NULL, NULL, NULL, NULL, NULL)
+#define INIT_OBJ_RES_DATA_LEN(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, \
+			  _data_ptr, _data_sz, _data_len) \
+	INIT_OBJ_RES_LEN(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, 1U, false, true, \
+		     _data_ptr, _data_sz, _data_len, NULL, NULL, NULL, NULL, NULL)
+
+#define INIT_OBJ_RES_DATA(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, _data_ptr, _data_len)     \
+	INIT_OBJ_RES_DATA_LEN(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, _data_ptr, _data_len, \
+			      _data_len)
 
 #define INIT_OBJ_RES_OPTDATA(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx) \
 	INIT_OBJ_RES_OPT(_id, _r_ptr, _r_idx, _ri_ptr, _ri_idx, 1U, false, \
@@ -411,15 +442,18 @@ struct lwm2m_block_context {
 	struct lwm2m_opaque_context opaque;
 	int64_t timestamp;
 	uint32_t expected;
-	uint8_t token[8];
-	uint8_t tkl;
 	bool last_block : 1;
-	uint16_t res_id;
+	struct lwm2m_obj_path path;
 };
 
 struct lwm2m_output_context {
 	const struct lwm2m_writer *writer;
 	struct coap_packet *out_cpkt;
+
+#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
+	/* Corresponding block context. NULL if block transfer is not used. */
+	struct coap_block_context *block_ctx;
+#endif
 
 	/* private output data */
 	void *user_data;
@@ -462,14 +496,23 @@ struct lwm2m_message {
 	/** Buffer data related outgoing message */
 	uint8_t msg_data[MAX_PACKET_SIZE];
 
+#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
+	/** Buffer data containing complete message */
+	struct coap_packet body_encode_buffer;
+#endif
+
 	/** Message transmission handling for TYPE_CON */
 	struct coap_pending *pending;
 	struct coap_reply *reply;
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
+	struct lwm2m_cache_read_info *cache_info;
+#endif
 
 	/** Message configuration */
 	uint8_t *token;
 	coap_reply_t reply_cb;
 	lwm2m_message_timeout_cb_t message_timeout_cb;
+	lwm2m_send_cb_t send_status_cb;
 	uint16_t mid;
 	uint8_t type;
 	uint8_t code;
@@ -478,76 +521,73 @@ struct lwm2m_message {
 	/** Incoming message action */
 	uint8_t operation;
 
-	/* Information whether the message was acknowledged. */
+	/** Information whether the message was acknowledged. */
 	bool acknowledged : 1;
+
+	/** Indicate that this is part of outgoing block transfer. */
+	bool block_send : 1;
 };
 
 /* LWM2M format writer for the various formats supported */
 struct lwm2m_writer {
-	size_t (*put_begin)(struct lwm2m_output_context *out,
+	int (*put_begin)(struct lwm2m_output_context *out,
+			 struct lwm2m_obj_path *path);
+	int (*put_end)(struct lwm2m_output_context *out,
+		       struct lwm2m_obj_path *path);
+	int (*put_begin_oi)(struct lwm2m_output_context *out,
 			    struct lwm2m_obj_path *path);
-	size_t (*put_end)(struct lwm2m_output_context *out,
+	int (*put_end_oi)(struct lwm2m_output_context *out,
 			  struct lwm2m_obj_path *path);
-	size_t (*put_begin_oi)(struct lwm2m_output_context *out,
-			       struct lwm2m_obj_path *path);
-	size_t (*put_end_oi)(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path);
-	size_t (*put_begin_r)(struct lwm2m_output_context *out,
-			      struct lwm2m_obj_path *path);
-	size_t (*put_end_r)(struct lwm2m_output_context *out,
+	int (*put_begin_r)(struct lwm2m_output_context *out,
+			   struct lwm2m_obj_path *path);
+	int (*put_end_r)(struct lwm2m_output_context *out,
+			 struct lwm2m_obj_path *path);
+	int (*put_begin_ri)(struct lwm2m_output_context *out,
 			    struct lwm2m_obj_path *path);
-	size_t (*put_begin_ri)(struct lwm2m_output_context *out,
-			       struct lwm2m_obj_path *path);
-	size_t (*put_end_ri)(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path);
-	size_t (*put_s8)(struct lwm2m_output_context *out,
-			 struct lwm2m_obj_path *path,
-			 int8_t value);
-	size_t (*put_s16)(struct lwm2m_output_context *out,
+	int (*put_end_ri)(struct lwm2m_output_context *out,
+			  struct lwm2m_obj_path *path);
+	int (*put_data_timestamp)(struct lwm2m_output_context *out,
+				time_t value);
+	int (*put_s8)(struct lwm2m_output_context *out,
+		      struct lwm2m_obj_path *path, int8_t value);
+	int (*put_s16)(struct lwm2m_output_context *out,
+		       struct lwm2m_obj_path *path, int16_t value);
+	int (*put_s32)(struct lwm2m_output_context *out,
+		       struct lwm2m_obj_path *path, int32_t value);
+	int (*put_s64)(struct lwm2m_output_context *out,
+		       struct lwm2m_obj_path *path, int64_t value);
+	int (*put_time)(struct lwm2m_output_context *out,
+		       struct lwm2m_obj_path *path, time_t value);
+	int (*put_string)(struct lwm2m_output_context *out,
+			  struct lwm2m_obj_path *path, char *buf,
+			  size_t buflen);
+	int (*put_float)(struct lwm2m_output_context *out,
+			 struct lwm2m_obj_path *path, double *value);
+	int (*put_bool)(struct lwm2m_output_context *out,
+			struct lwm2m_obj_path *path, bool value);
+	int (*put_opaque)(struct lwm2m_output_context *out,
+			  struct lwm2m_obj_path *path, char *buf,
+			  size_t buflen);
+	int (*put_objlnk)(struct lwm2m_output_context *out,
 			  struct lwm2m_obj_path *path,
-			  int16_t value);
-	size_t (*put_s32)(struct lwm2m_output_context *out,
-			  struct lwm2m_obj_path *path,
-			  int32_t value);
-	size_t (*put_s64)(struct lwm2m_output_context *out,
-			  struct lwm2m_obj_path *path,
-			  int64_t value);
-	size_t (*put_string)(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path,
-			     char *buf, size_t buflen);
-	size_t (*put_float)(struct lwm2m_output_context *out,
-			    struct lwm2m_obj_path *path,
-			    double *value);
-	size_t (*put_bool)(struct lwm2m_output_context *out,
-			   struct lwm2m_obj_path *path,
-			   bool value);
-	size_t (*put_opaque)(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path,
-			     char *buf, size_t buflen);
-	size_t (*put_objlnk)(struct lwm2m_output_context *out,
-			     struct lwm2m_obj_path *path,
-			     struct lwm2m_objlnk *value);
-	ssize_t (*put_corelink)(struct lwm2m_output_context *out,
-				const struct lwm2m_obj_path *path);
+			  struct lwm2m_objlnk *value);
+	int (*put_corelink)(struct lwm2m_output_context *out,
+			    const struct lwm2m_obj_path *path);
 };
 
 struct lwm2m_reader {
-	size_t (*get_s32)(struct lwm2m_input_context *in,
-			  int32_t *value);
-	size_t (*get_s64)(struct lwm2m_input_context *in,
-			  int64_t *value);
-	size_t (*get_string)(struct lwm2m_input_context *in,
-			     uint8_t *buf, size_t buflen);
-	size_t (*get_float)(struct lwm2m_input_context *in,
-			    double *value);
-	size_t (*get_bool)(struct lwm2m_input_context *in,
-			   bool *value);
-	size_t (*get_opaque)(struct lwm2m_input_context *in,
-			     uint8_t *buf, size_t buflen,
-			     struct lwm2m_opaque_context *opaque,
-			     bool *last_block);
-	size_t (*get_objlnk)(struct lwm2m_input_context *in,
-			     struct lwm2m_objlnk *value);
+	int (*get_s32)(struct lwm2m_input_context *in, int32_t *value);
+	int (*get_s64)(struct lwm2m_input_context *in, int64_t *value);
+	int (*get_time)(struct lwm2m_input_context *in, time_t *value);
+	int (*get_string)(struct lwm2m_input_context *in, uint8_t *buf,
+			  size_t buflen);
+	int (*get_float)(struct lwm2m_input_context *in, double *value);
+	int (*get_bool)(struct lwm2m_input_context *in, bool *value);
+	int (*get_opaque)(struct lwm2m_input_context *in, uint8_t *buf,
+			  size_t buflen, struct lwm2m_opaque_context *opaque,
+			  bool *last_block);
+	int (*get_objlnk)(struct lwm2m_input_context *in,
+			  struct lwm2m_objlnk *value);
 };
 
 /* output user_data management functions */
@@ -588,8 +628,8 @@ engine_clear_in_user_data(struct lwm2m_input_context *in)
 
 /* inline multi-format write / read functions */
 
-static inline size_t engine_put_begin(struct lwm2m_output_context *out,
-				      struct lwm2m_obj_path *path)
+static inline int engine_put_begin(struct lwm2m_output_context *out,
+				   struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_begin) {
 		return out->writer->put_begin(out, path);
@@ -598,8 +638,8 @@ static inline size_t engine_put_begin(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_end(struct lwm2m_output_context *out,
-				    struct lwm2m_obj_path *path)
+static inline int engine_put_end(struct lwm2m_output_context *out,
+				 struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_end) {
 		return out->writer->put_end(out, path);
@@ -608,8 +648,8 @@ static inline size_t engine_put_end(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_begin_oi(struct lwm2m_output_context *out,
-					 struct lwm2m_obj_path *path)
+static inline int engine_put_begin_oi(struct lwm2m_output_context *out,
+				      struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_begin_oi) {
 		return out->writer->put_begin_oi(out, path);
@@ -618,8 +658,8 @@ static inline size_t engine_put_begin_oi(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_end_oi(struct lwm2m_output_context *out,
-				       struct lwm2m_obj_path *path)
+static inline int engine_put_end_oi(struct lwm2m_output_context *out,
+				    struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_end_oi) {
 		return out->writer->put_end_oi(out, path);
@@ -628,8 +668,8 @@ static inline size_t engine_put_end_oi(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_begin_r(struct lwm2m_output_context *out,
-					struct lwm2m_obj_path *path)
+static inline int engine_put_begin_r(struct lwm2m_output_context *out,
+				     struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_begin_r) {
 		return out->writer->put_begin_r(out, path);
@@ -638,8 +678,8 @@ static inline size_t engine_put_begin_r(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_end_r(struct lwm2m_output_context *out,
-				      struct lwm2m_obj_path *path)
+static inline int engine_put_end_r(struct lwm2m_output_context *out,
+				   struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_end_r) {
 		return out->writer->put_end_r(out, path);
@@ -648,8 +688,8 @@ static inline size_t engine_put_end_r(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_begin_ri(struct lwm2m_output_context *out,
-					 struct lwm2m_obj_path *path)
+static inline int engine_put_begin_ri(struct lwm2m_output_context *out,
+				      struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_begin_ri) {
 		return out->writer->put_begin_ri(out, path);
@@ -658,8 +698,8 @@ static inline size_t engine_put_begin_ri(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_end_ri(struct lwm2m_output_context *out,
-				       struct lwm2m_obj_path *path)
+static inline int engine_put_end_ri(struct lwm2m_output_context *out,
+				    struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_end_ri) {
 		return out->writer->put_end_ri(out, path);
@@ -668,75 +708,99 @@ static inline size_t engine_put_end_ri(struct lwm2m_output_context *out,
 	return 0;
 }
 
-static inline size_t engine_put_s8(struct lwm2m_output_context *out,
-				   struct lwm2m_obj_path *path,
-				   int8_t value)
+static inline int engine_put_s8(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				int8_t value)
 {
-	return out->writer->put_s8(out, path, value);
+	if (out->writer->put_s8) {
+		return out->writer->put_s8(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_s16(struct lwm2m_output_context *out,
-				    struct lwm2m_obj_path *path,
-				    int16_t value)
+static inline int engine_put_s16(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				 int16_t value)
 {
-	return out->writer->put_s16(out, path, value);
+	if (out->writer->put_s16) {
+		return out->writer->put_s16(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_s32(struct lwm2m_output_context *out,
-				    struct lwm2m_obj_path *path,
-				    int32_t value)
+static inline int engine_put_s32(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				 int32_t value)
 {
-	return out->writer->put_s32(out, path, value);
+	if (out->writer->put_s32) {
+		return out->writer->put_s32(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_s64(struct lwm2m_output_context *out,
-				    struct lwm2m_obj_path *path,
-				    int64_t value)
+static inline int engine_put_s64(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				 int64_t value)
 {
-	return out->writer->put_s64(out, path, value);
+	if (out->writer->put_s64) {
+		return out->writer->put_s64(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_string(struct lwm2m_output_context *out,
-				       struct lwm2m_obj_path *path,
-				       char *buf, size_t buflen)
+static inline int engine_put_string(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				    char *buf, size_t buflen)
 {
-	return out->writer->put_string(out, path, buf, buflen);
+	if (out->writer->put_string) {
+		return out->writer->put_string(out, path, buf, buflen);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_float(struct lwm2m_output_context *out,
-				      struct lwm2m_obj_path *path,
-				      double *value)
+static inline int engine_put_float(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				   double *value)
 {
-	return out->writer->put_float(out, path, value);
+	if (out->writer->put_float) {
+		return out->writer->put_float(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_bool(struct lwm2m_output_context *out,
-				     struct lwm2m_obj_path *path,
-				     bool value)
+static inline int engine_put_time(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				  time_t value)
 {
-	return out->writer->put_bool(out, path, value);
+	if (out->writer->put_time) {
+		return out->writer->put_time(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_opaque(struct lwm2m_output_context *out,
-				       struct lwm2m_obj_path *path,
-				       char *buf, size_t buflen)
+static inline int engine_put_bool(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				  bool value)
+{
+	if (out->writer->put_bool) {
+		return out->writer->put_bool(out, path, value);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_put_opaque(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				    char *buf, size_t buflen)
 {
 	if (out->writer->put_opaque) {
 		return out->writer->put_opaque(out, path, buf, buflen);
 	}
 
-	return 0;
+	return -ENOTSUP;
 }
 
-static inline size_t engine_put_objlnk(struct lwm2m_output_context *out,
-				       struct lwm2m_obj_path *path,
-				       struct lwm2m_objlnk *value)
+static inline int engine_put_objlnk(struct lwm2m_output_context *out, struct lwm2m_obj_path *path,
+				    struct lwm2m_objlnk *value)
 {
-	return out->writer->put_objlnk(out, path, value);
+	if (out->writer->put_objlnk) {
+		return out->writer->put_objlnk(out, path, value);
+	}
+	return -ENOTSUP;
 }
 
-static inline ssize_t engine_put_corelink(struct lwm2m_output_context *out,
-					  const struct lwm2m_obj_path *path)
+static inline int engine_put_corelink(struct lwm2m_output_context *out,
+				      const struct lwm2m_obj_path *path)
 {
 	if (out->writer->put_corelink) {
 		return out->writer->put_corelink(out, path);
@@ -745,53 +809,79 @@ static inline ssize_t engine_put_corelink(struct lwm2m_output_context *out,
 	return -ENOTSUP;
 }
 
-static inline size_t engine_get_s32(struct lwm2m_input_context *in,
-				    int32_t *value)
+static inline int engine_put_timestamp(struct lwm2m_output_context *out, time_t timestamp)
 {
-	return in->reader->get_s32(in, value);
-}
-
-static inline size_t engine_get_s64(struct lwm2m_input_context *in,
-				    int64_t *value)
-{
-	return in->reader->get_s64(in, value);
-}
-
-static inline size_t engine_get_string(struct lwm2m_input_context *in,
-				       uint8_t *buf, size_t buflen)
-{
-	return in->reader->get_string(in, buf, buflen);
-}
-
-static inline size_t engine_get_float(struct lwm2m_input_context *in,
-				      double *value)
-{
-	return in->reader->get_float(in, value);
-}
-
-static inline size_t engine_get_bool(struct lwm2m_input_context *in,
-				     bool *value)
-{
-	return in->reader->get_bool(in, value);
-}
-
-static inline size_t engine_get_opaque(struct lwm2m_input_context *in,
-				       uint8_t *buf, size_t buflen,
-				       struct lwm2m_opaque_context *opaque,
-				       bool *last_block)
-{
-	if (in->reader->get_opaque) {
-		return in->reader->get_opaque(in, buf, buflen,
-					      opaque, last_block);
+	if (out->writer->put_data_timestamp) {
+		return out->writer->put_data_timestamp(out, timestamp);
 	}
 
-	return 0;
+	return -ENOTSUP;
 }
 
-static inline size_t engine_get_objlnk(struct lwm2m_input_context *in,
-				       struct lwm2m_objlnk *value)
+static inline int engine_get_s32(struct lwm2m_input_context *in, int32_t *value)
 {
-	return in->reader->get_objlnk(in, value);
+	if (in->reader->get_s32) {
+		return in->reader->get_s32(in, value);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_get_s64(struct lwm2m_input_context *in, int64_t *value)
+{
+	if (in->reader->get_s64) {
+		return in->reader->get_s64(in, value);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_get_string(struct lwm2m_input_context *in, uint8_t *buf, size_t buflen)
+{
+	if (in->reader->get_string) {
+		return in->reader->get_string(in, buf, buflen);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_get_time(struct lwm2m_input_context *in, time_t *value)
+{
+	if (in->reader->get_time) {
+		return in->reader->get_time(in, value);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_get_float(struct lwm2m_input_context *in, double *value)
+{
+	if (in->reader->get_float) {
+		return in->reader->get_float(in, value);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_get_bool(struct lwm2m_input_context *in, bool *value)
+{
+	if (in->reader->get_bool) {
+		return in->reader->get_bool(in, value);
+	}
+	return -ENOTSUP;
+}
+
+static inline int engine_get_opaque(struct lwm2m_input_context *in, uint8_t *buf, size_t buflen,
+				    struct lwm2m_opaque_context *opaque, bool *last_block)
+{
+	if (in->reader->get_opaque) {
+		return in->reader->get_opaque(in, buf, buflen, opaque, last_block);
+	}
+
+	return -ENOTSUP;
+}
+
+static inline int engine_get_objlnk(struct lwm2m_input_context *in, struct lwm2m_objlnk *value)
+{
+	if (in->reader->get_objlnk) {
+		return in->reader->get_objlnk(in, value);
+	}
+	return -ENOTSUP;
 }
 
 #endif /* LWM2M_OBJECT_H_ */

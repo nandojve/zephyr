@@ -11,19 +11,19 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_IIS2ICLX_IIS2ICLX_H_
 #define ZEPHYR_DRIVERS_SENSOR_IIS2ICLX_IIS2ICLX_H_
 
-#include <drivers/sensor.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/types.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
 #include <stmemsc.h>
 #include "iis2iclx_reg.h"
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
-#include <drivers/i2c.h>
+#include <zephyr/drivers/i2c.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
 
 #define IIS2ICLX_EN_BIT					0x01
@@ -86,7 +86,9 @@ struct iis2iclx_data {
 #ifdef CONFIG_IIS2ICLX_TRIGGER
 	struct gpio_callback gpio_cb;
 	sensor_trigger_handler_t handler_drdy_acc;
+	const struct sensor_trigger *trig_drdy_acc;
 	sensor_trigger_handler_t handler_drdy_temp;
+	const struct sensor_trigger *trig_drdy_temp;
 
 #if defined(CONFIG_IIS2ICLX_TRIGGER_OWN_THREAD)
 	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_IIS2ICLX_THREAD_STACK_SIZE);

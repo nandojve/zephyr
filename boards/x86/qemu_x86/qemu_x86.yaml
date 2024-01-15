@@ -3,6 +3,7 @@ name: QEMU Emulation for X86
 type: qemu
 simulation: qemu
 arch: x86
+ram: 3000
 toolchain:
   - zephyr
   - xtools
@@ -11,7 +12,9 @@ supported:
   - pci
   - nvs
   - netif:serial-net
-  - ieee802154
   - eeprom
+  - can
+  - rtc
 testing:
   default: true
+vendor: qemu

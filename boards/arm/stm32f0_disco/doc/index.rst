@@ -12,8 +12,6 @@ comprehensive STM32 software HAL library and various packaged software
 examples.
 
 .. image:: img/stm32f0_disco.jpg
-     :width: 350px
-     :height: 404px
      :align: center
      :alt: STM32F0DISCOVERY
 
@@ -109,7 +107,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application to Nucleo F030R8
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -122,7 +120,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -136,10 +134,10 @@ References
 .. target-notes::
 
 .. _STM32F0DISCOVERY website:
-   http://www.st.com/en/evaluation-tools/stm32f0discovery.html
+   https://www.st.com/en/evaluation-tools/stm32f0discovery.html
 
 .. _STM32F0x8 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00031936.pdf
+   https://www.st.com/resource/en/reference_manual/dm00031936.pdf
 
 .. _STM32F0DISCOVERY board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00050135.pdf
+   https://www.st.com/resource/en/user_manual/dm00050135.pdf

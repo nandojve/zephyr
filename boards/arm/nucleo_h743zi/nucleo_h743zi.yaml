@@ -22,3 +22,7 @@ supported:
   - backup_sram
   - watchdog
   - usb_device
+  - can
+  - dac
+  - dma
+vendor: st

@@ -1,6 +1,6 @@
 # MIMXRT1020-EVK board
 
-# Copyright (c) 2018, NXP
+# Copyright 2018,2023 NXP
 # SPDX-License-Identifier: Apache-2.0
 
 if BOARD_MIMXRT1020_EVK
@@ -12,19 +12,18 @@ choice CODE_LOCATION
 	default CODE_FLEXSPI
 endchoice
 
-config DISK_DRIVER_SDMMC
-	default y if DISK_DRIVERS
+config DEVICE_CONFIGURATION_DATA
+	default y
 
-config FLASH_MCUX_FLEXSPI_NOR
-	default y if FLASH && BOARD_MIMXRT1020_EVK
-
-config FLASH_MCUX_FLEXSPI_XIP
-	default y if FLASH && BOARD_MIMXRT1020_EVK
-	depends on MEMC_MCUX_FLEXSPI
+config NXP_IMX_EXTERNAL_SDRAM
+	default y
 
 if NETWORKING
 
 config NET_L2_ETHERNET
+	default y
+
+config ETH_MCUX_PHY_RESET
 	default y
 
 endif # NETWORKING

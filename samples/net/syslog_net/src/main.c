@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_syslog, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <logging/log_backend.h>
+#include <zephyr/logging/log_backend.h>
+#include <zephyr/logging/log_backend_net.h>
+#include <zephyr/logging/log_ctrl.h>
 
 #include <stdlib.h>
 
@@ -17,11 +19,11 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_LOG_BACKEND_NET), "syslog backend not enabled");
 
 #define SLEEP_BETWEEN_PRINTS 3
 
-#if IS_ENABLED(CONFIG_LOG_BACKEND_NET)
+#if defined(CONFIG_LOG_BACKEND_NET)
 extern const struct log_backend *log_backend_net_get(void);
 #endif
 
-void main(void)
+int main(void)
 {
 	int i, count, sleep;
 
@@ -35,11 +37,18 @@ void main(void)
 		const struct log_backend *backend = log_backend_net_get();
 
 		if (!log_backend_is_active(backend)) {
-			if (backend->api->init != NULL) {
-				backend->api->init(backend);
-			}
 
-			log_backend_activate(backend, NULL);
+			/* Specifying an address by calling this function will
+			 * override the value given to LOG_BACKEND_NET_SERVER.
+			   It can also be called at any other time after the backend
+			   is started. The net context will be released and
+			   restarted with the newly specified address.
+			 */
+			if (strlen(CONFIG_LOG_BACKEND_NET_SERVER) == 0) {
+				log_backend_net_set_addr(CONFIG_NET_SAMPLE_SERVER_RUNTIME);
+			}
+			log_backend_init(backend);
+			log_backend_enable(backend, backend->cb->ctx, CONFIG_LOG_MAX_LEVEL);
 		}
 	}
 
@@ -78,4 +87,5 @@ void main(void)
 		k_msleep(1000);
 		exit(0);
 	}
+	return 0;
 }

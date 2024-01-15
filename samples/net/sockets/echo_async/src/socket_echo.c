@@ -23,8 +23,8 @@
 #else
 
 #include <fcntl.h>
-#include <net/socket.h>
-#include <kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/kernel.h>
 
 #ifdef CONFIG_NET_IPV6
 #define USE_IPV6
@@ -104,7 +104,7 @@ void pollfds_del(int fd)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	int res;
 	static int counter;
@@ -257,4 +257,5 @@ error:
 			}
 		}
 	}
+	return 0;
 }

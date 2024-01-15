@@ -30,7 +30,6 @@ processor, a set of environmental sensors, a pushbutton, and two RGB LEDs.
 * :abbr:`WDT (Watchdog Timer)`
 
 .. figure:: img/thingy52_nrf52832.jpg
-     :width: 442px
      :align: center
      :alt: nRF52 Thingy:52
 
@@ -363,7 +362,7 @@ debugger. A development board with a Debug out connector such as the
 Testing board features
 **********************
 
-The green lightwell LED can be tested with the :ref:`blinky-sample` example.
+The green lightwell LED can be tested with the :zephyr:code-sample:`blinky` example.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky

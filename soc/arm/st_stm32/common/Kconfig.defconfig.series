@@ -13,13 +13,37 @@ config CORTEX_M_SYSTICK
 DT_STM32_RCC_PATH := $(dt_nodelabel_path,rcc)
 DT_STM32_RCC_CLOCK_FREQ := $(dt_node_int_prop_int,$(DT_STM32_RCC_PATH),clock-frequency)
 
+DT_ST_PRESCALER := st,prescaler
+DT_STM32_LPTIM_PATH := $(dt_nodelabel_path,stm32_lp_tick_source)
+
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default "$(DT_STM32_RCC_CLOCK_FREQ)" if "$(dt_nodelabel_enabled,rcc)"
 
+if LOG_BACKEND_SWO
+
+config LOG_BACKEND_SWO_REF_FREQ_HZ
+	default "$(DT_STM32_RCC_CLOCK_FREQ)" if "$(dt_nodelabel_enabled,rcc)"
+
+endif # LOG_BACKEND_SWO
+
 # set the tick per sec as a divider of the LPTIM clock source
+# with a minimum value of 4096 for SYS_CLOCK_TICKS_PER_SEC to keep
+# SYS_CLOCK_TICKS_PER_SEC not too high compared to the LPTIM counter clock
 config SYS_CLOCK_TICKS_PER_SEC
-	default 4096 if STM32_LPTIM_TIMER && STM32_LPTIM_CLOCK_LSE
-	default 4000 if STM32_LPTIM_TIMER && STM32_LPTIM_CLOCK_LSI
+	default 4096 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" < 16
+	default 2048 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 16
+	default 1024 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 32
+	default  512 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 64
+	default  256 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 128
+	depends on STM32_LPTIM_TIMER && STM32_LPTIM_CLOCK_LSE
+
+config SYS_CLOCK_TICKS_PER_SEC
+	default 4000 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" < 16
+	default 2000 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 16
+	default 1000 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 32
+	default  500 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 64
+	default  250 if "$(dt_node_int_prop_int,$(DT_STM32_LPTIM_PATH),$(DT_ST_PRESCALER))" = 128
+	depends on STM32_LPTIM_TIMER && STM32_LPTIM_CLOCK_LSI
 
 config CLOCK_CONTROL_STM32_CUBE
 	default y
@@ -28,52 +52,6 @@ config CLOCK_CONTROL_STM32_CUBE
 config CLOCK_CONTROL_INIT_PRIORITY
 	default 1
 	depends on CLOCK_CONTROL
-
-config UART_STM32
-	default y
-	depends on SERIAL
-
-if GPIO
-
-config GPIO_STM32
-	default y
-
-endif # GPIO
-
-config PINMUX_STM32
-	default y
-	depends on PINMUX
-
-config PWM_STM32
-	default y
-	depends on PWM
-
-config SPI_STM32
-	default y
-	depends on SPI
-
-config I2S_STM32
-	default y
-	depends on I2S
-
-config USB_DC_STM32
-	default y
-	depends on USB_DEVICE_DRIVER
-
-config COUNTER_RTC_STM32
-	default y
-	depends on COUNTER
-
-config ADC_STM32
-	default y
-	depends on ADC
-
-if DMA
-
-config DMA_STM32
-	default y
-
-endif # DMA
 
 config MEMC_STM32
 	default y

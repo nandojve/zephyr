@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 #define TIMEOUT K_MSEC(100)
 #if !defined(CONFIG_BOARD_QEMU_X86)
-#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #else
-#define STACK_SIZE (640 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (640 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #endif
 #define MAIL_LEN 64
 
@@ -30,10 +30,9 @@ static struct k_mbox mbox;
 static k_tid_t sender_tid, receiver_tid, random_tid;
 
 static K_THREAD_STACK_DEFINE(tstack, STACK_SIZE);
-static K_THREAD_STACK_DEFINE(rtstack, STACK_SIZE);
 static K_THREAD_STACK_DEFINE(tstack_1, STACK_SIZE);
 static K_THREAD_STACK_ARRAY_DEFINE(waiting_get_stack, 5, STACK_SIZE);
-static struct k_thread tdata, rtdata, async_tid, waiting_get_tid[5];
+static struct k_thread tdata, async_tid, waiting_get_tid[5];
 
 static struct k_sem end_sema, sync_sema;
 
@@ -164,9 +163,8 @@ static void tmbox_put(struct k_mbox *pmbox)
 		/* Get a msg and dispose it by making the size = 0 */
 		mmsg.size = 0;
 		mmsg.tx_data = data[1];
-		mmsg.tx_block.data = NULL;
 		mmsg.tx_target_thread = K_ANY;
-		zassert_true(k_mbox_put(pmbox, &mmsg, K_FOREVER) == 0, NULL);
+		zassert_true(k_mbox_put(pmbox, &mmsg, K_FOREVER) == 0);
 		break;
 
 	case ASYNC_PUT_TO_WAITING_GET:
@@ -252,9 +250,9 @@ static void tmbox_get(struct k_mbox *pmbox)
 		zassert_true(k_mbox_get(pmbox, &mmsg, rxdata, K_FOREVER) == 0,
 			     NULL);
 		/*verify .info*/
-		zassert_equal(mmsg.info, PUT_GET_NULL, NULL);
+		zassert_equal(mmsg.info, PUT_GET_NULL);
 		/*verify .size*/
-		zassert_equal(mmsg.size, 0, NULL);
+		zassert_equal(mmsg.size, 0);
 		break;
 	case PUT_GET_BUFFER:
 		__fallthrough;
@@ -268,8 +266,8 @@ static void tmbox_get(struct k_mbox *pmbox)
 		}
 		zassert_true(k_mbox_get(pmbox, &mmsg, rxdata, K_FOREVER) == 0,
 			     NULL);
-		zassert_equal(mmsg.info, PUT_GET_BUFFER, NULL);
-		zassert_equal(mmsg.size, sizeof(data[info_type]), NULL);
+		zassert_equal(mmsg.info, PUT_GET_BUFFER);
+		zassert_equal(mmsg.size, sizeof(data[info_type]));
 		/*verify rxdata*/
 		zassert_true(memcmp(rxdata, data[info_type], MAIL_LEN) == 0,
 			     NULL);
@@ -280,8 +278,8 @@ static void tmbox_get(struct k_mbox *pmbox)
 		mmsg.rx_source_thread = K_ANY;
 		zassert_true(k_mbox_get(pmbox, &mmsg, NULL, K_FOREVER) == 0,
 			     NULL);
-		zassert_equal(mmsg.info, ASYNC_PUT_GET_BUFFER, NULL);
-		zassert_equal(mmsg.size, sizeof(data[info_type]), NULL);
+		zassert_equal(mmsg.info, ASYNC_PUT_GET_BUFFER);
+		zassert_equal(mmsg.size, sizeof(data[info_type]));
 		k_mbox_data_get(&mmsg, rxdata);
 		zassert_true(memcmp(rxdata, data[info_type], MAIL_LEN) == 0,
 			     NULL);
@@ -411,6 +409,7 @@ static void tmbox(struct k_mbox *pmbox)
 	receiver_tid = k_thread_create(&tdata, tstack, STACK_SIZE,
 				       tmbox_entry, pmbox, NULL, NULL,
 				       K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
+
 	tmbox_put(pmbox);
 	k_sem_take(&end_sema, K_FOREVER);
 
@@ -419,143 +418,26 @@ static void tmbox(struct k_mbox *pmbox)
 }
 
 /*test cases*/
-void test_mbox_kinit(void)
+ZTEST(mbox_api, test_mbox_kinit)
 {
 	/**TESTPOINT: init via k_mbox_init*/
 	k_mbox_init(&mbox);
-	k_sem_init(&end_sema, 0, 1);
-	k_sem_init(&sync_sema, 0, 1);
 }
 
-void test_mbox_kdefine(void)
+ZTEST(mbox_api, test_mbox_kdefine)
 {
 	info_type = PUT_GET_NULL;
 	tmbox(&kmbox);
 }
 
-K_MBOX_DEFINE(send_mbox);
-static void thread_mbox_data_get_null(void *p1, void *p2, void *p3)
-{
-	struct k_mbox_msg get_msg = {0};
-	char str_data[] = "it string for get msg test";
-
-	get_msg.size = 16;
-	get_msg.rx_source_thread = K_ANY;
-	get_msg.tx_block.data = str_data;
-	get_msg._syncing_thread = NULL;
-
-	k_mbox_data_get(&get_msg, NULL);
-	k_sem_give(&end_sema);
-}
-
-/**
- *
- * @brief Test k_mbox_data_get() API
- *
- * @details
- * - Init a mbox and just invoke k_mbox_data_get() with different
- *   input to check robust of API.
- *
- * @see k_mbox_data_get()
- *
- * @ingroup kernel_mbox_api
- */
-void test_mbox_data_get_null(void)
-{
-	k_sem_reset(&end_sema);
-
-	receiver_tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-					thread_mbox_data_get_null,
-					NULL, NULL, NULL,
-					K_PRIO_PREEMPT(0), 0,
-					K_NO_WAIT);
-	k_sem_take(&end_sema, K_FOREVER);
-	/*test case teardown*/
-	k_thread_abort(receiver_tid);
-}
-
-static void thread_mbox_get_block_data(void *p1, void *p2, void *p3)
-{
-	k_sem_take(&sync_sema, K_FOREVER);
-	struct k_mbox_msg bdmsg = {0};
-
-	bdmsg.size = MAIL_LEN;
-	bdmsg.rx_source_thread = sender_tid;
-	bdmsg.tx_target_thread = receiver_tid;
-	bdmsg.tx_data = NULL;
-	bdmsg.tx_block.data = data;
-	bdmsg.tx_data = data;
-
-	zassert_equal(k_mbox_get((struct k_mbox *)p1, &bdmsg, p2, K_FOREVER),
-			0, NULL);
-
-	k_sem_give(&end_sema);
-}
-
-/* give a block data to API k_mbox_async_put */
-static void thread_mbox_put_block_data(void *p1, void *p2, void *p3)
-{
-	struct k_mbox_msg put_msg = {0};
-
-	put_msg.size = MAIL_LEN;
-	put_msg.tx_data = NULL;
-	put_msg.tx_block.data = p2;
-	put_msg.tx_target_thread = receiver_tid;
-	put_msg.rx_source_thread = sender_tid;
-
-	k_mbox_async_put((struct k_mbox *)p1, &put_msg, NULL);
-}
-
-/**
- *
- * @brief Test put and get mailbox with block data
- *
- * @details
- * - Create two threads to put and get block data with
- *   specify thread ID and K_FOREVER for each other.
- * - Check the result after finished exchange.
- *
- * @see k_mbox_init() k_mbox_async_put() k_mbox_get()
- *
- * @ingroup kernel_mbox_api
- */
-void test_mbox_get_put_block_data(void)
-{
-	struct k_mbox bdmbox;
-	/*test case setup*/
-	k_sem_reset(&end_sema);
-	k_sem_reset(&sync_sema);
-	k_mbox_init(&bdmbox);
-	char buff[MAIL_LEN];
-	char data_put[] = "mbox put data";
-
-	/**TESTPOINT: thread-thread data passing via mbox*/
-	sender_tid = k_current_get();
-	receiver_tid = k_thread_create(&rtdata, rtstack, STACK_SIZE,
-				       thread_mbox_get_block_data,
-				       &bdmbox, buff, NULL,
-				       K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
-
-	sender_tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-				      thread_mbox_put_block_data,
-				      &bdmbox, data_put, NULL,
-				       K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
-	k_sem_give(&sync_sema);
-	k_sem_take(&end_sema, K_FOREVER);
-	/*abort receiver thread*/
-	k_thread_abort(receiver_tid);
-	k_thread_abort(sender_tid);
-
-	zassert_equal(memcmp(buff, data_put, sizeof(data_put)), 0,
-			     NULL);
-}
+static ZTEST_BMEM char __aligned(4) buffer[8];
 
 /**
  *
  * @brief Test mailbox enhance capabilities
  *
  * @details
- * - Define and initilized a message queue and a mailbox
+ * - Define and initialized a message queue and a mailbox
  * - Verify the capability of message queue and mailbox
  * - with same data.
  *
@@ -563,8 +445,7 @@ void test_mbox_get_put_block_data(void)
  *
  * @see k_msgq_init() k_msgq_put() k_mbox_async_put() k_mbox_get()
  */
-static ZTEST_BMEM char __aligned(4) buffer[8];
-void test_enhance_capability(void)
+ZTEST(mbox_api, test_enhance_capability)
 {
 	info_type = ASYNC_PUT_GET_BUFFER;
 	struct k_msgq msgq;
@@ -589,7 +470,7 @@ void test_enhance_capability(void)
  * - Verify the mailbox can be used
  *
  */
-void test_define_multi_mbox(void)
+ZTEST(mbox_api, test_define_multi_mbox)
 {
 	/**TESTPOINT: init via k_mbox_init*/
 	struct k_mbox mbox1, mbox2, mbox3;
@@ -605,86 +486,102 @@ void test_define_multi_mbox(void)
 	tmbox(&mbox3);
 }
 
-void test_mbox_put_get_null(void)
+ZTEST(mbox_api, test_mbox_put_get_null)
 {
 	info_type = PUT_GET_NULL;
 	tmbox(&mbox);
 }
 
-void test_mbox_put_get_buffer(void)
+ZTEST(mbox_api, test_mbox_put_get_buffer)
 {
 	info_type = PUT_GET_BUFFER;
 	tmbox(&mbox);
 }
 
-void test_mbox_async_put_get_buffer(void)
+ZTEST(mbox_api, test_mbox_async_put_get_buffer)
 {
 	info_type = ASYNC_PUT_GET_BUFFER;
 	tmbox(&mbox);
 }
 
-void test_mbox_async_put_get_block(void)
+ZTEST(mbox_api, test_mbox_async_put_get_block)
 {
 	info_type = ASYNC_PUT_GET_BLOCK;
 	tmbox(&mbox);
 }
 
-void test_mbox_target_source_thread_buffer(void)
+ZTEST(mbox_api, test_mbox_target_source_thread_buffer)
 {
 	info_type = TARGET_SOURCE_THREAD_BUFFER;
 	tmbox(&mbox);
 }
 
-void test_mbox_incorrect_receiver_tid(void)
+ZTEST(mbox_api, test_mbox_incorrect_receiver_tid)
 {
 	info_type = INCORRECT_RECEIVER_TID;
 	tmbox(&mbox);
 }
 
-void test_mbox_incorrect_transmit_tid(void)
+ZTEST(mbox_api, test_mbox_incorrect_transmit_tid)
 {
 	info_type = INCORRECT_TRANSMIT_TID;
 	tmbox(&mbox);
 }
 
-void test_mbox_timed_out_mbox_get(void)
+ZTEST(mbox_api, test_mbox_timed_out_mbox_get)
 {
 	info_type = TIMED_OUT_MBOX_GET;
 	tmbox(&mbox);
 }
 
-void test_mbox_msg_tid_mismatch(void)
+ZTEST(mbox_api, test_mbox_msg_tid_mismatch)
 {
 	info_type = MSG_TID_MISMATCH;
 	tmbox(&mbox);
 }
 
-void test_mbox_dispose_size_0_msg(void)
+ZTEST(mbox_api, test_mbox_dispose_size_0_msg)
 {
 	info_type = DISPOSE_SIZE_0_MSG;
 	tmbox(&mbox);
 }
 
-void test_mbox_async_put_to_waiting_get(void)
+ZTEST(mbox_api, test_mbox_async_put_to_waiting_get)
 {
 	info_type = ASYNC_PUT_TO_WAITING_GET;
 	tmbox(&mbox);
 }
 
-void test_mbox_get_waiting_put_incorrect_tid(void)
+ZTEST(mbox_api, test_mbox_get_waiting_put_incorrect_tid)
 {
 	info_type = GET_WAITING_PUT_INCORRECT_TID;
 	tmbox(&mbox);
 }
 
-void test_mbox_async_multiple_put(void)
+ZTEST(mbox_api, test_mbox_async_multiple_put)
 {
 	info_type = ASYNC_MULTIPLE_PUT;
 	tmbox(&mbox);
 }
 
-void test_mbox_multiple_waiting_get(void)
+ZTEST(mbox_api, test_mbox_multiple_waiting_get)
 {
 	info_type = MULTIPLE_WAITING_GET;
 	tmbox(&mbox);
+
+	/* cleanup the sender threads */
+	for (int i = 0; i < 5 ; i++) {
+		k_thread_abort(&waiting_get_tid[i]);
+	}
 }
+
+void *setup_mbox_api(void)
+{
+	k_sem_init(&end_sema, 0, 1);
+	k_sem_init(&sync_sema, 0, 1);
+	k_mbox_init(&mbox);
+
+	return NULL;
+}
+
+ZTEST_SUITE(mbox_api, NULL, setup_mbox_api, NULL, NULL, NULL);

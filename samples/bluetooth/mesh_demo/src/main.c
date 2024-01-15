@@ -6,12 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/mesh.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/mesh.h>
 
 #include "board.h"
 
@@ -50,14 +50,14 @@ static void heartbeat(const struct bt_mesh_hb_sub *sub, uint8_t hops,
 static struct bt_mesh_cfg_cli cfg_cli = {
 };
 
-static void attention_on(struct bt_mesh_model *model)
+static void attention_on(const struct bt_mesh_model *model)
 {
 	printk("attention_on()\n");
 	board_attention(true);
 	board_play("100H100C100H100C100H100C");
 }
 
-static void attention_off(struct bt_mesh_model *model)
+static void attention_off(const struct bt_mesh_model *model)
 {
 	printk("attention_off()\n");
 	board_attention(false);
@@ -74,19 +74,19 @@ static struct bt_mesh_health_srv health_srv = {
 
 BT_MESH_HEALTH_PUB_DEFINE(health_pub, 0);
 
-static struct bt_mesh_model root_models[] = {
+static const struct bt_mesh_model root_models[] = {
 	BT_MESH_MODEL_CFG_SRV,
 	BT_MESH_MODEL_CFG_CLI(&cfg_cli),
 	BT_MESH_MODEL_HEALTH_SRV(&health_srv, &health_pub),
 };
 
-static int vnd_button_pressed(struct bt_mesh_model *model,
+static int vnd_button_pressed(const struct bt_mesh_model *model,
 			       struct bt_mesh_msg_ctx *ctx,
 			       struct net_buf_simple *buf)
 {
 	printk("src 0x%04x\n", ctx->addr);
 
-	if (ctx->addr == bt_mesh_model_elem(model)->addr) {
+	if (ctx->addr == bt_mesh_model_elem(model)->rt->addr) {
 		return 0;
 	}
 
@@ -101,11 +101,11 @@ static const struct bt_mesh_model_op vnd_ops[] = {
 	BT_MESH_MODEL_OP_END,
 };
 
-static struct bt_mesh_model vnd_models[] = {
+static const struct bt_mesh_model vnd_models[] = {
 	BT_MESH_MODEL_VND(BT_COMP_ID_LF, MOD_LF, vnd_ops, NULL, NULL),
 };
 
-static struct bt_mesh_elem elements[] = {
+static const struct bt_mesh_elem elements[] = {
 	BT_MESH_ELEM(0, root_models, vnd_models),
 };
 
@@ -120,23 +120,22 @@ static void configure(void)
 	printk("Configuring...\n");
 
 	/* Add Application Key */
-	bt_mesh_cfg_app_key_add(net_idx, addr, net_idx, app_idx, app_key, NULL);
+	bt_mesh_cfg_cli_app_key_add(net_idx, addr, net_idx, app_idx, app_key, NULL);
 
 	/* Bind to vendor model */
-	bt_mesh_cfg_mod_app_bind_vnd(net_idx, addr, addr, app_idx,
-				     MOD_LF, BT_COMP_ID_LF, NULL);
+	bt_mesh_cfg_cli_mod_app_bind_vnd(net_idx, addr, addr, app_idx, MOD_LF, BT_COMP_ID_LF, NULL);
 
 	/* Bind to Health model */
-	bt_mesh_cfg_mod_app_bind(net_idx, addr, addr, app_idx,
-				 BT_MESH_MODEL_ID_HEALTH_SRV, NULL);
+	bt_mesh_cfg_cli_mod_app_bind(net_idx, addr, addr, app_idx, BT_MESH_MODEL_ID_HEALTH_SRV,
+				     NULL);
 
 	/* Add model subscription */
-	bt_mesh_cfg_mod_sub_add_vnd(net_idx, addr, addr, GROUP_ADDR,
-				    MOD_LF, BT_COMP_ID_LF, NULL);
+	bt_mesh_cfg_cli_mod_sub_add_vnd(net_idx, addr, addr, GROUP_ADDR, MOD_LF, BT_COMP_ID_LF,
+					NULL);
 
 #if NODE_ADDR == PUBLISHER_ADDR
 	{
-		struct bt_mesh_cfg_hb_pub pub = {
+		struct bt_mesh_cfg_cli_hb_pub pub = {
 			.dst = GROUP_ADDR,
 			.count = 0xff,
 			.period = 0x05,
@@ -145,7 +144,7 @@ static void configure(void)
 			.net_idx = net_idx,
 		};
 
-		bt_mesh_cfg_hb_pub_set(net_idx, addr, &pub, NULL);
+		bt_mesh_cfg_cli_hb_pub_set(net_idx, addr, &pub, NULL);
 		printk("Publishing heartbeat messages\n");
 	}
 #endif
@@ -199,19 +198,19 @@ static void bt_ready(int err)
 	}
 
 #if NODE_ADDR != PUBLISHER_ADDR
-	/* Heartbeat subcscription is a temporary state (due to there
+	/* Heartbeat subscription is a temporary state (due to there
 	 * not being an "indefinite" value for the period, so it never
 	 * gets stored persistently. Therefore, we always have to configure
 	 * it explicitly.
 	 */
 	{
-		struct bt_mesh_cfg_hb_sub sub = {
+		struct bt_mesh_cfg_cli_hb_sub sub = {
 			.src = PUBLISHER_ADDR,
 			.dst = GROUP_ADDR,
 			.period = 0x10,
 		};
 
-		bt_mesh_cfg_hb_sub_set(net_idx, addr, &sub, NULL);
+		bt_mesh_cfg_cli_hb_sub_set(net_idx, addr, &sub, NULL);
 		printk("Subscribing to heartbeat messages\n");
 	}
 #endif
@@ -264,7 +263,7 @@ void board_play(const char *str)
 	k_sem_give(&tune_sem);
 }
 
-void main(void)
+int main(void)
 {
 	int err;
 
@@ -273,7 +272,7 @@ void main(void)
 	err = board_init(&addr);
 	if (err) {
 		printk("Board initialization failed\n");
-		return;
+		return 0;
 	}
 
 	printk("Unicast address: 0x%04x\n", addr);
@@ -282,7 +281,7 @@ void main(void)
 	err = bt_enable(bt_ready);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	while (1) {
@@ -290,4 +289,5 @@ void main(void)
 		board_play_tune(tune_str);
 	}
 
+	return 0;
 }

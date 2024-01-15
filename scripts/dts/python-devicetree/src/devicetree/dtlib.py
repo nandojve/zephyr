@@ -21,7 +21,7 @@ import string
 import sys
 import textwrap
 from typing import Any, Dict, Iterable, List, \
-    NamedTuple, NoReturn, Optional, Tuple, Union
+    NamedTuple, NoReturn, Optional, Set, Tuple, TYPE_CHECKING, Union
 
 # NOTE: tests/test_dtlib.py is the test suite for this library.
 
@@ -45,7 +45,7 @@ class Node:
       integer.
 
     props:
-      A collections.OrderedDict that maps the properties defined on the node to
+      A dict that maps the properties defined on the node to
       their values. 'props' is indexed by property name (a string), and values
       are Property objects.
 
@@ -61,8 +61,7 @@ class Node:
       stored in big-endian format.
 
     nodes:
-      A collections.OrderedDict containing the subnodes of the node, indexed by
-      name.
+      A dict containing the subnodes of the node, indexed by name.
 
     labels:
       A list with all labels pointing to the node, in the same order as the
@@ -89,9 +88,17 @@ class Node:
         """
         Node constructor. Not meant to be called directly by clients.
         """
-        self.name = name
+        # Remember to update DT.__deepcopy__() if you change this.
+
+        self._name = name
+        self.props: Dict[str, 'Property'] = {}
+        self.nodes: Dict[str, 'Node'] = {}
+        self.labels: List[str] = []
         self.parent = parent
         self.dt = dt
+
+        self._omit_if_no_ref = False
+        self._is_referenced = False
 
         if name.count("@") > 1:
             dt._parse_error("multiple '@' in node name")
@@ -101,11 +108,14 @@ class Node:
                     dt._parse_error(f"{self.path}: bad character '{char}' "
                                     "in node name")
 
-        self.props: Dict[str, 'Property'] = collections.OrderedDict()
-        self.nodes: Dict[str, 'Node'] = collections.OrderedDict()
-        self.labels: List[str] = []
-        self._omit_if_no_ref = False
-        self._is_referenced = False
+    @property
+    def name(self) -> str:
+        """
+        See the class documentation.
+        """
+        # Converted to a property to discourage renaming -- that has to be done
+        # via DT.move_node.
+        return self._name
 
     @property
     def unit_addr(self) -> str:
@@ -121,6 +131,8 @@ class Node:
         """
         node_names = []
 
+        # This dynamic computation is required to be able to move
+        # nodes in the DT class.
         cur = self
         while cur.parent:
             node_names.append(cur.name)
@@ -264,7 +276,7 @@ class Property:
       labels appear, but with duplicates removed.
 
       'label_1: label2: x = ...' gives 'labels' the value
-      {"label_1", "label_2"}.
+      ["label_1", "label_2"].
 
     offset_labels:
       A dictionary that maps any labels within the property's value to their
@@ -283,17 +295,20 @@ class Property:
     #
 
     def __init__(self, node: Node, name: str):
+        # Remember to update DT.__deepcopy__() if you change this.
+
         if "@" in name:
             node.dt._parse_error("'@' is only allowed in node names")
 
         self.name = name
-        self.node = node
         self.value = b""
         self.labels: List[str] = []
-        self._label_offset_lst: List[Tuple[str, int]] = []
         # We have to wait to set this until later, when we've got
         # the entire tree.
         self.offset_labels: Dict[str, int] = {}
+        self.node: Node = node
+
+        self._label_offset_lst: List[Tuple[str, int]] = []
 
         # A list of [offset, label, type] lists (sorted by offset),
         # giving the locations of references within the value. 'type'
@@ -302,6 +317,48 @@ class Property:
         # _MarkerType.LABEL, for a label on/within data. Node paths
         # and phandles need to be patched in after parsing.
         self._markers: List[List] = []
+
+    @property
+    def type(self) -> Type:
+        """
+        See the class documentation.
+        """
+        # Data labels (e.g. 'foo = label: <3>') are irrelevant, so filter them
+        # out
+        types = [marker[1] for marker in self._markers
+                 if marker[1] != _MarkerType.LABEL]
+
+        if not types:
+            return Type.EMPTY
+
+        if types == [_MarkerType.UINT8]:
+            return Type.BYTES
+
+        if types == [_MarkerType.UINT32]:
+            return Type.NUM if len(self.value) == 4 else Type.NUMS
+
+        # Treat 'foo = <1 2 3>, <4 5>, ...' as Type.NUMS too
+        if set(types) == {_MarkerType.UINT32}:
+            return Type.NUMS
+
+        if set(types) == {_MarkerType.STRING}:
+            return Type.STRING if len(types) == 1 else Type.STRINGS
+
+        if types == [_MarkerType.PATH]:
+            return Type.PATH
+
+        if types == [_MarkerType.UINT32, _MarkerType.PHANDLE] and \
+                len(self.value) == 4:
+            return Type.PHANDLE
+
+        if set(types) == {_MarkerType.UINT32, _MarkerType.PHANDLE}:
+            if len(self.value) == 4*types.count(_MarkerType.PHANDLE):
+                # Array with just phandles in it
+                return Type.PHANDLES
+            # Array with both phandles and numbers
+            return Type.PHANDLES_AND_NUMS
+
+        return Type.COMPOUND
 
     def to_num(self, signed=False) -> int:
         """
@@ -496,48 +553,6 @@ class Property:
 
         return ret  # The separate 'return' appeases the type checker.
 
-    @property
-    def type(self) -> int:
-        """
-        See the class docstring.
-        """
-        # Data labels (e.g. 'foo = label: <3>') are irrelevant, so filter them
-        # out
-        types = [marker[1] for marker in self._markers
-                 if marker[1] != _MarkerType.LABEL]
-
-        if not types:
-            return Type.EMPTY
-
-        if types == [_MarkerType.UINT8]:
-            return Type.BYTES
-
-        if types == [_MarkerType.UINT32]:
-            return Type.NUM if len(self.value) == 4 else Type.NUMS
-
-        # Treat 'foo = <1 2 3>, <4 5>, ...' as Type.NUMS too
-        if set(types) == {_MarkerType.UINT32}:
-            return Type.NUMS
-
-        if set(types) == {_MarkerType.STRING}:
-            return Type.STRING if len(types) == 1 else Type.STRINGS
-
-        if types == [_MarkerType.PATH]:
-            return Type.PATH
-
-        if types == [_MarkerType.UINT32, _MarkerType.PHANDLE] and \
-                len(self.value) == 4:
-            return Type.PHANDLE
-
-        if set(types) == {_MarkerType.UINT32, _MarkerType.PHANDLE}:
-            if len(self.value) == 4*types.count(_MarkerType.PHANDLE):
-                # Array with just phandles in it
-                return Type.PHANDLES
-            # Array with both phandles and numbers
-            return Type.PHANDLES_AND_NUMS
-
-        return Type.COMPOUND
-
     def __str__(self):
         s = "".join(label + ": " for label in self.labels) + self.name
         if not self.value:
@@ -664,6 +679,10 @@ class _Token(NamedTuple):
     id: int
     val: _TokVal
 
+    def __repr__(self):
+        id_repr = _T(self.id).name
+        return f'Token(id=_T.{id_repr}, val={repr(self.val)})'
+
 class DT:
     """
     Represents a devicetree parsed from a .dts file (or from many files, if the
@@ -712,14 +731,15 @@ class DT:
     # Public interface
     #
 
-    def __init__(self, filename: str, include_path: Iterable[str] = (),
+    def __init__(self, filename: Optional[str], include_path: Iterable[str] = (),
                  force: bool = False):
         """
         Parses a DTS file to create a DT instance. Raises OSError if 'filename'
         can't be opened, and DTError for any parse errors.
 
         filename:
-          Path to the .dts file to parse.
+          Path to the .dts file to parse. (If None, an empty devicetree
+          is created; this is unlikely to be what you want.)
 
         include_path:
           An iterable (e.g. list or tuple) containing paths to search for
@@ -730,32 +750,23 @@ class DT:
           Try not to raise DTError even if the input tree has errors.
           For experimental use; results not guaranteed.
         """
-        self.filename = filename
-        self._include_path = list(include_path)
-        self._force = force
-
-        with open(filename, encoding="utf-8") as f:
-            self._file_contents = f.read()
-
-        self._tok_i = self._tok_end_i = 0
-        self._filestack: List[_FileStackElt] = []
-
-        self.alias2node: Dict[str, Node] = {}
-
-        self._lexer_state: int = _DEFAULT
-        self._saved_token: Optional[_Token] = None
-
-        self._lineno: int = 1
+        # Remember to update __deepcopy__() if you change this.
 
         self._root: Optional[Node] = None
+        self.alias2node: Dict[str, Node] = {}
+        self.label2node: Dict[str, Node] = {}
+        self.label2prop: Dict[str, Property] = {}
+        self.label2prop_offset: Dict[str, Tuple[Property, int]] = {}
+        self.phandle2node: Dict[int, Node] = {}
+        self.memreserves: List[Tuple[Set[str], int, int]] = []
+        self.filename = filename
 
-        self._parse_dt()
+        self._force = force
 
-        self._register_phandles()
-        self._fixup_props()
-        self._register_aliases()
-        self._remove_unreferenced()
-        self._register_labels()
+        if filename is not None:
+            self._parse_file(filename, include_path)
+        else:
+            self._include_path: List[str] = []
 
     @property
     def root(self) -> Node:
@@ -806,13 +817,60 @@ class DT:
 
     def has_node(self, path: str) -> bool:
         """
-        Returns True if the path or alias 'path' exists. See Node.get_node().
+        Returns True if the path or alias 'path' exists. See DT.get_node().
         """
         try:
             self.get_node(path)
             return True
         except DTError:
             return False
+
+    def move_node(self, node: Node, new_path: str):
+        """
+        Move a node 'node' to a new path 'new_path'. The entire subtree
+        rooted at 'node' is moved along with it.
+
+        You cannot move the root node or provide a 'new_path' value
+        where a node already exists. This method raises an exception
+        in both cases.
+
+        As a restriction on the current implementation, the parent node
+        of the new path must exist.
+        """
+        if node is self.root:
+            _err("the root node can't be moved")
+
+        if self.has_node(new_path):
+            _err(f"can't move '{node.path}' to '{new_path}': "
+                 'destination node exists')
+
+        if not new_path.startswith('/'):
+            _err(f"path '{new_path}' doesn't start with '/'")
+
+        for component in new_path.split('/'):
+            for char in component:
+                if char not in _nodename_chars:
+                    _err(f"new path '{new_path}': bad character '{char}'")
+
+        old_name = node.name
+        old_path = node.path
+
+        new_parent_path, _, new_name = new_path.rpartition('/')
+        if new_parent_path == '':
+            # '/foo'.rpartition('/') is ('', '/', 'foo').
+            new_parent_path = '/'
+        if not self.has_node(new_parent_path):
+            _err(f"can't move '{old_path}' to '{new_path}': "
+                 f"parent node '{new_parent_path}' doesn't exist")
+        new_parent = self.get_node(new_parent_path)
+        if TYPE_CHECKING:
+            assert new_parent is not None
+            assert node.parent is not None
+
+        del node.parent.nodes[old_name]
+        node._name = new_name
+        node.parent = new_parent
+        new_parent.nodes[new_name] = node
 
     def node_iter(self) -> Iterable[Node]:
         """
@@ -849,18 +907,174 @@ class DT:
         Returns some information about the DT instance. Called automatically if
         the DT instance is evaluated.
         """
-        return f"DT(filename='{self.filename}', " \
-            f"include_path={self._include_path})"
+        if self.filename:
+            return f"DT(filename='{self.filename}', " \
+                f"include_path={self._include_path})"
+        return super().__repr__()
+
+    def __deepcopy__(self, memo):
+        """
+        Implements support for the standard library copy.deepcopy()
+        function on DT instances.
+        """
+
+        # We need a new DT, obviously. Make a new, empty one.
+        ret = DT(None, (), self._force)
+
+        # Now allocate new Node objects for every node in self, to use
+        # in the new DT. Set their parents to None for now and leave
+        # them without any properties. We will recursively initialize
+        # copies of parents before copies of children next.
+        path2node_copy = {
+            node.path: Node(node.name, None, ret)
+            for node in self.node_iter()
+        }
+
+        # Point each copy of a node to the copy of its parent and set up
+        # copies of each property.
+        #
+        # Share data when possible. For example, Property.value has
+        # type 'bytes', which is immutable. We therefore don't need a
+        # copy and can just point to the original data.
+
+        for node in self.node_iter():
+            node_copy = path2node_copy[node.path]
+
+            parent = node.parent
+            if parent is not None:
+                node_copy.parent = path2node_copy[parent.path]
+
+            prop_name2prop_copy = {
+                prop.name: Property(node_copy, prop.name)
+                for prop in node.props.values()
+            }
+            for prop_name, prop_copy in prop_name2prop_copy.items():
+                prop = node.props[prop_name]
+                prop_copy.value = prop.value
+                prop_copy.labels = prop.labels[:]
+                prop_copy.offset_labels = prop.offset_labels.copy()
+                prop_copy._label_offset_lst = prop._label_offset_lst[:]
+                prop_copy._markers = [marker[:] for marker in prop._markers]
+            node_copy.props = prop_name2prop_copy
+
+            node_copy.nodes = {
+                child_name: path2node_copy[child_node.path]
+                for child_name, child_node in node.nodes.items()
+            }
+
+            node_copy.labels = node.labels[:]
+
+            node_copy._omit_if_no_ref = node._omit_if_no_ref
+            node_copy._is_referenced = node._is_referenced
+
+        # The copied nodes and properties are initialized, so
+        # we can finish initializing the copied DT object now.
+
+        ret._root = path2node_copy['/']
+
+        def copy_node_lookup_table(attr_name):
+            original = getattr(self, attr_name)
+            copy = {
+                key: path2node_copy[original[key].path]
+                for key in original
+            }
+            setattr(ret, attr_name, copy)
+
+        copy_node_lookup_table('alias2node')
+        copy_node_lookup_table('label2node')
+        copy_node_lookup_table('phandle2node')
+
+        ret_label2prop = {}
+        for label, prop in self.label2prop.items():
+            node_copy = path2node_copy[prop.node.path]
+            prop_copy = node_copy.props[prop.name]
+            ret_label2prop[label] = prop_copy
+        ret.label2prop = ret_label2prop
+
+        ret_label2prop_offset = {}
+        for label, prop_offset in self.label2prop_offset.items():
+            prop, offset = prop_offset
+            node_copy = path2node_copy[prop.node.path]
+            prop_copy = node_copy.props[prop.name]
+            ret_label2prop_offset[label] = (prop_copy, offset)
+        ret.label2prop_offset = ret_label2prop_offset
+
+        ret.memreserves = [
+            (set(memreserve[0]), memreserve[1], memreserve[2])
+            for memreserve in self.memreserves
+        ]
+
+        ret.filename = self.filename
+
+        return ret
 
     #
     # Parsing
     #
 
-    def _parse_dt(self):
-        # Top-level parsing loop
+    def _parse_file(self, filename: str, include_path: Iterable[str]):
+        self._include_path = list(include_path)
+
+        with open(filename, encoding="utf-8") as f:
+            self._file_contents = f.read()
+
+        self._tok_i = self._tok_end_i = 0
+        self._filestack: List[_FileStackElt] = []
+
+        self._lexer_state: int = _DEFAULT
+        self._saved_token: Optional[_Token] = None
+
+        self._lineno: int = 1
 
         self._parse_header()
         self._parse_memreserves()
+        self._parse_dt()
+
+        self._register_phandles()
+        self._fixup_props()
+        self._register_aliases()
+        self._remove_unreferenced()
+        self._register_labels()
+
+    def _parse_header(self):
+        # Parses /dts-v1/ (expected) and /plugin/ (unsupported) at the start of
+        # files. There may be multiple /dts-v1/ at the start of a file.
+
+        has_dts_v1 = False
+
+        while self._peek_token().id == _T.DTS_V1:
+            has_dts_v1 = True
+            self._next_token()
+            self._expect_token(";")
+            # /plugin/ always comes after /dts-v1/
+            if self._peek_token().id == _T.PLUGIN:
+                self._parse_error("/plugin/ is not supported")
+
+        if not has_dts_v1:
+            self._parse_error("expected '/dts-v1/;' at start of file")
+
+    def _parse_memreserves(self):
+        # Parses /memreserve/, which appears after /dts-v1/
+
+        while True:
+            # Labels before /memreserve/
+            labels = []
+            while self._peek_token().id == _T.LABEL:
+                _append_no_dup(labels, self._next_token().val)
+
+            if self._peek_token().id == _T.MEMRESERVE:
+                self._next_token()
+                self.memreserves.append(
+                    (labels, self._eval_prim(), self._eval_prim()))
+                self._expect_token(";")
+            elif labels:
+                self._parse_error("expected /memreserve/ after labels at "
+                                  "beginning of file")
+            else:
+                return
+
+    def _parse_dt(self):
+        # Top-level parsing loop
 
         while True:
             tok = self._next_token()
@@ -887,7 +1101,7 @@ class DT:
                     node = self._ref2node(tok.val)
                 except DTError as e:
                     self._parse_error(e)
-                node = self._parse_node(node)
+                self._parse_node(node)
 
                 if label:
                     _append_no_dup(node.labels, label)
@@ -908,47 +1122,12 @@ class DT:
             else:
                 self._parse_error("expected '/' or label reference (&foo)")
 
-    def _parse_header(self):
-        # Parses /dts-v1/ (expected) and /plugin/ (unsupported) at the start of
-        # files. There may be multiple /dts-v1/ at the start of a file.
-
-        has_dts_v1 = False
-
-        while self._peek_token().id == _T.DTS_V1:
-            has_dts_v1 = True
-            self._next_token()
-            self._expect_token(";")
-            # /plugin/ always comes after /dts-v1/
-            if self._peek_token().id == _T.PLUGIN:
-                self._parse_error("/plugin/ is not supported")
-
-        if not has_dts_v1:
-            self._parse_error("expected '/dts-v1/;' at start of file")
-
-    def _parse_memreserves(self):
-        # Parses /memreserve/, which appears after /dts-v1/
-
-        self.memreserves = []
-        while True:
-            # Labels before /memreserve/
-            labels = []
-            while self._peek_token().id == _T.LABEL:
-                _append_no_dup(labels, self._next_token().val)
-
-            if self._peek_token().id == _T.MEMRESERVE:
-                self._next_token()
-                self.memreserves.append(
-                    (labels, self._eval_prim(), self._eval_prim()))
-                self._expect_token(";")
-            elif labels:
-                self._parse_error("expected /memreserve/ after labels at "
-                                  "beginning of file")
-            else:
-                return
-
     def _parse_node(self, node):
-        # Parses the '{ ... };' part of 'node-name { ... };'. Returns the new
-        # Node.
+        # Parses the '{ ... };' part of 'node-name { ... };'.
+
+        # We need to track which child nodes were defined in this set
+        # of curly braces in order to reject duplicate node names.
+        current_child_names = set()
 
         self._expect_token("{")
         while True:
@@ -961,8 +1140,13 @@ class DT:
 
                     # Fetch the existing node if it already exists. This
                     # happens when overriding nodes.
-                    child = node.nodes.get(tok.val) or \
-                        Node(name=tok.val, parent=node, dt=self)
+                    child = node.nodes.get(tok.val)
+                    if child:
+                        if child.name in current_child_names:
+                            self._parse_error(f'{child.path}: duplicate node name')
+                    else:
+                        child = Node(name=tok.val, parent=node, dt=self)
+                        current_child_names.add(tok.val)
 
                     for label in labels:
                         _append_no_dup(child.labels, label)
@@ -1008,7 +1192,7 @@ class DT:
 
             elif tok.val == "}":
                 self._expect_token(";")
-                return node
+                return
 
             else:
                 self._parse_error("expected node name, property name, or '}'")
@@ -1567,7 +1751,6 @@ class DT:
         # that set. Also checks the format of the phandles and does misc.
         # sanity checking.
 
-        self.phandle2node = {}
         for node in self.node_iter():
             phandle = node.props.get("phandle")
             if phandle:
@@ -1708,10 +1891,6 @@ class DT:
         # label2prop, and label2prop_offset
 
         label2things = collections.defaultdict(set)
-
-        self.label2node = {}
-        self.label2prop = {}
-        self.label2prop_offset = {}
 
         # Register all labels and the nodes/props they point to in label2things
         for node in self.node_iter():
@@ -1856,7 +2035,7 @@ def to_nums(data: bytes, length: int = 4, signed: bool = False) -> List[int]:
             for i in range(0, len(data), length)]
 
 #
-# Public constants
+# Private helpers
 #
 
 def _check_is_bytes(data):
@@ -1958,9 +2137,9 @@ def _init_tokens():
     # _Token.val is based on the captured string.
     token_spec = {
         _T.INCLUDE: r'(/include/\s*"(?:[^\\"]|\\.)*")',
-        # #line directive
+        # #line directive or GCC linemarker
         _T.LINE:
-        r'^#(?:line)?[ \t]+([0-9]+[ \t]+"(?:[^\\"]|\\.)*")(?:[ \t]+[0-9]+)?',
+        r'^#(?:line)?[ \t]+([0-9]+[ \t]+"(?:[^\\"]|\\.)*")(?:[ \t]+[0-9]+){0,4}',
 
         _T.STRING: r'"((?:[^\\"]|\\.)*)"',
         _T.DTS_V1: r"(/dts-v1/)",

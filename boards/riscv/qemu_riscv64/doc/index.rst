@@ -8,19 +8,12 @@ Overview
 
 The RISCV64 QEMU board configuration is used to emulate the RISCV64 architecture.
 
-.. figure:: qemu_riscv64.png
-   :width: 600px
-   :align: center
-   :alt: QEMU
-
-   QEMU (Credit: qemu.org)
-
 Get the Toolchain and QEMU
 **************************
 
 The minimum version of the `Zephyr SDK tools
 <https://github.com/zephyrproject-rtos/sdk-ng/releases>`_
-with toolchain and QEMU support for the RISV64 architecture is v0.10.2.
+with toolchain and QEMU support for the RISCV64 architecture is v0.10.2.
 Please see the :ref:`installation instructions <install-required-tools>`
 for more details.
 
@@ -36,7 +29,7 @@ Flashing
 
 While this board is emulated and you can't "flash" it, you can use this
 configuration to run basic Zephyr applications and kernel tests in the QEMU
-emulated environment. For example, with the :ref:`synchronization_sample`:
+emulated environment. For example, with the :zephyr:code-sample:`synchronization` sample:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/synchronization

@@ -8,6 +8,7 @@
 #include <st/f4/stm32f401Xe.dtsi>
 #include <st/f4/stm32f401r(d-e)tx-pinctrl.dtsi>
 #include "96b_lscon.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "Seeed Studio Carbon 96boards";
@@ -32,7 +33,7 @@
 			label = "USR2 LED";
 		};
 		bt_blue_led: led_3 {
-			gpios = <&gpioa 15 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
 			label = "BT LED";
 		};
 	};
@@ -42,6 +43,7 @@
 		user_button: button {
 			label = "User";
 			gpios = <&gpiob 2 GPIO_ACTIVE_LOW>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
 
@@ -51,6 +53,10 @@
 		led2 = &bt_blue_led;
 		sw0 = &user_button;
 	};
+};
+
+&clk_lsi {
+	status = "okay";
 };
 
 &clk_hse {
@@ -77,30 +83,35 @@
 
 &usart1 {
 	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "okay";
 };
 
 &usart2 {
 	pinctrl-0 = <&usart2_tx_pa2 &usart2_rx_pa3>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "okay";
 };
 
 &usart6 {
 	pinctrl-0 = <&usart6_tx_pc6 &usart6_rx_pc7>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "okay";
 };
 
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
+	pinctrl-names = "default";
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pb3>;
+	pinctrl-names = "default";
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -110,6 +121,7 @@
 
 	pinctrl-0 = <&spi1_miso_pa6 &spi1_mosi_pa7
 		     &spi1_sck_pa5 &spi1_nss_pa4>;
+	pinctrl-names = "default";
 
 	/* Nordic nRF51822-QFAC */
 	bt-hci@0 {
@@ -118,18 +130,19 @@
 		reset-gpios = <&gpiob 4 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		irq-gpios = <&gpiob 1 GPIO_ACTIVE_HIGH>;
 		spi-max-frequency = <2000000>;
-		label = "BT_HCI";
 	};
 };
 
 &spi2 {
 	pinctrl-0 = <&spi2_nss_pb12 &spi2_sck_pb13
 		     &spi2_miso_pb14 &spi2_mosi_pb15>;
+	pinctrl-names = "default";
 	status = "okay";
 };
 
 zephyr_udc0: &usbotg_fs {
 	pinctrl-0 = <&usb_otg_fs_dm_pa11 &usb_otg_fs_dp_pa12>;
+	pinctrl-names = "default";
 	status = "okay";
 };
 
@@ -142,7 +155,7 @@ zephyr_udc0: &usbotg_fs {
 
 		boot_partition: partition@0 {
 			label = "mcuboot";
-			reg = <0x00000000 0x00008000>;
+			reg = <0x00000000 DT_SIZE_K(32)>;
 			read-only;
 		};
 
@@ -154,19 +167,21 @@ zephyr_udc0: &usbotg_fs {
 
 		slot0_partition: partition@20000 {
 			label = "image-0";
-			reg = <0x00020000 0x00020000>;
+			reg = <0x00020000 DT_SIZE_K(128)>;
 		};
 		slot1_partition: partition@40000 {
 			label = "image-1";
-			reg = <0x00040000 0x00020000>;
+			reg = <0x00040000 DT_SIZE_K(128)>;
 		};
 		scratch_partition: partition@60000 {
 			label = "image-scratch";
-			reg = <0x00060000 0x00020000>;
+			reg = <0x00060000 DT_SIZE_K(128)>;
 		};
 	};
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };

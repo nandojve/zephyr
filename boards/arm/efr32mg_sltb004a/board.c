@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
-#include <drivers/gpio.h>
-#include <sys/printk.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/printk.h>
 
 struct supply_cfg {
 	const struct device *gpio;
@@ -28,12 +28,11 @@ static int enable_supply(const struct supply_cfg *cfg)
 	return rv;
 }
 
-static int efr32mg_sltb004a_init(const struct device *dev)
+static int efr32mg_sltb004a_init(void)
 {
 	struct supply_cfg cfg;
 	int rc = 0;
 
-	ARG_UNUSED(dev);
 	(void)cfg;
 
 #define CCS811 DT_NODELABEL(ccs811)

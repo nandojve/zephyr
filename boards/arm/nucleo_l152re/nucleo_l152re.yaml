@@ -10,8 +10,10 @@ flash: 512
 supported:
   - arduino_gpio
   - arduino_i2c
+  - arduino_spi
   - eeprom
   - gpio
+  - spi
   - i2c
   - uart
   - watchdog
@@ -20,3 +22,5 @@ supported:
   - dac
   - pwm
   - dma
+  - nvs
+vendor: st

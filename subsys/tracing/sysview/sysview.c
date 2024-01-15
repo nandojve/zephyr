@@ -3,9 +3,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <kernel_structs.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/init.h>
 #include <ksched.h>
 
 #include <SEGGER_SYSVIEW.h>
@@ -65,9 +65,8 @@ void sys_trace_idle(void)
 	SEGGER_SYSVIEW_OnIdle();
 }
 
-static int sysview_init(const struct device *arg)
+static int sysview_init(void)
 {
-	ARG_UNUSED(arg);
 
 	SEGGER_SYSVIEW_Conf();
 	if (IS_ENABLED(CONFIG_SEGGER_SYSTEMVIEW_BOOT_ENABLE)) {

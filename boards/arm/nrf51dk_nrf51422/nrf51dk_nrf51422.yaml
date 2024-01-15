@@ -7,6 +7,7 @@ toolchain:
   - gnuarmemb
   - xtools
 ram: 32
+flash: 256
 supported:
   - adc
   - ble
@@ -20,3 +21,4 @@ supported:
 testing:
   ignore_tags:
     - net
+vendor: nordic

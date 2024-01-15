@@ -5,36 +5,31 @@ description: STM32 OTGFS controller
 
 compatible: "st,stm32-otgfs"
 
-include: usb-ep.yaml
+include: [usb-ep.yaml, pinctrl-device.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
 
-    ram-size:
-      type: int
-      required: true
-      description: |
-        Size of USB dedicated RAM. STM32 SOC's reference
-        manual defines a shared FIFO size.
+  pinctrl-0:
+    required: true
 
-    phys:
-      type: phandle
-      required: false
-      description: PHY provider specifier
+  pinctrl-names:
+    required: true
 
-    clocks:
-      required: true
+  ram-size:
+    type: int
+    required: true
+    description: |
+      Size of USB dedicated RAM. STM32 SOC's reference
+      manual defines a shared FIFO size.
 
-    pinctrl-0:
-      type: phandles
-      required: false
-      description: |
-        Pin configuration for USB OTG FS signals (DM/DP/SOF/ID/VBUS).
-        We expect that the phandles will reference pinctrl nodes.
+  phys:
+    type: phandle
+    description: PHY provider specifier
 
-        For example:
-           <&usb_otg_fs_dm_pa11 &usb_otg_fs_dp_pa12>;
+  clocks:
+    required: true

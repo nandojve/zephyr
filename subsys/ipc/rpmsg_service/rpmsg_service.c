@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ipc/rpmsg_service.h>
+#include <zephyr/ipc/rpmsg_service.h>
 
 #include "rpmsg_backend.h"
 
-#include <zephyr.h>
-#include <device.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
+#include <zephyr/logging/log.h>
 
 #include <openamp/open_amp.h>
 
@@ -61,7 +61,7 @@ static void ns_bind_cb(struct rpmsg_device *rdev,
 
 			if (err != 0) {
 				LOG_ERR("Creating remote endpoint %s"
-					" failed wirh error %d", log_strdup(name), err);
+					" failed wirh error %d", name, err);
 			} else {
 				endpoints[i].bound = true;
 			}
@@ -70,16 +70,14 @@ static void ns_bind_cb(struct rpmsg_device *rdev,
 		}
 	}
 
-	LOG_ERR("Remote endpoint %s not registered locally", log_strdup(name));
+	LOG_ERR("Remote endpoint %s not registered locally", name);
 }
 
 #endif
 
-static int rpmsg_service_init(const struct device *dev)
+static int rpmsg_service_init(void)
 {
 	int32_t err;
-
-	(void)dev;
 
 	LOG_DBG("RPMsg service initialization start");
 
@@ -146,7 +144,7 @@ int rpmsg_service_register_endpoint(const char *name, rpmsg_ept_cb cb)
 		}
 	}
 
-	LOG_ERR("No free slots to register endpoint %s", log_strdup(name));
+	LOG_ERR("No free slots to register endpoint %s", name);
 
 	return -ENOMEM;
 }

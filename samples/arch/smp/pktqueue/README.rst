@@ -47,7 +47,7 @@ time can access to sender or receiver queue.
 As soon as all headers in each pair of queues are moved from "sender" to
 "receiver" queue the execution of threads(related to pair) are terminated.
 
-By changing the value of CONFIG_MP_NUM_CPUS on SMP systems, you
+By changing the value of CONFIG_MP_MAX_NUM_CPUS on SMP systems, you
 can see that using more cores takes almost linearly less time
 to complete the computational task.
 
@@ -64,7 +64,7 @@ This project outputs total time required for processing all packet headers.
 It can be built and executed on QEMU as follows:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/smp_pktqueue
+   :zephyr-app: samples/arch/smp/pktqueue
    :host-os: unix
    :board: qemu_x86_64
    :goals: run

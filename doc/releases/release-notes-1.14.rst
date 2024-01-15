@@ -858,11 +858,11 @@ Networking
 * Added support for SOCKS5 proxy in MQTT client.
 * Added support for IPSO Timer object in LWM2M.
 * Added support for receiving gratuitous ARP request.
-* Added :ref:`sample application <google-iot-mqtt-sample>` for Google IoT Cloud.
+* Added sample application for Google IoT Cloud.
 * :ref:`Network interface <net_if_interface>` numbering starts now from 1 for
   POSIX compatibility.
 * :ref:`OpenThread <thread_protocol_interface>` enhancements.
-* :ref:`zperf <zperf-sample>` sample application fixes.
+* :zephyr:code-sample:`zperf <zperf>` sample application fixes.
 * :ref:`LLDP <lldp_interface>` (Link Layer Discovery Protocol) enhancements.
 * ARP cache update fix.
 * gPTP link delay calculation fixes.
@@ -899,7 +899,7 @@ Bluetooth
 * New BLE split software Controller (experimental):
 
   - Split design with Upper Link Layer and Lower Link Layer
-  - Enabled with :kconfig:`CONFIG_BT_LL_SW_SPLIT` (disabled by default)
+  - Enabled with :kconfig:option:`CONFIG_BT_LL_SW_SPLIT` (disabled by default)
   - Support for multiple BLE radio hardware architectures
   - Asynchronous handling of procedures in the ULL
   - Enhanced radio utilization (99% on continuous 100ms scan)
@@ -969,7 +969,7 @@ Libraries / Subsystems
   - Removed sys_log, which has been replaced by the new logging subsystem
     introduced in v1.13
   - Refactored log modules registration macros
-  - Improved synchronous operation (see :kconfig:`CONFIG_LOG_IMMEDIATE`)
+  - Improved synchronous operation (see ``CONFIG_LOG_IMMEDIATE``)
   - Added commands to control the logger using shell
   - Added :c:macro:`LOG_PANIC()` call to the fault handlers to ensure that
     logs are output on fault

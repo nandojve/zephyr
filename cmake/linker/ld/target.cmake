@@ -1,21 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
-set_property(TARGET linker PROPERTY devices_start_symbol "__device_start")
+set_property(TARGET linker PROPERTY devices_start_symbol "_device_list_start")
 
-if(DEFINED TOOLCHAIN_HOME)
-  # When Toolchain home is defined, then we are cross-compiling, so only look
-  # for linker in that path, else we are using host tools.
-  set(LD_SEARCH_PATH PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
-endif()
-
-find_program(CMAKE_LINKER ${CROSS_COMPILE}ld.bfd ${LD_SEARCH_PATH})
-if(NOT CMAKE_LINKER)
-  find_program(CMAKE_LINKER ${CROSS_COMPILE}ld ${LD_SEARCH_PATH})
-endif()
+find_package(GnuLd REQUIRED)
+set(CMAKE_LINKER ${GNULD_LINKER})
 
 set_ifndef(LINKERFLAGPREFIX -Wl)
 
 if(NOT "${ZEPHYR_TOOLCHAIN_VARIANT}" STREQUAL "host")
-  if(CONFIG_EXCEPTIONS)
+  if(CONFIG_CPP_EXCEPTIONS AND LIBGCC_DIR)
     # When building with C++ Exceptions, it is important that crtbegin and crtend
     # are linked at specific locations.
     # The location is so important that we cannot let this be controlled by normal
@@ -32,16 +24,10 @@ macro(configure_linker_script linker_script_gen linker_pass_define)
   set(extra_dependencies ${ARGN})
 
   if(CONFIG_CMAKE_LINKER_GENERATOR)
-    if("${linker_pass_define}" STREQUAL "-DLINKER_ZEPHYR_PREBUILT")
-      set(PASS 1)
-    elseif("${linker_pass_define}" STREQUAL "-DLINKER_ZEPHYR_FINAL")
-      set(PASS 2)
-    endif()
-
     add_custom_command(
       OUTPUT ${linker_script_gen}
       COMMAND ${CMAKE_COMMAND}
-        -DPASS=${PASS}
+        -DPASS="${linker_pass_define}"
         -DFORMAT="$<TARGET_PROPERTY:linker,FORMAT>"
         -DENTRY="$<TARGET_PROPERTY:linker,ENTRY>"
         -DMEMORY_REGIONS="$<TARGET_PROPERTY:linker,MEMORY_REGIONS>"
@@ -53,13 +39,13 @@ macro(configure_linker_script linker_script_gen linker_pass_define)
         -P ${ZEPHYR_BASE}/cmake/linker/ld/ld_script.cmake
       )
   else()
-    # Different generators deal with depfiles differently.
-    if(CMAKE_GENERATOR STREQUAL "Unix Makefiles")
-      # Note that the IMPLICIT_DEPENDS option is currently supported only
-      # for Makefile generators and will be ignored by other generators.
-      set(linker_script_dep IMPLICIT_DEPENDS C ${LINKER_SCRIPT})
-    elseif(CMAKE_GENERATOR STREQUAL "Ninja")
-      # Using DEPFILE with other generators than Ninja is an error.
+    set(template_script_defines ${linker_pass_define})
+    list(TRANSFORM template_script_defines PREPEND "-D")
+
+    # Only Ninja and Makefile generators support DEPFILE.
+    if((CMAKE_GENERATOR STREQUAL "Ninja")
+       OR (CMAKE_GENERATOR MATCHES "Makefiles")
+    )
       set(linker_script_dep DEPFILE ${PROJECT_BINARY_DIR}/${linker_script_gen}.dep)
     else()
       # TODO: How would the linker script dependencies work for non-linker
@@ -70,8 +56,11 @@ macro(configure_linker_script linker_script_gen linker_pass_define)
     endif()
 
     zephyr_get_include_directories_for_lang(C current_includes)
-    get_filename_component(base_name ${CMAKE_CURRENT_BINARY_DIR} NAME)
     get_property(current_defines GLOBAL PROPERTY PROPERTY_LINKER_SCRIPT_DEFINES)
+    if(DEFINED SOC_LINKER_SCRIPT)
+      cmake_path(GET SOC_LINKER_SCRIPT PARENT_PATH soc_linker_script_includes)
+      set(soc_linker_script_includes -I${soc_linker_script_includes})
+    endif()
 
     add_custom_command(
       OUTPUT ${linker_script_gen}
@@ -84,13 +73,14 @@ macro(configure_linker_script linker_script_gen linker_pass_define)
       COMMAND ${CMAKE_C_COMPILER}
       -x assembler-with-cpp
       ${NOSYSDEF_CFLAG}
-      -MD -MF ${linker_script_gen}.dep -MT ${base_name}/${linker_script_gen}
+      -MD -MF ${linker_script_gen}.dep -MT ${linker_script_gen}
       -D_LINKER
       -D_ASMLANGUAGE
       -imacros ${AUTOCONF_H}
       ${current_includes}
+      ${soc_linker_script_includes}
       ${current_defines}
-      ${linker_pass_define}
+      ${template_script_defines}
       -E ${LINKER_SCRIPT}
       -P # Prevent generation of debug `#line' directives.
       -o ${linker_script_gen}
@@ -128,7 +118,8 @@ function(toolchain_ld_link_elf)
     ${ARGN}                                                   # input args to parse
   )
 
-  if(${CMAKE_LINKER} STREQUAL "${CROSS_COMPILE}ld.bfd")
+  if((${CMAKE_LINKER} STREQUAL "${CROSS_COMPILE}ld.bfd") OR
+     ${GNULD_LINKER_IS_BFD})
     # ld.bfd was found so let's explicitly use that for linking, see #32237
     set(use_linker "-fuse-ld=bfd")
   endif()

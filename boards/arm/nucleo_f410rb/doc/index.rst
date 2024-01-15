@@ -25,10 +25,8 @@ some highlights of the Nucleo F410RB board:
 - Three LEDs: USB communication (LD1), user LED (LD2), power LED (LD3)
 - Two push-buttons: USER and RESET
 
-.. image:: img/nucleo_f410rb.png
-   :width: 720px
+.. image:: img/nucleo_f410rb.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo F410RB
 
 More information about the board can be found at the `Nucleo F410RB website`_.
@@ -109,25 +107,17 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_f410rb_arduino_top_left.png
-   :width: 720px
+.. image:: img/nucleo_f410rb_arduino_top_left.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F410RB Arduino connectors (top left)
-.. image:: img/nucleo_f410rb_arduino_top_right.png
-   :width: 720px
+.. image:: img/nucleo_f410rb_arduino_top_right.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F410RB Arduino connectors (top right)
-.. image:: img/nucleo_f410rb_morpho_top_left.png
-   :width: 720px
+.. image:: img/nucleo_f410rb_morpho_top_left.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F410RB Morpho connectors (top left)
-.. image:: img/nucleo_f410rb_morpho_top_right.png
-   :width: 720px
+.. image:: img/nucleo_f410rb_morpho_top_right.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F410RB Morpho connectors (top right)
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.
@@ -210,13 +200,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _Nucleo F410RB website:
-   http://www.st.com/en/evaluation-tools/nucleo-F410RB.html
+   https://www.st.com/en/evaluation-tools/nucleo-F410RB.html
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf
 
 .. _STM32F410RB on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f410rb.html
+   https://www.st.com/en/microcontrollers/stm32f410rb.html
 
 .. _STM32F410 reference manual:
    https://www.st.com/resource/en/reference_manual/dm00180366.pdf

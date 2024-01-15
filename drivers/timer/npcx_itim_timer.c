@@ -34,13 +34,16 @@
  *   "sleep/deep sleep" power state if CONFIG_PM is enabled.
  */
 
-#include <drivers/clock_control.h>
-#include <drivers/timer/system_timer.h>
-#include <sys_clock.h>
-#include <spinlock.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/spinlock.h>
 #include <soc.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(itim, LOG_LEVEL_ERR);
 
 #define NPCX_ITIM32_MAX_CNT 0xffffffff
@@ -50,11 +53,12 @@ LOG_MODULE_REGISTER(itim, LOG_LEVEL_ERR);
 					/ CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 #define SYS_CYCLES_PER_USEC (sys_clock_hw_cycles_per_sec() / 1000000)
 #define EVT_CYCLES_FROM_TICKS(ticks) \
-	ceiling_fraction(ticks * EVT_CYCLES_PER_SEC, \
+	DIV_ROUND_UP(ticks * EVT_CYCLES_PER_SEC, \
 			 CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 #define NPCX_ITIM_CLK_SEL_DELAY 92 /* Delay for clock selection (Unit:us) */
 /* Timeout for enabling ITIM module: 100us (Unit:cycles) */
 #define NPCX_ITIM_EN_TIMEOUT_CYCLES (100 * SYS_CYCLES_PER_USEC)
+#define SYS_CYC_PER_EVT_CYC         (sys_clock_hw_cycles_per_sec() / EVT_CYCLES_PER_SEC)
 
 /* Instance of system and event timers */
 static struct itim64_reg *const sys_tmr = (struct itim64_reg *)
@@ -67,6 +71,9 @@ static const struct npcx_clk_cfg itim_clk_cfg[] = NPCX_DT_CLK_CFG_ITEMS_LIST(0);
 static struct k_spinlock lock;
 /* Announced cycles in system timer before executing sys_clock_announce() */
 static uint64_t cyc_sys_announced;
+static uint64_t last_ticks;
+static uint32_t last_elapsed;
+
 /* Current target cycles of time-out signal in event timer */
 static uint32_t cyc_evt_timeout;
 /* Total cycles of system timer stopped in "sleep/deep sleep" mode */
@@ -133,18 +140,33 @@ static inline void npcx_itim_evt_disable(void)
 /* ITIM local functions */
 static int npcx_itim_start_evt_tmr_by_tick(int32_t ticks)
 {
+	k_spinlock_key_t key = k_spin_lock(&lock);
+
 	/*
 	 * Get desired cycles of event timer from the requested ticks which
 	 * round up to next tick boundary.
 	 */
+
 	if (ticks == K_TICKS_FOREVER) {
 		cyc_evt_timeout = NPCX_ITIM32_MAX_CNT;
 	} else {
+		uint64_t next_cycs;
+		uint64_t curr = npcx_itim_get_sys_cyc64();
+		uint32_t dcycles;
+
 		if (ticks <= 0) {
 			ticks = 1;
 		}
-		cyc_evt_timeout = MIN(EVT_CYCLES_FROM_TICKS(ticks),
-				      NPCX_ITIM32_MAX_CNT);
+
+		next_cycs = (last_ticks + last_elapsed + ticks) * SYS_CYCLES_PER_TICK;
+		if (unlikely(next_cycs <= curr)) {
+			cyc_evt_timeout = 1;
+		} else {
+			dcycles = next_cycs - curr;
+			cyc_evt_timeout =
+				CLAMP((dcycles / SYS_CYC_PER_EVT_CYC), 1, NPCX_ITIM32_MAX_CNT);
+		}
+
 	}
 	LOG_DBG("ticks %x, cyc_evt_timeout %x", ticks, cyc_evt_timeout);
 
@@ -156,9 +178,9 @@ static int npcx_itim_start_evt_tmr_by_tick(int32_t ticks)
 	/* Upload counter of event timer */
 	evt_tmr->ITCNT32 = MAX(cyc_evt_timeout - 1, 1);
 
+	k_spin_unlock(&lock, key);
 	/* Enable event timer and start ticking */
 	return npcx_itim_evt_enable();
-
 }
 
 static void npcx_itim_evt_isr(const struct device *dev)
@@ -172,11 +194,12 @@ static void npcx_itim_evt_isr(const struct device *dev)
 
 	if (IS_ENABLED(CONFIG_TICKLESS_KERNEL)) {
 		k_spinlock_key_t key = k_spin_lock(&lock);
-		uint32_t delta_ticks = (uint32_t)((npcx_itim_get_sys_cyc64() -
-				cyc_sys_announced) / SYS_CYCLES_PER_TICK);
+		uint64_t curr = npcx_itim_get_sys_cyc64();
+		uint32_t delta_ticks = (uint32_t)((curr - cyc_sys_announced) / SYS_CYCLES_PER_TICK);
 
-		/* Store announced cycles of system timer */
-		cyc_sys_announced = npcx_itim_get_sys_cyc64();
+		cyc_sys_announced += delta_ticks * SYS_CYCLES_PER_TICK;
+		last_ticks += delta_ticks;
+		last_elapsed = 0;
 		k_spin_unlock(&lock, key);
 
 		/* Informs kernel that specified number of ticks have elapsed */
@@ -248,12 +271,14 @@ uint32_t sys_clock_elapsed(void)
 	}
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
-	uint64_t current = npcx_itim_get_sys_cyc64();
+	uint64_t delta_cycle = npcx_itim_get_sys_cyc64() - cyc_sys_announced;
+	uint32_t delta_ticks = (uint32_t)delta_cycle / SYS_CYCLES_PER_TICK;
 
+	last_elapsed = delta_ticks;
 	k_spin_unlock(&lock, key);
 
 	/* Return how many ticks elapsed since last sys_clock_announce() call */
-	return (uint32_t)((current - cyc_sys_announced) / SYS_CYCLES_PER_TICK);
+	return delta_ticks;
 }
 
 uint32_t sys_clock_cycle_get_32(void)
@@ -267,16 +292,53 @@ uint32_t sys_clock_cycle_get_32(void)
 	return (uint32_t)(current);
 }
 
-int sys_clock_driver_init(const struct device *dev)
+uint64_t sys_clock_cycle_get_64(void)
 {
-	ARG_UNUSED(dev);
+	k_spinlock_key_t key = k_spin_lock(&lock);
+	uint64_t current = npcx_itim_get_sys_cyc64();
+
+	k_spin_unlock(&lock, key);
+
+	/* Return how many cycles since system kernel timer start counting */
+	return current;
+}
+
+/* Platform specific system timer functions */
+#if defined(CONFIG_PM)
+void npcx_clock_capture_low_freq_timer(void)
+{
+	cyc_evt_enter_deep_idle = npcx_itim_evt_elapsed_cyc32();
+}
+
+void npcx_clock_compensate_system_timer(void)
+{
+	uint32_t cyc_evt_elapsed_in_deep = npcx_itim_evt_elapsed_cyc32() -
+							cyc_evt_enter_deep_idle;
+
+	cyc_sys_compensated += ((uint64_t)cyc_evt_elapsed_in_deep *
+			sys_clock_hw_cycles_per_sec()) / EVT_CYCLES_PER_SEC;
+}
+
+uint64_t npcx_clock_get_sleep_ticks(void)
+{
+	return  cyc_sys_compensated / SYS_CYCLES_PER_TICK;
+}
+#endif /* CONFIG_PM */
+
+static int sys_clock_driver_init(void)
+{
 	int ret;
 	uint32_t sys_tmr_rate;
 	const struct device *const clk_dev = DEVICE_DT_GET(NPCX_CLK_CTRL_NODE);
 
+	if (!device_is_ready(clk_dev)) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
+	}
+
 	/* Turn on all itim module clocks used for counting */
 	for (int i = 0; i < ARRAY_SIZE(itim_clk_cfg); i++) {
-		ret = clock_control_on(clk_dev, (clock_control_subsys_t *)
+		ret = clock_control_on(clk_dev, (clock_control_subsys_t)
 				&itim_clk_cfg[i]);
 		if (ret < 0) {
 			LOG_ERR("Turn on timer %d clock failed.", i);
@@ -288,7 +350,7 @@ int sys_clock_driver_init(const struct device *dev)
 	 * In npcx series, we use ITIM64 as system kernel timer. Its source
 	 * clock frequency must equal to CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC.
 	 */
-	ret = clock_control_get_rate(clk_dev, (clock_control_subsys_t *)
+	ret = clock_control_get_rate(clk_dev, (clock_control_subsys_t)
 			&itim_clk_cfg[1], &sys_tmr_rate);
 	if (ret < 0) {
 		LOG_ERR("Get ITIM64 clock rate failed %d", ret);
@@ -348,27 +410,5 @@ int sys_clock_driver_init(const struct device *dev)
 
 	return 0;
 }
-
-/* Platform specific systme timer functions */
-#if defined(CONFIG_PM)
-void npcx_clock_capture_low_freq_timer(void)
-{
-	cyc_evt_enter_deep_idle = npcx_itim_evt_elapsed_cyc32();
-}
-
-void npcx_clock_compensate_system_timer(void)
-{
-	uint32_t cyc_evt_elapsed_in_deep = npcx_itim_evt_elapsed_cyc32() -
-							cyc_evt_enter_deep_idle;
-
-	cyc_sys_compensated += ((uint64_t)cyc_evt_elapsed_in_deep *
-			sys_clock_hw_cycles_per_sec()) / EVT_CYCLES_PER_SEC;
-}
-
-#if defined(CONFIG_SOC_POWER_MANAGEMENT_TRACE)
-uint64_t npcx_clock_get_sleep_ticks(void)
-{
-	return  cyc_sys_compensated / SYS_CYCLES_PER_TICK;
-}
-#endif /* CONFIG_SOC_POWER_MANAGEMENT_TRACE */
-#endif /* CONFIG_PM */
+SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2,
+	 CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);

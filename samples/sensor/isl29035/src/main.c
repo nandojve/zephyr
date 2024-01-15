@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #define LUX_ALERT_DELTA 50
 
@@ -100,13 +100,13 @@ static void process_sample(const struct device *dev)
 	       sensor_value_to_double(&val));
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = device_get_binding("ISL29035");
+	const struct device *const dev = DEVICE_DT_GET_ONE(isil_isl29035);
 
-	if (dev == NULL) {
-		printf("Could not get ISL29035 device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	k_sem_init(&sem, 0, 1);
@@ -120,4 +120,5 @@ void main(void)
 			k_sleep(K_SECONDS(1));
 		}
 	}
+	return 0;
 }

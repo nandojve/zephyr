@@ -7,3 +7,5 @@ zephyr_include_directories(.)
 zephyr_sources(soc.c)
 
 zephyr_linker_sources_ifdef(CONFIG_SOC_FAMILY_BFLB RODATA rodata.ld)
+
+set(SOC_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld CACHE INTERNAL "")

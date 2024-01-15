@@ -13,11 +13,10 @@ and safety capability can be assured without influence from other
 VMs. The following figure from ACRN's official documentation shows
 how a hybrid scenario works:
 
-.. figure:: ACRN-Hybrid.png
+.. figure:: ACRN-Hybrid.jpg
     :align: center
     :alt: ACRN Hybrid User Scenario
     :figclass: align-center
-    :width: 80%
 
     ACRN Hybrid User Scenario
 
@@ -38,7 +37,7 @@ normally would, selecting an appropriate board:
         west build -b acrn_ehl_crb samples/hello_world
 
 In this tutorial, we will use the Intel Elkhart Lake Reference Board
-(`EHL`_ CRB) since it is one of the suggested platform for this
+(`EHL`_ CRB) since it is one of the suggested platforms for this
 type of scenario. Use ``acrn_ehl_crb`` as the target board parameter.
 
 Note the kconfig output in ``build/zephyr/.config``, you will need to
@@ -66,7 +65,7 @@ configuration files instead of small easily-merged configuration
 elements like kconfig defconfig files or devicetree includes.  You
 have to edit a big XML file to match your Zephyr configuration.
 Choose an ACRN host config that matches your hardware ("ehl-crb-b" in
-this case).  Then find the relavent file in
+this case).  Then find the relevant file in
 ``misc/config_tools/data/<platform>/hybrid.xml``.
 
 First, find the list of ``<vm>`` declarations.  Each has an ``id=``
@@ -126,7 +125,7 @@ Configure Zephyr CPUs
 Now you need to configure the CPU environment ACRN presents to the
 guest.  By default Zephyr builds in SMP mode, but ACRN's default
 configuration gives it only one CPU.  Find the value of
-``CONFIG_MP_NUM_CPUS`` in the Zephyr .config file give the guest that
+``CONFIG_MP_MAX_NUM_CPUS`` in the Zephyr .config file give the guest that
 many CPUs in the ``<cpu_affinity>`` tag.  For example:
 
     .. code-block:: xml
@@ -155,7 +154,7 @@ and Zephyr application will not boot successfully without this change.
 If you plan to run Zephyr with one CPU only, you can skip it.
 
 Since Zephyr is using CPU0 and CPU1, we also have to change
-VM1's configuration so it runs on CPU2 and CPU3. If your ACRN set up has
+VM1's configuration so it runs on CPU2 and CPU3. If your ACRN setup has
 additional VMs, you should change their configurations as well.
 
     .. code-block:: xml

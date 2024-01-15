@@ -8,43 +8,51 @@ on:
     paths:
       - 'VERSION'
       - '.github/workflows/footprint-tracking.yml'
+    branches:
+      - main
+      - v*-branch
     tags:
       # only publish v* tags, do not care about zephyr-v* which point to the
       # same commit
       - 'v*'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  footprint-tracking-cancel:
-    runs-on: ubuntu-latest
-    if: github.repository == 'zephyrproject-rtos/zephyr'
-    steps:
-      - name: Cancel Previous Runs
-        uses: styfle/cancel-workflow-action@0.6.0
-        with:
-          access_token: ${{ github.token }}
   footprint-tracking:
-    runs-on: ubuntu-latest
-    if: github.repository == 'zephyrproject-rtos/zephyr'
-    needs: footprint-tracking-cancel
+    runs-on: zephyr-runner-linux-x64-4xlarge
+    if: github.repository_owner == 'zephyrproject-rtos'
     container:
-      image: zephyrprojectrtos/ci:v0.18.4
+      image: ghcr.io/zephyrproject-rtos/ci:v0.26.6
       options: '--entrypoint /bin/bash'
     strategy:
       fail-fast: false
     env:
-      ZEPHYR_SDK_INSTALL_DIR: /opt/toolchains/zephyr-sdk-0.13.1
-      CLANG_ROOT_DIR: /usr/lib/llvm-12
+      ZEPHYR_SDK_INSTALL_DIR: /opt/toolchains/zephyr-sdk-0.16.4
       ZEPHYR_TOOLCHAIN_VARIANT: zephyr
     steps:
+      - name: Apply container owner mismatch workaround
+        run: |
+          # FIXME: The owner UID of the GITHUB_WORKSPACE directory may not
+          #        match the container user UID because of the way GitHub
+          #        Actions runner is implemented. Remove this workaround when
+          #        GitHub comes up with a fundamental fix for this problem.
+          git config --global --add safe.directory ${GITHUB_WORKSPACE}
+
       - name: Update PATH for west
         run: |
           echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: Install pip packages
+
+      - name: Install packages
         run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-venv
           sudo pip3 install -U setuptools wheel pip gitpython
 
       - name: checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
@@ -52,13 +60,14 @@ jobs:
       - name: west setup
         run: |
           west init -l . || true
-          west update
+          west config --global update.narrow true
+          west update 2>&1 1> west.update.log || west update 2>&1 1> west.update2.log
 
       - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v1
+        uses: aws-actions/configure-aws-credentials@v2
         with:
-          aws-access-key-id: ${{ secrets.FOOTPRINT_AWS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.FOOTPRINT_AWS_ACCESS_KEY }}
+          aws-access-key-id: ${{ vars.AWS_TESTING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_TESTING_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
 
       - name: Record Footprint
@@ -67,4 +76,10 @@ jobs:
         run: |
           export ZEPHYR_BASE=${PWD}
           ./scripts/footprint/track.py  -p scripts/footprint/plan.txt
+
+      - name: Upload footprint data
+        run: |
+          python3 -m venv .venv
+          . .venv/bin/activate
+          pip3 install awscli
           aws s3 sync  --quiet footprint_data/ s3://testing.zephyrproject.org/footprint_data/

@@ -4,20 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/drivers/gpio.h>
 #include <soc.h>
-#include <drivers/kscan.h>
+#include <zephyr/drivers/kscan.h>
 
 #define LOG_LEVEL LOG_LEVEL_DBG
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(main);
 
-#define KSCAN_NODE DT_ALIAS(kscan0)
-
-const struct device *kscan_dev = DEVICE_DT_GET(KSCAN_NODE);
+const struct device *const kscan_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_keyboard_scan));
 static struct k_timer typematic_timer;
 static struct k_timer block_matrix_timer;
 
@@ -151,13 +149,13 @@ static void block_matrix_callback(struct k_timer *timer)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	printk("Kscan matrix sample application\n");
 
 	if (!device_is_ready(kscan_dev)) {
 		LOG_ERR("kscan device %s not ready", kscan_dev->name);
-		return;
+		return 0;
 	}
 
 	kscan_config(kscan_dev, kb_callback);
@@ -165,4 +163,5 @@ void main(void)
 	k_timer_init(&block_matrix_timer, block_matrix_callback, NULL);
 	k_timer_start(&block_matrix_timer, K_SECONDS(1), K_SECONDS(3));
 
+	return 0;
 }

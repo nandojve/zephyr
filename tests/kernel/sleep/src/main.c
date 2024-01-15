@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <tc_util.h>
-#include <ztest.h>
-#include <arch/cpu.h>
-#include <sys/util.h>
-#include <irq_offload.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/irq_offload.h>
 #include <stdbool.h>
 
 #if defined(CONFIG_ASSERT) && defined(CONFIG_DEBUG)
-#define THREAD_STACK    (512 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define THREAD_STACK    (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #else
-#define THREAD_STACK    (384 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define THREAD_STACK    (384 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #endif
 
 #define TEST_THREAD_PRIORITY    -4
@@ -83,9 +83,7 @@ static void align_to_tick_boundary(void)
 	tick = k_uptime_get_32();
 	while (k_uptime_get_32() == tick) {
 		/* Busy wait to align to tick boundary */
-#if defined(CONFIG_ARCH_POSIX)
-		k_busy_wait(50);
-#endif
+		Z_SPIN_DELAY(50);
 	}
 
 }
@@ -102,8 +100,12 @@ static int sleep_time_valid(uint32_t start, uint32_t end, uint32_t dur)
 	return dt >= dur && dt <= (dur + TICK_MARGIN);
 }
 
-static void test_thread(int arg1, int arg2)
+static void test_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	uint32_t start_tick;
 	uint32_t end_tick;
 
@@ -173,8 +175,11 @@ static void irq_offload_isr(const void *arg)
 	k_wakeup((k_tid_t) arg);
 }
 
-static void helper_thread(int arg1, int arg2)
+static void helper_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 
 	k_sem_take(&helper_thread_sem, K_FOREVER);
 	/* Wake the test thread */
@@ -191,7 +196,7 @@ static void helper_thread(int arg1, int arg2)
  *
  * @see k_sleep(), k_wakeup(), k_uptime_get_32()
  */
-void test_sleep(void)
+ZTEST(sleep, test_sleep)
 {
 	int status = TC_FAIL;
 	uint32_t start_tick;
@@ -207,7 +212,7 @@ void test_sleep(void)
 
 	test_thread_id = k_thread_create(&test_thread_data, test_thread_stack,
 					 THREAD_STACK,
-					 (k_thread_entry_t) test_thread,
+					 test_thread,
 					 0, 0, NULL, TEST_THREAD_PRIORITY,
 					 0, K_NO_WAIT);
 
@@ -215,7 +220,7 @@ void test_sleep(void)
 
 	helper_thread_id = k_thread_create(&helper_thread_data,
 					   helper_thread_stack, THREAD_STACK,
-					   (k_thread_entry_t) helper_thread,
+					   helper_thread,
 					   0, 0, NULL, HELPER_THREAD_PRIORITY,
 					   0, K_NO_WAIT);
 
@@ -244,8 +249,6 @@ void test_sleep(void)
 	status = TC_PASS;
 }
 
-extern void test_usleep(void);
-
 static void forever_thread_entry(void *p1, void *p2, void *p3)
 {
 	int32_t ret;
@@ -255,7 +258,7 @@ static void forever_thread_entry(void *p1, void *p2, void *p3)
 	k_sem_give(&test_thread_sem);
 }
 
-void test_sleep_forever(void)
+ZTEST(sleep, test_sleep_forever)
 {
 	test_objects_init();
 
@@ -274,13 +277,12 @@ void test_sleep_forever(void)
 }
 
 /*test case main entry*/
-void test_main(void)
+static void *sleep_setup(void)
 {
 	k_thread_access_grant(k_current_get(), &test_thread_sem);
 
-	ztest_test_suite(sleep,
-			 ztest_1cpu_unit_test(test_sleep),
-			 ztest_1cpu_user_unit_test(test_usleep),
-			 ztest_1cpu_unit_test(test_sleep_forever));
-	ztest_run_test_suite(sleep);
+	return NULL;
 }
+
+ZTEST_SUITE(sleep, NULL, sleep_setup,
+		ztest_simple_1cpu_before, ztest_simple_1cpu_after, NULL);

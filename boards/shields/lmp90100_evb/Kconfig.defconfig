@@ -5,12 +5,6 @@ if SHIELD_LMP90100_EVB
 
 if ADC
 
-config SPI
-	default y
-
-config ADC_LMP90XXX
-	default y
-
 config ADC_LMP90XXX_GPIO
 	default y
 
@@ -18,18 +12,5 @@ config ADC_INIT_PRIORITY
 	default 80
 
 endif # ADC
-
-if EEPROM
-
-config I2C
-	default y
-
-config EEPROM_AT24
-	default y
-
-config EEPROM_INIT_PRIORITY
-	default 75
-
-endif # EEPROM
 
 endif # SHIELD_LMP90100_EVB

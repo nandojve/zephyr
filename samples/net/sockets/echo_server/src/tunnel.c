@@ -4,13 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(net_echo_server_sample, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <net/ethernet.h>
-#include <net/virtual_mgmt.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/virtual_mgmt.h>
+#include <zephyr/net/conn_mgr_monitor.h>
 
 /* User data for the interface callback */
 struct ud {
@@ -41,6 +42,9 @@ static int setup_iface(struct net_if *iface, const char *ipaddr)
 {
 	struct net_if_addr *ifaddr;
 	struct sockaddr addr;
+
+	/* Before setting up tunnel, make sure it will be ignored by conn_mgr */
+	conn_mgr_ignore_iface(iface);
 
 	if (!net_ipaddr_parse(ipaddr, strlen(ipaddr), &addr)) {
 		LOG_ERR("Tunnel peer address \"%s\" invalid.", ipaddr);

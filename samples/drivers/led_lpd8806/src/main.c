@@ -8,14 +8,14 @@
 #include <string.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#include <zephyr.h>
-#include <drivers/led_strip.h>
-#include <device.h>
-#include <drivers/spi.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/led_strip.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/util.h>
 
 /*
  * Number of RGB LEDs in the LED strip, adjust as needed.
@@ -38,7 +38,7 @@ static const struct led_rgb black = {
 
 struct led_rgb strip_colors[STRIP_NUM_LEDS];
 
-static const struct device *strip = DEVICE_DT_GET_ANY(greeled_lpd8806);
+static const struct device *const strip = DEVICE_DT_GET_ANY(greeled_lpd8806);
 
 const struct led_rgb *color_at(size_t time, size_t i)
 {
@@ -51,16 +51,16 @@ const struct led_rgb *color_at(size_t time, size_t i)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	size_t i, time;
 
 	if (!strip) {
 		LOG_ERR("LED strip device not found");
-		return;
+		return 0;
 	} else if (!device_is_ready(strip)) {
 		LOG_INF("LED strip device %s is not ready", strip->name);
-		return;
+		return 0;
 	}
 	LOG_INF("Found LED strip device %s", strip->name);
 
@@ -80,4 +80,5 @@ void main(void)
 		k_sleep(DELAY_TIME);
 		time++;
 	}
+	return 0;
 }

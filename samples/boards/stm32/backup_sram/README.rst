@@ -16,7 +16,7 @@ VBAT is preserved, the incremented value will be shown on the next power-cycle.
 .. note::
 
     On most boards VBAT is typically connected to VDD thanks to a jumper.
-    To excercise this sample with an independent VBAT source, you will need to
+    To exercise this sample with an independent VBAT source, you will need to
     remove the jumper.
 
 Building and Running
@@ -26,7 +26,7 @@ In order to run this sample, make sure to enable ``backup_sram`` node in your
 board DT file.
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/memc/stm32_backup_sram
+   :zephyr-app: samples/boards/stm32/backup_sram
    :board: nucleo_h743zi
    :goals: build
    :compact:

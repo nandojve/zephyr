@@ -8,15 +8,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(net_ipv6, CONFIG_NET_IPV6_LOG_LEVEL);
 
 #include <errno.h>
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_stats.h>
-#include <net/net_context.h>
-#include <net/net_mgmt.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_stats.h>
+#include <zephyr/net/net_context.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/icmp.h>
 #include "net_private.h"
 #include "connection.h"
 #include "icmpv6.h"
@@ -55,7 +56,7 @@ static int mld_create(struct net_pkt *pkt,
 	mld->aux_data_len = 0U;
 	mld->num_sources = htons(num_sources);
 
-	net_ipaddr_copy(&mld->mcast_address, addr);
+	net_ipv6_addr_copy_raw(mld->mcast_address, (uint8_t *)addr);
 
 	if (net_pkt_set_data(pkt, &mld_access)) {
 		return -ENOBUFS;
@@ -194,12 +195,20 @@ int net_ipv6_mld_join(struct net_if *iface, const struct in6_addr *addr)
 		}
 	}
 
+	if (net_if_flag_is_set(iface, NET_IF_IPV6_NO_MLD)) {
+		return 0;
+	}
+
+	if (!net_if_is_up(iface)) {
+		return -ENETDOWN;
+	}
+
 	ret = mld_send_generic(iface, addr, NET_IPV6_MLDv2_MODE_IS_EXCLUDE);
 	if (ret < 0) {
 		return ret;
 	}
 
-	net_if_ipv6_maddr_join(maddr);
+	net_if_ipv6_maddr_join(iface, maddr);
 
 	net_if_mcast_monitor(iface, &maddr->address, true);
 
@@ -222,6 +231,10 @@ int net_ipv6_mld_leave(struct net_if *iface, const struct in6_addr *addr)
 
 	if (!net_if_ipv6_maddr_rm(iface, addr)) {
 		return -EINVAL;
+	}
+
+	if (net_if_flag_is_set(iface, NET_IF_IPV6_NO_MLD)) {
+		return 0;
 	}
 
 	ret = mld_send_generic(iface, addr, NET_IPV6_MLDv2_MODE_IS_INCLUDE);
@@ -289,22 +302,32 @@ drop:
 #define dbg_addr(action, pkt_str, src, dst)				\
 	do {								\
 		NET_DBG("%s %s from %s to %s", action, pkt_str,         \
-			log_strdup(net_sprint_ipv6_addr(src)),		\
-			log_strdup(net_sprint_ipv6_addr(dst)));		\
+			net_sprint_ipv6_addr(src),		\
+			net_sprint_ipv6_addr(dst));		\
 	} while (0)
 
 #define dbg_addr_recv(pkt_str, src, dst)	\
 	dbg_addr("Received", pkt_str, src, dst)
 
-static enum net_verdict handle_mld_query(struct net_pkt *pkt,
-					 struct net_ipv6_hdr *ip_hdr,
-					 struct net_icmp_hdr *icmp_hdr)
+static int handle_mld_query(struct net_icmp_ctx *ctx,
+			    struct net_pkt *pkt,
+			    struct net_icmp_ip_hdr *hdr,
+			    struct net_icmp_hdr *icmp_hdr,
+			    void *user_data)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(mld_access,
 					      struct net_icmpv6_mld_query);
+	struct net_ipv6_hdr *ip_hdr = hdr->ipv6;
 	uint16_t length = net_pkt_get_len(pkt);
 	struct net_icmpv6_mld_query *mld_query;
 	uint16_t pkt_len;
+	int ret = -EIO;
+
+	if (net_pkt_remaining_data(pkt) < sizeof(struct net_icmpv6_mld_query)) {
+		/* MLDv1 query, drop. */
+		ret = 0;
+		goto drop;
+	}
 
 	mld_query = (struct net_icmpv6_mld_query *)
 				net_pkt_get_data(pkt, &mld_access);
@@ -332,31 +355,30 @@ static enum net_verdict handle_mld_query(struct net_pkt *pkt,
 	}
 
 	/* Currently we only support an unspecified address query. */
-	if (!net_ipv6_addr_cmp(&mld_query->mcast_address,
-			       net_ipv6_unspecified_address())) {
+	if (!net_ipv6_addr_cmp_raw(mld_query->mcast_address,
+				   (uint8_t *)net_ipv6_unspecified_address())) {
 		NET_DBG("DROP: only supporting unspecified address query");
 		goto drop;
 	}
 
 	send_mld_report(net_pkt_iface(pkt));
 
-	net_pkt_unref(pkt);
-
-	return NET_OK;
+	return 0;
 
 drop:
 	net_stats_update_ipv6_mld_drop(net_pkt_iface(pkt));
 
-	return NET_DROP;
+	return ret;
 }
-
-static struct net_icmpv6_handler mld_query_input_handler = {
-	.type = NET_ICMPV6_MLD_QUERY,
-	.code = 0,
-	.handler = handle_mld_query,
-};
 
 void net_ipv6_mld_init(void)
 {
-	net_icmpv6_register_handler(&mld_query_input_handler);
+	static struct net_icmp_ctx ctx;
+	int ret;
+
+	ret = net_icmp_init_ctx(&ctx, NET_ICMPV6_MLD_QUERY, 0, handle_mld_query);
+	if (ret < 0) {
+		NET_ERR("Cannot register %s handler (%d)", STRINGIFY(NET_ICMPV6_MLD_QUERY),
+			ret);
+	}
 }

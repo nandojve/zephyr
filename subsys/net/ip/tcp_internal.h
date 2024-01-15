@@ -14,12 +14,12 @@
 #define __TCP_INTERNAL_H
 
 #include <zephyr/types.h>
-#include <random/rand32.h>
+#include <zephyr/random/random.h>
 
-#include <net/net_core.h>
-#include <net/net_ip.h>
-#include <net/net_pkt.h>
-#include <net/net_context.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_context.h>
 
 #include "connection.h"
 
@@ -28,7 +28,15 @@ extern "C" {
 #endif
 
 
-#include "tcp2_priv.h"
+#include "tcp_private.h"
+
+enum tcp_conn_option {
+	TCP_OPT_NODELAY	= 1,
+	TCP_OPT_KEEPALIVE = 2,
+	TCP_OPT_KEEPIDLE = 3,
+	TCP_OPT_KEEPINTVL = 4,
+	TCP_OPT_KEEPCNT = 5,
+};
 
 /**
  * @brief Calculates and returns the MSS for a given TCP context
@@ -38,9 +46,9 @@ extern "C" {
  * @return Maximum Segment Size
  */
 #if defined(CONFIG_NET_NATIVE_TCP)
-uint16_t net_tcp_get_recv_mss(const struct tcp *conn);
+uint16_t net_tcp_get_supported_mss(const struct tcp *conn);
 #else
-static inline uint16_t net_tcp_get_recv_mss(const struct tcp *conn)
+static inline uint16_t net_tcp_get_supported_mss(const struct tcp *conn)
 {
 	ARG_UNUSED(conn);
 	return 0;
@@ -95,24 +103,6 @@ static inline void net_tcp_foreach(net_tcp_cb_t cb, void *user_data)
 int net_tcp_get(struct net_context *context);
 #else
 static inline int net_tcp_get(struct net_context *context)
-{
-	ARG_UNUSED(context);
-
-	return -EPROTONOSUPPORT;
-}
-#endif
-
-/**
- * @brief Unref TCP parts of a context
- *
- * @param context Network context
- *
- * @return 0 if successful, < 0 on error
- */
-#if defined(CONFIG_NET_NATIVE_TCP)
-int net_tcp_unref(struct net_context *context);
-#else
-static inline int net_tcp_unref(struct net_context *context)
 {
 	ARG_UNUSED(context);
 
@@ -238,7 +228,7 @@ static inline int net_tcp_send_data(struct net_context *context,
  * @param cb TCP receive callback function
  * @param user_data TCP receive callback user data
  *
- * @return 0 if no erro, < 0 in case of error
+ * @return 0 if no error, < 0 in case of error
  */
 #if defined(CONFIG_NET_NATIVE_TCP)
 int net_tcp_recv(struct net_context *context, net_context_recv_cb_t cb,
@@ -263,11 +253,12 @@ static inline int net_tcp_recv(struct net_context *context,
  * @return 0 on success, negative errno otherwise.
  */
 #if defined(CONFIG_NET_NATIVE_TCP)
-int net_tcp_finalize(struct net_pkt *pkt);
+int net_tcp_finalize(struct net_pkt *pkt, bool force_chksum);
 #else
-static inline int net_tcp_finalize(struct net_pkt *pkt)
+static inline int net_tcp_finalize(struct net_pkt *pkt, bool force_chksum)
 {
 	ARG_UNUSED(pkt);
+	ARG_UNUSED(force_chksum);
 	return 0;
 }
 #endif
@@ -296,21 +287,27 @@ struct net_tcp_hdr *net_tcp_input(struct net_pkt *pkt,
 #endif
 
 /**
- * @brief Enqueue a single packet for transmission
+ * @brief Enqueue data for transmission
  *
- * @param context TCP context
- * @param pkt Packet
+ * @param context	Network context
+ * @param data		Pointer to the data
+ * @param len		Number of bytes
+ * @param msg		Data for a vector array operation
  *
  * @return 0 if ok, < 0 if error
  */
 #if defined(CONFIG_NET_NATIVE_TCP)
-int net_tcp_queue_data(struct net_context *context, struct net_pkt *pkt);
+int net_tcp_queue(struct net_context *context, const void *data, size_t len,
+		  const struct msghdr *msg);
 #else
-static inline int net_tcp_queue_data(struct net_context *context,
-				     struct net_pkt *pkt)
+static inline int net_tcp_queue(struct net_context *context, const void *data,
+				size_t len, const struct msghdr *msg)
 {
 	ARG_UNUSED(context);
-	ARG_UNUSED(pkt);
+	ARG_UNUSED(data);
+	ARG_UNUSED(len);
+	ARG_UNUSED(msg);
+
 	return -EPROTONOSUPPORT;
 }
 #endif
@@ -343,7 +340,7 @@ static inline int net_tcp_update_recv_wnd(struct net_context *context,
  *
  * @param context Network context
  *
- * @return 0 on success where a TCP FIN packet has been queueed, -ENOTCONN
+ * @return 0 on success where a TCP FIN packet has been queued, -ENOTCONN
  *         in case the socket was not connected or listening, -EOPNOTSUPP
  *         in case it was not a TCP socket or -EPROTONOSUPPORT if TCP is not
  *         supported
@@ -365,6 +362,90 @@ static inline int net_tcp_put(struct net_context *context)
 void net_tcp_init(void);
 #else
 #define net_tcp_init(...)
+#endif
+
+/**
+ * @brief Set tcp specific options of a socket
+ *
+ * @param context Network context
+ *
+ * @return 0 on success, -EINVAL if the value is not allowed
+ */
+#if defined(CONFIG_NET_NATIVE_TCP)
+int net_tcp_set_option(struct net_context *context,
+		       enum tcp_conn_option option,
+		       const void *value, size_t len);
+#else
+static inline int net_tcp_set_option(struct net_context *context,
+				     enum tcp_conn_option option,
+				     const void *value, size_t len)
+{
+	ARG_UNUSED(context);
+	ARG_UNUSED(option);
+	ARG_UNUSED(value);
+	ARG_UNUSED(len);
+
+	return -EPROTONOSUPPORT;
+}
+#endif
+
+
+/**
+ * @brief Obtain tcp specific options of a socket
+ *
+ * @param context Network context
+ *
+ * @return 0 on success
+ */
+#if defined(CONFIG_NET_NATIVE_TCP)
+int net_tcp_get_option(struct net_context *context,
+		       enum tcp_conn_option option,
+		       void *value, size_t *len);
+#else
+static inline int net_tcp_get_option(struct net_context *context,
+				     enum tcp_conn_option option,
+				     void *value, size_t *len)
+{
+	ARG_UNUSED(context);
+	ARG_UNUSED(option);
+	ARG_UNUSED(value);
+	ARG_UNUSED(len);
+
+	return -EPROTONOSUPPORT;
+}
+#endif
+
+/**
+ * @brief Obtain a semaphore indicating if transfers are blocked (either due to
+ *        filling TX window or entering retransmission mode).
+ *
+ * @param context Network context
+ *
+ * @return semaphore indicating if transfers are blocked
+ */
+struct k_sem *net_tcp_tx_sem_get(struct net_context *context);
+
+/**
+ * @brief Obtain a semaphore indicating if connection is connected.
+ *
+ * @param context Network context
+ *
+ * @return semaphore indicating if connection is connected
+ */
+struct k_sem *net_tcp_conn_sem_get(struct net_context *context);
+
+/**
+ * @brief Send a TCP RST reply for the received packet w/o associated connection.
+ *
+ * @param pkt TCP packet to reply for.
+ */
+#if defined(CONFIG_NET_NATIVE_TCP)
+void net_tcp_reply_rst(struct net_pkt *pkt);
+#else
+static inline void net_tcp_reply_rst(struct net_pkt *pkt)
+{
+	ARG_UNUSED(pkt);
+}
 #endif
 
 #ifdef __cplusplus

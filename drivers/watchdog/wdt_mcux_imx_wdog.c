@@ -6,18 +6,22 @@
 
 #define DT_DRV_COMPAT nxp_imx_wdog
 
-#include <drivers/watchdog.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/watchdog.h>
+#include <zephyr/sys_clock.h>
 #include <fsl_wdog.h>
 
 #define LOG_LEVEL CONFIG_WDT_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(wdt_mcux_wdog);
 
-#define WDOG_TMOUT_SEC(x)  ((x * 2 / MSEC_PER_SEC) - 1)
+#define WDOG_TMOUT_SEC(x)  (((x * 2) / MSEC_PER_SEC) - 1)
 
 struct mcux_wdog_config {
 	WDOG_Type *base;
 	void (*irq_config_func)(const struct device *dev);
+	const struct pinctrl_dev_config *pcfg;
 };
 
 struct mcux_wdog_data {
@@ -75,6 +79,11 @@ static int mcux_wdog_install_timeout(const struct device *dev,
 	WDOG_GetDefaultConfig(&data->wdog_config);
 	data->wdog_config.interruptTimeValue = 0U;
 
+	if (cfg->window.max < (MSEC_PER_SEC / 2)) {
+		LOG_ERR("Invalid window max, shortest window is 500ms");
+		return -EINVAL;
+	}
+
 	data->wdog_config.timeoutValue =
 		  WDOG_TMOUT_SEC(cfg->window.max);
 
@@ -110,9 +119,8 @@ static int mcux_wdog_feed(const struct device *dev, int channel_id)
 	return 0;
 }
 
-static void mcux_wdog_isr(void *arg)
+static void mcux_wdog_isr(const struct device *dev)
 {
-	const struct device *dev = (const struct device *)arg;
 	const struct mcux_wdog_config *config = dev->config;
 	struct mcux_wdog_data *data = dev->data;
 	WDOG_Type *base = config->base;
@@ -129,8 +137,14 @@ static void mcux_wdog_isr(void *arg)
 static int mcux_wdog_init(const struct device *dev)
 {
 	const struct mcux_wdog_config *config = dev->config;
+	int ret;
 
 	config->irq_config_func(dev);
+
+	ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+	if (ret < 0 && ret != -ENOENT) {
+		return ret;
+	}
 
 	return 0;
 }
@@ -144,9 +158,12 @@ static const struct wdt_driver_api mcux_wdog_api = {
 
 static void mcux_wdog_config_func(const struct device *dev);
 
+PINCTRL_DT_INST_DEFINE(0);
+
 static const struct mcux_wdog_config mcux_wdog_config = {
 	.base = (WDOG_Type *) DT_INST_REG_ADDR(0),
 	.irq_config_func = mcux_wdog_config_func,
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 };
 
 static struct mcux_wdog_data mcux_wdog_data;

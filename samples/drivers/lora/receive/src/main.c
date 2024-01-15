@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <drivers/lora.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/lora.h>
 #include <errno.h>
-#include <sys/util.h>
-#include <zephyr.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
 
 #define DEFAULT_RADIO_NODE DT_ALIAS(lora0)
 BUILD_ASSERT(DT_NODE_HAS_STATUS(DEFAULT_RADIO_NODE, okay),
@@ -17,7 +17,7 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(DEFAULT_RADIO_NODE, okay),
 #define MAX_DATA_LEN 255
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(lora_receive);
 
 void lora_receive_cb(const struct device *dev, uint8_t *data, uint16_t size,
@@ -29,7 +29,7 @@ void lora_receive_cb(const struct device *dev, uint8_t *data, uint16_t size,
 	ARG_UNUSED(size);
 
 	LOG_INF("Received data: %s (RSSI:%ddBm, SNR:%ddBm)",
-		log_strdup(data), rssi, snr);
+		data, rssi, snr);
 
 	/* Stop receiving after 10 packets */
 	if (++cnt == 10) {
@@ -38,9 +38,9 @@ void lora_receive_cb(const struct device *dev, uint8_t *data, uint16_t size,
 	}
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *lora_dev = DEVICE_DT_GET(DEFAULT_RADIO_NODE);
+	const struct device *const lora_dev = DEVICE_DT_GET(DEFAULT_RADIO_NODE);
 	struct lora_modem_config config;
 	int ret, len;
 	uint8_t data[MAX_DATA_LEN] = {0};
@@ -49,7 +49,7 @@ void main(void)
 
 	if (!device_is_ready(lora_dev)) {
 		LOG_ERR("%s Device not ready", lora_dev->name);
-		return;
+		return 0;
 	}
 
 	config.frequency = 865100000;
@@ -57,13 +57,15 @@ void main(void)
 	config.datarate = SF_10;
 	config.preamble_len = 8;
 	config.coding_rate = CR_4_5;
+	config.iq_inverted = false;
+	config.public_network = false;
 	config.tx_power = 14;
 	config.tx = false;
 
 	ret = lora_config(lora_dev, &config);
 	if (ret < 0) {
 		LOG_ERR("LoRa config failed");
-		return;
+		return 0;
 	}
 
 	/* Receive 4 packets synchronously */
@@ -74,15 +76,16 @@ void main(void)
 				&rssi, &snr);
 		if (len < 0) {
 			LOG_ERR("LoRa receive failed");
-			return;
+			return 0;
 		}
 
 		LOG_INF("Received data: %s (RSSI:%ddBm, SNR:%ddBm)",
-			log_strdup(data), rssi, snr);
+			data, rssi, snr);
 	}
 
 	/* Enable asynchronous reception */
 	LOG_INF("Asynchronous reception");
 	lora_recv_async(lora_dev, lora_receive_cb);
 	k_sleep(K_FOREVER);
+	return 0;
 }

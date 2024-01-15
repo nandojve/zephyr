@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/pinctrl.h>
-#include <dt-bindings/pinctrl/bflb-pinctrl.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/dt-bindings/pinctrl/bflb-pinctrl.h>
 #include <bflb_glb.h>
 #include <bflb_gpio.h>
 

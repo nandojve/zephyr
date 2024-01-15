@@ -3,8 +3,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
 
 
 #if defined(CONFIG_ZTEST_FATAL_HOOK)
@@ -106,6 +106,8 @@ static inline void z_vrfy_ztest_set_assert_valid(bool valid)
 __weak void ztest_post_assert_fail_hook(void)
 {
 	k_thread_abort(k_current_get());
+
+	CODE_UNREACHABLE;
 }
 
 #ifdef CONFIG_ASSERT_NO_FILE_INFO

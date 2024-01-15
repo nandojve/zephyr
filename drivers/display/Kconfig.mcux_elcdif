@@ -1,45 +1,81 @@
-# Copyright (c) 2019, NXP
+# Copyright 2019,2023 NXP
+# Copyright (c) 2022, Basalte bv
 # SPDX-License-Identifier: Apache-2.0
+
 
 menuconfig DISPLAY_MCUX_ELCDIF
 	bool "MCUX eLCDIF driver"
-	depends on HAS_MCUX_ELCDIF
+	default y
+	depends on DT_HAS_NXP_IMX_ELCDIF_ENABLED
 	help
 	  Enable support for mcux eLCDIF driver.
 
 if DISPLAY_MCUX_ELCDIF
 
-config MCUX_ELCDIF_POOL_BLOCK_NUM
-	int "Number of memory pool blocks"
+config MCUX_ELCDIF_FB_NUM
+	int "Framebuffers to allocate in driver"
 	default 2
+	range 0 2
 	help
-	  Number of blocks in the frame buffer memory pool.
+	  Number of framebuffers to allocate in ELCDIF driver. Driver allocated
+	  framebuffers are required to support partial display updates.
+	  The driver has been validated to support 0 through 2 framebuffers.
+	  Note that hardware will likely perform best if zero driver
+	  framebuffers are allocated by the driver, and the application
+	  implements double framebuffering by always calling display_write with
+	  a buffer equal in size to the connected panel.
 
-config MCUX_ELCDIF_POOL_BLOCK_MIN
-	hex "Minimum memory pool block size"
-	default 0x400
+	  NOTE: when no framebuffers are allocated, the ELCDIF will be
+	  set to display an empty buffer during initialization. This means
+	  the display will show what is effectively a dump of
+	  system RAM until a new framebuffer is written. If the security
+	  implications of this concern you, leave at least one driver
+	  framebuffer enabled.
+
+config MCUX_ELCDIF_PXP
+	bool "Use PXP for display rotation"
+	depends on MCUX_PXP
+	depends on (MCUX_ELCDIF_FB_NUM > 0)
 	help
-	  Minimum block size in the frame buffer memory pool.
+	  Use the PXP for display rotation. This requires the LCDIF node
+	  have a "nxp,pxp" devicetree property pointing to the PXP device node.
+	  The ELCDIF will only utilize the PXP to rotate frames if
+	  display_write is called with a framebuffer equal in size to the
+	  display.
 
-config MCUX_ELCDIF_POOL_BLOCK_MAX
-	hex "Maximum memory pool block size"
-	default 0x40000
+if MCUX_ELCDIF_PXP
+
+choice MCUX_ELCDIF_PXP_ROTATE_DIRECTION
+	default MCUX_ELCDIF_PXP_ROTATE_0
+	prompt "Rotation angle of PXP"
 	help
-	  Maximum block size in the frame buffer memory pool.
+	  Set rotation angle of PXP. The ELCDIF cannot detect the correct
+	  rotation angle based on the call to display_write, so the user
+	  should configure it here.
 
-config MCUX_ELCDIF_POOL_BLOCK_ALIGN
-	int "Alignment of memory pool blocks"
-	default 64
+config MCUX_ELCDIF_PXP_ROTATE_0
+	bool "Rotate display by 0 degrees"
 	help
-	  Byte alignment in the frame buffer memory pool.
+	  Rotate display by 0 degrees. Primarily useful for testing,
+	  production applications should simply disable the PXP.
 
-choice MCUX_ELCDIF_PANEL
-	prompt "Panel selection"
-	default MCUX_ELCDIF_PANEL_RK043FN02H
+config MCUX_ELCDIF_PXP_ROTATE_90
+	bool "Rotate display by 90 degrees"
+	help
+	  Rotate display clockwise by 90 degrees
 
-config MCUX_ELCDIF_PANEL_RK043FN02H
-	bool "Rocktech rk043fn02h-ct"
+config MCUX_ELCDIF_PXP_ROTATE_180
+	bool "Rotate display by 180 degrees"
+	help
+	  Rotate display clockwise by 180 degrees
+
+config MCUX_ELCDIF_PXP_ROTATE_270
+	bool "Rotate display by 270 degrees"
+	help
+	  Rotate display clockwise by 270 degrees
 
 endchoice
+
+endif # MCUX_ELCDIF_PXP
 
 endif # DISPLAY_MCUX_ELCDIF

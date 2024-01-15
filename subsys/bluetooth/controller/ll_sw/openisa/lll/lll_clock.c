@@ -6,11 +6,9 @@
 
 #include <zephyr/types.h>
 #include <soc.h>
-#include <device.h>
-#include <drivers/clock_control.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/clock_control.h>
 
-#define LOG_MODULE_NAME bt_ctlr_llsw_openisa_lll_clock
-#include "common/log.h"
 #include "hal/debug.h"
 
 static uint16_t const sca_ppm_lut[] = {500, 250, 150, 100, 75, 50, 30, 20};

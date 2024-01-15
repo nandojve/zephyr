@@ -7,12 +7,12 @@
  * passed in input as IPC message.
  */
 
-#include <ipc/ipc_service_backend.h>
+#include <zephyr/ipc/ipc_service_backend.h>
 
-#include <logging/log.h>
-#include <sys/util_macro.h>
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 
 #define DT_DRV_COMPAT		ipc_service_backend
 
@@ -53,19 +53,20 @@ static int register_ept(const struct device *instance,
 	return 0;
 }
 
-const static struct ipc_service_backend backend_ops = {
-	.send = send,
-	.register_endpoint = register_ept,
-};
-
-static int backend_init(const struct device *dev)
+static int deregister_ept(const struct device *instance, void *token)
 {
-	ARG_UNUSED(dev);
+	struct backend_data_t *data = instance->data;
 
-	/* Nothing to do */
+	data->cfg = NULL;
 
 	return 0;
 }
+
+const static struct ipc_service_backend backend_ops = {
+	.send = send,
+	.register_endpoint = register_ept,
+	.deregister_endpoint = deregister_ept,
+};
 
 #define DEFINE_BACKEND_DEVICE(i)					\
 	static struct backend_config_t backend_config_##i = {		\
@@ -75,7 +76,7 @@ static int backend_init(const struct device *dev)
 	static struct backend_data_t backend_data_##i;			\
 									\
 	DEVICE_DT_INST_DEFINE(i,					\
-			 &backend_init,					\
+			 NULL,						\
 			 NULL,						\
 			 &backend_data_##i,				\
 			 &backend_config_##i,				\

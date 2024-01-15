@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <sys/printk.h>
-#include <sys_clock.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys_clock.h>
 #include <stdio.h>
 
-#include <device.h>
-#include <drivers/sensor.h>
-#include <drivers/i2c.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/i2c.h>
 
 #define MAX_TEST_TIME	5000
 #define SLEEPTIME	300
@@ -125,16 +125,15 @@ static void test_trigger_mode(const struct device *itds)
 
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *itds;
+	const struct device *const itds = DEVICE_DT_GET_ONE(we_wsen_itds);
 	struct sensor_value attr;
 
 	printf("get device wsen-itds\n");
-	itds = device_get_binding(DT_LABEL(DT_INST(0, we_wsen_itds)));
-	if (!itds) {
-		printf("Device not found.\n");
-		return;
+	if (!device_is_ready(itds)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	/*
@@ -146,7 +145,7 @@ void main(void)
 	if (sensor_attr_set(itds, SENSOR_CHAN_ACCEL_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &attr) < 0) {
 		printf("Cannot set accl range.\n");
-		return;
+		return 0;
 	}
 
 	printf("Testing the polling mode.\n");
@@ -156,4 +155,5 @@ void main(void)
 	printf("Testing the trigger mode.\n");
 	test_trigger_mode(itds);
 	printf("Trigger mode test finished.\n");
+	return 0;
 }

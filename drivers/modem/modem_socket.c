@@ -10,8 +10,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <sys/fdtable.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/fdtable.h>
 
 #include "modem_socket.h"
 
@@ -88,6 +88,7 @@ int modem_socket_packet_size_update(struct modem_socket_config *cfg, struct mode
 		/* reset outstanding value here */
 		sock->packet_count = 0U;
 		sock->packet_sizes[0] = 0U;
+		k_poll_signal_reset(&sock->sig_data_ready);
 		k_sem_give(&cfg->sem_lock);
 		return 0;
 	}
@@ -129,6 +130,11 @@ int modem_socket_packet_size_update(struct modem_socket_config *cfg, struct mode
 	}
 
 data_ready:
+	if (sock->packet_sizes[0]) {
+		k_poll_signal_raise(&sock->sig_data_ready, 0);
+	} else {
+		k_poll_signal_reset(&sock->sig_data_ready);
+	}
 	k_sem_give(&cfg->sem_lock);
 	return new_total;
 }
@@ -137,6 +143,10 @@ data_ready:
  * Socket Support Functions
  */
 
+/*
+ * This function reserves a file descriptor from the fdtable, make sure to update the
+ * POSIX_FDS_MAX Kconfig option to support at minimum the required amount of sockets
+ */
 int modem_socket_get(struct modem_socket_config *cfg, int family, int type, int proto)
 {
 	int i;
@@ -144,7 +154,7 @@ int modem_socket_get(struct modem_socket_config *cfg, int family, int type, int 
 	k_sem_take(&cfg->sem_lock, K_FOREVER);
 
 	for (i = 0; i < cfg->sockets_len; i++) {
-		if (cfg->sockets[i].id < cfg->base_socket_num) {
+		if (cfg->sockets[i].id < cfg->base_socket_id) {
 			break;
 		}
 	}
@@ -154,7 +164,6 @@ int modem_socket_get(struct modem_socket_config *cfg, int family, int type, int 
 		return -ENOMEM;
 	}
 
-	/* FIXME: 4 fds max now due to POSIX_OS conflict */
 	cfg->sockets[i].sock_fd = z_reserve_fd();
 	if (cfg->sockets[i].sock_fd < 0) {
 		k_sem_give(&cfg->sem_lock);
@@ -164,8 +173,8 @@ int modem_socket_get(struct modem_socket_config *cfg, int family, int type, int 
 	cfg->sockets[i].family = family;
 	cfg->sockets[i].type = type;
 	cfg->sockets[i].ip_proto = proto;
-	/* socket # needs assigning */
-	cfg->sockets[i].id = cfg->sockets_len + 1;
+	cfg->sockets[i].id = (cfg->assign_id) ? (i + cfg->base_socket_id) :
+		(cfg->base_socket_id + cfg->sockets_len);
 	z_finalize_fd(cfg->sockets[i].sock_fd, &cfg->sockets[i],
 		      (const struct fd_op_vtable *)cfg->vtable);
 
@@ -195,7 +204,7 @@ struct modem_socket *modem_socket_from_id(struct modem_socket_config *cfg, int i
 {
 	int i;
 
-	if (id < cfg->base_socket_num) {
+	if (id < cfg->base_socket_id) {
 		return NULL;
 	}
 
@@ -215,7 +224,7 @@ struct modem_socket *modem_socket_from_id(struct modem_socket_config *cfg, int i
 
 struct modem_socket *modem_socket_from_newid(struct modem_socket_config *cfg)
 {
-	return modem_socket_from_id(cfg, cfg->sockets_len + 1);
+	return modem_socket_from_id(cfg, cfg->base_socket_id + cfg->sockets_len);
 }
 
 void modem_socket_put(struct modem_socket_config *cfg, int sock_fd)
@@ -228,17 +237,16 @@ void modem_socket_put(struct modem_socket_config *cfg, int sock_fd)
 
 	k_sem_take(&cfg->sem_lock, K_FOREVER);
 
-	sock->id = cfg->base_socket_num - 1;
+	sock->id = cfg->base_socket_id - 1;
 	sock->sock_fd = -1;
 	sock->is_waiting = false;
-	sock->is_polled = false;
 	sock->is_connected = false;
 	(void)memset(&sock->src, 0, sizeof(struct sockaddr));
 	(void)memset(&sock->dst, 0, sizeof(struct sockaddr));
 	memset(&sock->packet_sizes, 0, sizeof(sock->packet_sizes));
 	sock->packet_count = 0;
 	k_sem_reset(&sock->sem_data_ready);
-	k_poll_signal_reset(&sock->sem_poll);
+	k_poll_signal_reset(&sock->sig_data_ready);
 
 	k_sem_give(&cfg->sem_lock);
 }
@@ -278,12 +286,8 @@ int modem_socket_poll(struct modem_socket_config *cfg, struct zsock_pollfd *fds,
 				found_count++;
 				break;
 			} else if (fds[i].events & ZSOCK_POLLIN) {
-				k_sem_take(&cfg->sem_lock, K_FOREVER);
-				sock->is_polled = true;
-				k_poll_signal_reset(&sock->sem_poll);
 				k_poll_event_init(&events[eventcount++], K_POLL_TYPE_SIGNAL,
-						  K_POLL_MODE_NOTIFY_ONLY, &sock->sem_poll);
-				k_sem_give(&cfg->sem_lock);
+						  K_POLL_MODE_NOTIFY_ONLY, &sock->sig_data_ready);
 				if (sock->packet_sizes[0] > 0U) {
 					found_count++;
 					break;
@@ -322,8 +326,6 @@ int modem_socket_poll(struct modem_socket_config *cfg, struct zsock_pollfd *fds,
 			fds[i].revents |= ZSOCK_POLLIN;
 			found_count++;
 		}
-
-		sock->is_polled = false;
 	}
 
 	/* EBUSY, EAGAIN and ETIMEDOUT aren't true errors */
@@ -334,6 +336,57 @@ int modem_socket_poll(struct modem_socket_config *cfg, struct zsock_pollfd *fds,
 
 	errno = 0;
 	return found_count;
+}
+
+int modem_socket_poll_prepare(struct modem_socket_config *cfg, struct modem_socket *sock,
+			      struct zsock_pollfd *pfd, struct k_poll_event **pev,
+			      struct k_poll_event *pev_end)
+{
+	if (pfd->events & ZSOCK_POLLIN) {
+		if (*pev == pev_end) {
+			errno = ENOMEM;
+			return -1;
+		}
+
+		k_poll_event_init(*pev, K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY,
+				  &sock->sig_data_ready);
+		(*pev)++;
+	}
+
+	if (pfd->events & ZSOCK_POLLOUT) {
+		if (*pev == pev_end) {
+			errno = ENOMEM;
+			return -1;
+		}
+		/* Not Implemented */
+		errno = ENOTSUP;
+		return -1;
+	}
+
+	return 0;
+}
+
+int modem_socket_poll_update(struct modem_socket *sock, struct zsock_pollfd *pfd,
+			     struct k_poll_event **pev)
+{
+	ARG_UNUSED(sock);
+
+	if (pfd->events & ZSOCK_POLLIN) {
+		if ((*pev)->state != K_POLL_STATE_NOT_READY) {
+			pfd->revents |= ZSOCK_POLLIN;
+		}
+		(*pev)++;
+	}
+
+	if (pfd->events & ZSOCK_POLLOUT) {
+		/* Not implemented, but the modem socket is always ready to transmit,
+		 * so set the revents
+		 */
+		pfd->revents |= ZSOCK_POLLOUT;
+		(*pev)++;
+	}
+
+	return 0;
 }
 
 void modem_socket_wait_data(struct modem_socket_config *cfg, struct modem_socket *sock)
@@ -355,26 +408,81 @@ void modem_socket_data_ready(struct modem_socket_config *cfg, struct modem_socke
 		k_sem_give(&sock->sem_data_ready);
 	}
 
-	if (sock->is_polled) {
-		/* unblock poll() */
-		k_poll_signal_raise(&sock->sem_poll, 0);
-	}
-
 	k_sem_give(&cfg->sem_lock);
 }
 
-int modem_socket_init(struct modem_socket_config *cfg, const struct socket_op_vtable *vtable)
+int modem_socket_init(struct modem_socket_config *cfg, struct modem_socket *sockets,
+		      size_t sockets_len, int base_socket_id, bool assign_id,
+		      const struct socket_op_vtable *vtable)
 {
-	int i;
-
-	k_sem_init(&cfg->sem_lock, 1, 1);
-	for (i = 0; i < cfg->sockets_len; i++) {
-		k_sem_init(&cfg->sockets[i].sem_data_ready, 0, 1);
-		k_poll_signal_init(&cfg->sockets[i].sem_poll);
-		cfg->sockets[i].id = cfg->base_socket_num - 1;
+	/* Verify arguments */
+	if (cfg == NULL || sockets == NULL || sockets_len < 1 || vtable == NULL) {
+		return -EINVAL;
 	}
 
+	/* Initialize config */
+	cfg->sockets = sockets;
+	cfg->sockets_len = sockets_len;
+	cfg->base_socket_id = base_socket_id;
+	cfg->assign_id = assign_id;
+	k_sem_init(&cfg->sem_lock, 1, 1);
 	cfg->vtable = vtable;
 
+	/* Initialize associated sockets */
+	for (int i = 0; i < cfg->sockets_len; i++) {
+		/* Clear entire socket structure */
+		memset(&cfg->sockets[i], 0, sizeof(cfg->sockets[i]));
+
+		/* Initialize socket members */
+		k_sem_init(&cfg->sockets[i].sem_data_ready, 0, 1);
+		k_poll_signal_init(&cfg->sockets[i].sig_data_ready);
+		cfg->sockets[i].id = -1;
+	}
+	return 0;
+}
+
+bool modem_socket_is_allocated(const struct modem_socket_config *cfg,
+			       const struct modem_socket *sock)
+{
+	/* Socket is allocated with a reserved id value if id is not dynamically assigned */
+	if (cfg->assign_id == false && sock->id == (cfg->base_socket_id + cfg->sockets_len)) {
+		return true;
+	}
+
+	/* Socket must have been allocated if id is assigned */
+	return modem_socket_id_is_assigned(cfg, sock);
+}
+
+bool modem_socket_id_is_assigned(const struct modem_socket_config *cfg,
+				 const struct modem_socket *sock)
+{
+	/* Verify socket is assigned to a valid value */
+	if ((cfg->base_socket_id <= sock->id) &&
+		(sock->id < (cfg->base_socket_id + cfg->sockets_len))) {
+		return true;
+	}
+	return false;
+}
+
+int modem_socket_id_assign(const struct modem_socket_config *cfg,
+			   struct modem_socket *sock, int id)
+{
+	/* Verify dynamically assigning id is disabled */
+	if (cfg->assign_id) {
+		return -EPERM;
+	}
+
+	/* Verify id is currently not assigned */
+	if (modem_socket_id_is_assigned(cfg, sock)) {
+		return -EPERM;
+	}
+
+	/* Verify id is valid */
+	if (id < cfg->base_socket_id || (cfg->base_socket_id + cfg->sockets_len) <= id) {
+		return -EINVAL;
+	}
+
+	/* Assign id */
+	sock->id = id;
 	return 0;
 }

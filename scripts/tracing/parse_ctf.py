@@ -20,17 +20,18 @@ Generate trace using samples/subsys/tracing for example:
 
 import sys
 import datetime
+import colorama
 from colorama import Fore
 import argparse
 try:
     import bt2
 except ImportError:
-    sys.exit("Missing dependency: You need to install python bindings of babletrace.")
+    sys.exit("Missing dependency: You need to install python bindings of babeltrace.")
 
 def parse_args():
     parser = argparse.ArgumentParser(
             description=__doc__,
-            formatter_class=argparse.RawDescriptionHelpFormatter)
+            formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     parser.add_argument("-t", "--trace",
             required=True,
             help="tracing data (directory with metadata and trace file)")
@@ -38,6 +39,8 @@ def parse_args():
     return args
 
 def main():
+    colorama.init()
+
     args = parse_args()
 
     msg_it = bt2.TraceCollectionMessageIterator(args.trace)
@@ -108,7 +111,7 @@ def main():
                     tin = th.get('in', None)
                     tout = th.get('out', None)
                     if tout is not None and tin is not None:
-                        diff = (tout - tin)
+                        diff = tout - tin
                         th['runtime'] = diff
                 elif event.name in ['thread_switched_in']:
                     th['in'] = ns_from_origin

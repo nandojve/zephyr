@@ -8,8 +8,5 @@ compatible: "mmio-sram"
 include: base.yaml
 
 properties:
-    reg:
-      required: true
-
-    label:
-      required: false
+  reg:
+    required: true

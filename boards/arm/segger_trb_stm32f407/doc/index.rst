@@ -12,10 +12,8 @@ ARM Cortex-M4 CPU, to test hardware tracing with the SEGGER Trace-Pro
 debuggers. It is not meant for general prototype development because
 it is extremely limited when it comes to IO, and only has 3 LEDs.
 
-.. figure:: img/segger_trb_stm32f407.png
-     :width: 500px
+.. figure:: img/segger_trb_stm32f407.jpg
      :align: center
-     :height: 365px
      :alt: SEGGER-TRB-STM32F407
 
      SEGGER-TRB-STM32F407
@@ -51,7 +49,7 @@ hardware features:
 +------------+------------+------------------------------+
 
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Pin Mapping
 ===========
@@ -111,7 +109,7 @@ Flashing an application to the SEGGER-TRB-STM32F407
 Connect the J-Trace/J-Link USB dongle to your host computer and to the JTAG
 port of the SEGGER-TRB-STM32F407 board. Then build and flash an application.
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -123,7 +121,7 @@ After resetting the board, you should see LED0 blink with a 1 second interval.
 Debugging
 =========
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky

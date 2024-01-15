@@ -12,13 +12,18 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		cpu@0 {
+		cpu0: cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-m33f";
 			reg = <0>;
 			#address-cells = <1>;
 			#size-cells = <1>;
-			swo-ref-frequency = <64000000>;
+
+			itm: itm@e0000000 {
+				compatible = "arm,armv8m-itm";
+				reg = <0xe0000000 0x1000>;
+				swo-ref-frequency = <64000000>;
+			};
 
 			mpu: mpu@e000ed90 {
 				compatible = "arm,armv8m-mpu";
@@ -28,6 +33,7 @@
 	};
 
 	chosen {
+		zephyr,entropy = &rng_hci;
 		zephyr,flash-controller = &flash_controller;
 	};
 
@@ -78,23 +84,20 @@
 			reg = <0x5000d000 0x1000>;
 			interrupts = <13 5>;
 			status = "disabled";
-			label = "GPIOTE_0";
 		};
 
 		cryptocell: crypto@50844000 {
-			compatible = "nordic,nrf-cc312";
-			reg = <0x50844000 0x1000>;
-			label = "CRYPTOCELL";
-			status = "okay";
-			#address-cells = <1>;
-			#size-cells = <1>;
-			cryptocell312: crypto@50845000 {
-				compatible = "arm,cryptocell-312";
-				reg = <0x50845000 0x1000>;
-				interrupts = <68 NRF_DEFAULT_IRQ_PRIORITY>;
-				label = "CRYPTOCELL312";
-			};
+			compatible = "nordic,cryptocell", "arm,cryptocell-312";
+			reg = <0x50844000 0x1000>, <0x50845000 0x1000>;
+			reg-names = "wrapper", "core";
+			interrupts = <68 NRF_DEFAULT_IRQ_PRIORITY>;
+			status = "disabled";
 		};
+	};
+
+	/* Default IPC description */
+	ipc {
+		#include "nrf5340_cpuapp_ipc.dtsi"
 	};
 };
 

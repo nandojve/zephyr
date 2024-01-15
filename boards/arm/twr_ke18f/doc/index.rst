@@ -11,8 +11,7 @@ MCU-based platforms. The onboard OpenSDAv2 serial and debug adapter,
 running an open source bootloader, offers options for serial
 communication, flash programming, and run-control debugging.
 
-.. figure:: ./TWR-KE18F-DEVICE.jpg
-   :width: 800px
+.. figure:: TWR-KE18F-DEVICE.jpg
    :align: center
    :alt: TWR-KE18F
 
@@ -114,11 +113,11 @@ accelerometer and magnetometer for sensor values
 (``CONFIG_FXOS8700_TRIGGER_NONE=y``).
 
 In order to support FXOS8700 triggers (interrupts) the 0 ohm resistors
-``R47`` and and ``R57`` must be mounted on the TWR-KE18F board. The
+``R47`` and ``R57`` must be mounted on the TWR-KE18F board. The
 devicetree must also be modified to describe the FXOS8700 interrupt
 GPIOs:
 
-.. code-block:: none
+.. code-block:: devicetree
 
   /dts-v1/;
 

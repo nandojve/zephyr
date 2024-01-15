@@ -27,6 +27,7 @@ Additionally, the board features:
 - USB OTG HS
 - Stereo speaker outputs
 - ST-MEMS digital microphones
+- 2 x 512-Mbit QUAD-SPI NOR Flash memory
 - 256-Mbit SDRAM
 - 4 color user LEDs
 - 1 user and reset push-button
@@ -34,9 +35,7 @@ Additionally, the board features:
 - Arduino Uno V3 connectors
 
 .. image:: img/stm32h747i_disco.jpg
-     :width: 472px
      :align: center
-     :height: 352px
      :alt: STM32H747I-DISCO
 
 More information about the board can be found at the `STM32H747I-DISCO website`_.
@@ -73,9 +72,14 @@ The current Zephyr stm32h747i_disco board configuration supports the following h
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
 +-----------+------------+-------------------------------------+
+| QSPI NOR  | on-chip    | off-chip flash                      |
++-----------+------------+-------------------------------------+
 | SDMMC     | on-chip    | disk access                         |
 +-----------+------------+-------------------------------------+
 | IPM       | on-chip    | virtual mailbox based on HSEM       |
++-----------+------------+-------------------------------------+
+| DISPLAY   | on-chip    | MIPI DSI Host with shield (MP1166)  |
+|           |            | st_b_lcd40_dsi1_mb1166              |
 +-----------+------------+-------------------------------------+
 
 (*) From UM2411 Rev 4:
@@ -147,16 +151,26 @@ To get Ethernet working following HW modifications are required:
 Following two images shows necessary changes on the board marked:
 
 .. image:: img/disco_h747i_ethernet_modification_1.jpg
-     :width: 271px
      :align: center
-     :height: 596px
      :alt: STM32H747I-DISCO - Ethernet modification 1 (**SB44**, **SB45**)
 
 .. image:: img/disco_h747i_ethernet_modification_2.jpg
-     :width: 344px
      :align: center
-     :height: 520px
      :alt: STM32H747I-DISCO - Ethernet modification 2 (**SB21**, **R87**, **SB22**, **SB17** and **SB8**)
+
+Display
+=======
+
+The STM32H747I Discovery kit has a dedicated DSI LCD connector **CN15**, where
+the MB1166 (B-LCD40-DSI1) display extension board can be mounted. Enable display
+support in Zephyr by adding the shield ``st_b_lcd40_dsi1_mb1166`` to your build
+command, for example:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/drivers/display
+   :board: stm32h747i_disco_m7
+   :shield: st_b_lcd40_dsi1_mb1166
+   :goals: build flash
 
 Resources sharing
 =================
@@ -223,24 +237,6 @@ Here is an example for the :ref:`hello_world` application.
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
    :board: stm32h747i_disco_m7
-   :goals: build
-
-Use the following commands to flash either m7 or m4 target:
-
-.. code-block:: console
-
-   $ ./STM32_Programmer_CLI -c port=SWD mode=UR -w <path_to_m7_binary>  0x8000000
-   $ ./STM32_Programmer_CLI -c port=SWD mode=UR -w <path_to_m4_binary>  0x8100000
-
-Alternatively it is possible to flash with OpenOcd but with some restrictions:
-Sometimes, flashing is not working. It is necessary to erase the flash
-(with STM32CubeProgrammer for example) to make it work again.
-Debugging with OpenOCD is currently working for this board only with Cortex M7,
-not Cortex M4.
-
-.. zephyr-app-commands::
-   :zephyr-app: samples/hello_world
-   :board: stm32h747i_disco_m7
    :goals: build flash
 
 Run a serial host program to connect with your board:
@@ -255,6 +251,20 @@ You should see the following message on the console:
 
    Hello World! stm32h747i_disco_m7
 
+.. note::
+  Sometimes, flashing is not working. It is necessary to erase the flash
+  (with STM32CubeProgrammer for example) to make it work again.
+
+Similarly, you can build and flash samples on the M4 target. For this, please
+take care of the resource sharing (UART port used for console for instance).
+
+Here is an example for the :zephyr:code-sample:`blinky` application on M4 core.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/blinky
+   :board: stm32h747i_disco_m4
+   :goals: build flash
+
 Debugging
 =========
 
@@ -266,15 +276,18 @@ You can debug an application in the usual way.  Here is an example for the
    :board: stm32h747i_disco_m7
    :goals: debug
 
+Debugging with west is currently not available on Cortex M4 side.
+In order to debug a Zephyr application on Cortex M4 side, you can use
+`STM32CubeIDE`_.
 
 .. _STM32H747I-DISCO website:
-   http://www.st.com/en/evaluation-tools/stm32h747i-disco.html
+   https://www.st.com/en/evaluation-tools/stm32h747i-disco.html
 
 .. _STM32H747XI on www.st.com:
    https://www.st.com/content/st_com/en/products/microcontrollers-microprocessors/stm32-32-bit-arm-cortex-mcus/stm32-high-performance-mcus/stm32h7-series/stm32h747-757/stm32h747xi.html
 
 .. _STM32H747xx reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00176879.pdf
+   https://www.st.com/resource/en/reference_manual/dm00176879.pdf
 
 .. _STM32H747xx datasheet:
    https://www.st.com/resource/en/datasheet/stm32h747xi.pdf
@@ -284,3 +297,6 @@ You can debug an application in the usual way.  Here is an example for the
 
 .. _DISCO_H747I modifications for Ethernet:
    https://os.mbed.com/teams/ST/wiki/DISCO_H747I-modifications-for-Ethernet
+
+.. _STM32CubeIDE:
+   https://www.st.com/en/development-tools/stm32cubeide.html

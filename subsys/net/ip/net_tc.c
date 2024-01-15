@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_tc, CONFIG_NET_TC_LOG_LEVEL);
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <string.h>
 
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_stats.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_stats.h>
 
 #include "net_private.h"
 #include "net_stats.h"
@@ -105,21 +105,21 @@ int net_rx_priority2tc(enum net_priority prio)
 }
 
 
-#if IS_ENABLED(CONFIG_NET_TC_THREAD_COOPERATIVE)
+#if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
 #define BASE_PRIO_TX (CONFIG_NET_TC_NUM_PRIORITIES - 1)
 #else
 #define BASE_PRIO_TX (CONFIG_NET_TC_TX_COUNT - 1)
 #endif
 
-#define PRIO_TX(i, _) (BASE_PRIO_TX - i),
+#define PRIO_TX(i, _) (BASE_PRIO_TX - i)
 
-#if IS_ENABLED(CONFIG_NET_TC_THREAD_COOPERATIVE)
+#if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
 #define BASE_PRIO_RX (CONFIG_NET_TC_NUM_PRIORITIES - 1)
 #else
 #define BASE_PRIO_RX (CONFIG_NET_TC_RX_COUNT - 1)
 #endif
 
-#define PRIO_RX(i, _) (BASE_PRIO_RX - i),
+#define PRIO_RX(i, _) (BASE_PRIO_RX - i)
 
 #if NET_TC_TX_COUNT > 0
 /* Convert traffic class to thread priority */
@@ -158,7 +158,7 @@ static uint8_t tx_tc2thread(uint8_t tc)
 	 * priority.
 	 */
 	static const uint8_t thread_priorities[] = {
-		UTIL_LISTIFY(NET_TC_TX_COUNT, PRIO_TX)
+		LISTIFY(NET_TC_TX_COUNT, PRIO_TX, (,))
 	};
 
 	BUILD_ASSERT(NET_TC_TX_COUNT <= CONFIG_NUM_COOP_PRIORITIES,
@@ -175,7 +175,7 @@ static uint8_t tx_tc2thread(uint8_t tc)
 static uint8_t rx_tc2thread(uint8_t tc)
 {
 	static const uint8_t thread_priorities[] = {
-		UTIL_LISTIFY(NET_TC_RX_COUNT, PRIO_RX)
+		LISTIFY(NET_TC_RX_COUNT, PRIO_RX, (,))
 	};
 
 	BUILD_ASSERT(NET_TC_RX_COUNT <= CONFIG_NUM_COOP_PRIORITIES,
@@ -237,8 +237,12 @@ static void net_tc_rx_stats_priority_setup(struct net_if *iface,
 #endif
 
 #if NET_TC_RX_COUNT > 0
-static void tc_rx_handler(struct k_fifo *fifo)
+static void tc_rx_handler(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct k_fifo *fifo = p1;
 	struct net_pkt *pkt;
 
 	while (1) {
@@ -253,8 +257,12 @@ static void tc_rx_handler(struct k_fifo *fifo)
 #endif
 
 #if NET_TC_TX_COUNT > 0
-static void tc_tx_handler(struct k_fifo *fifo)
+static void tc_tx_handler(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct k_fifo *fifo = p1;
 	struct net_pkt *pkt;
 
 	while (1) {
@@ -309,7 +317,7 @@ void net_tc_tx_init(void)
 
 		tid = k_thread_create(&tx_classes[i].handler, tx_stack[i],
 				      K_KERNEL_STACK_SIZEOF(tx_stack[i]),
-				      (k_thread_entry_t)tc_tx_handler,
+				      tc_tx_handler,
 				      &tx_classes[i].fifo, NULL, NULL,
 				      priority, 0, K_FOREVER);
 		if (!tid) {
@@ -367,7 +375,7 @@ void net_tc_rx_init(void)
 
 		tid = k_thread_create(&rx_classes[i].handler, rx_stack[i],
 				      K_KERNEL_STACK_SIZEOF(rx_stack[i]),
-				      (k_thread_entry_t)tc_rx_handler,
+				      tc_rx_handler,
 				      &rx_classes[i].fifo, NULL, NULL,
 				      priority, 0, K_FOREVER);
 		if (!tid) {

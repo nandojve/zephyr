@@ -4,69 +4,81 @@
 
 /*
  * Copyright (c) 2015 Intel Corporation
+ * Copyright (c) 2021 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include <zephyr/bluetooth/iso.h>
+
 typedef enum __packed {
-	BT_CONN_DISCONNECTED,
-	BT_CONN_DISCONNECT_COMPLETE,
-	BT_CONN_CONNECT_SCAN,
-	BT_CONN_CONNECT_AUTO,
-	BT_CONN_CONNECT_ADV,
-	BT_CONN_CONNECT_DIR_ADV,
-	BT_CONN_CONNECT,
-	BT_CONN_CONNECTED,
-	BT_CONN_DISCONNECT,
+	BT_CONN_DISCONNECTED,         /* Disconnected, conn is completely down */
+	BT_CONN_DISCONNECT_COMPLETE,  /* Received disconn comp event, transition to DISCONNECTED */
+	BT_CONN_CONNECTING_SCAN,      /* Central passive scanning */
+	BT_CONN_CONNECTING_AUTO,      /* Central connection establishment w/ filter */
+	BT_CONN_CONNECTING_ADV,       /* Peripheral connectable advertising */
+	BT_CONN_CONNECTING_DIR_ADV,   /* Peripheral directed advertising */
+	BT_CONN_CONNECTING,           /* Central connection establishment */
+	BT_CONN_CONNECTED,            /* Peripheral or Central connected */
+	BT_CONN_DISCONNECTING,        /* Peripheral or Central issued disconnection command */
 } bt_conn_state_t;
 
 /* bt_conn flags: the flags defined here represent connection parameters */
 enum {
 	BT_CONN_AUTO_CONNECT,
-	BT_CONN_BR_LEGACY_SECURE,	/* 16 digits legacy PIN tracker */
-	BT_CONN_USER,			/* user I/O when pairing */
-	BT_CONN_BR_PAIRING,		/* BR connection in pairing context */
-	BT_CONN_BR_NOBOND,		/* SSP no bond pairing tracker */
-	BT_CONN_BR_PAIRING_INITIATOR,	/* local host starts authentication */
-	BT_CONN_CLEANUP,                /* Disconnected, pending cleanup */
-	BT_CONN_AUTO_PHY_UPDATE,        /* Auto-update PHY */
-	BT_CONN_PERIPHERAL_PARAM_UPDATE,/* If periph param update timer fired */
-	BT_CONN_PERIPHERAL_PARAM_SET,	/* If periph param were set from app */
-	BT_CONN_PERIPHERAL_PARAM_L2CAP,	/* If should force L2CAP for CPUP */
-	BT_CONN_FORCE_PAIR,             /* Pairing even with existing keys. */
+	BT_CONN_BR_LEGACY_SECURE,             /* 16 digits legacy PIN tracker */
+	BT_CONN_USER,                         /* user I/O when pairing */
+	BT_CONN_BR_PAIRING,                   /* BR connection in pairing context */
+	BT_CONN_BR_NOBOND,                    /* SSP no bond pairing tracker */
+	BT_CONN_BR_PAIRING_INITIATOR,         /* local host starts authentication */
+	BT_CONN_CLEANUP,                      /* Disconnected, pending cleanup */
+	BT_CONN_PERIPHERAL_PARAM_UPDATE,      /* If periph param update timer fired */
+	BT_CONN_PERIPHERAL_PARAM_AUTO_UPDATE, /* If periph param auto update on timer fired */
+	BT_CONN_PERIPHERAL_PARAM_SET,         /* If periph param were set from app */
+	BT_CONN_PERIPHERAL_PARAM_L2CAP,       /* If should force L2CAP for CPUP */
+	BT_CONN_FORCE_PAIR,                   /* Pairing even with existing keys. */
+#if defined(CONFIG_BT_GATT_CLIENT)
+	BT_CONN_ATT_MTU_EXCHANGED,            /* If ATT MTU has been exchanged. */
+#endif /* CONFIG_BT_GATT_CLIENT */
 
-	BT_CONN_AUTO_PHY_COMPLETE,      /* Auto-initiated PHY procedure done */
-	BT_CONN_AUTO_FEATURE_EXCH,	/* Auto-initiated LE Feat done */
-	BT_CONN_AUTO_VERSION_INFO,      /* Auto-initiated LE version done */
+	BT_CONN_AUTO_FEATURE_EXCH,            /* Auto-initiated LE Feat done */
+	BT_CONN_AUTO_VERSION_INFO,            /* Auto-initiated LE version done */
 
-	/* Auto-initiated Data Length done. Auto-initiated Data Length Update
-	 * is only needed for controllers with BT_QUIRK_NO_AUTO_DLE. */
-	BT_CONN_AUTO_DATA_LEN_COMPLETE,
+	BT_CONN_CTE_RX_ENABLED,               /* CTE receive and sampling is enabled */
+	BT_CONN_CTE_RX_PARAMS_SET,            /* CTE parameters are set */
+	BT_CONN_CTE_TX_PARAMS_SET,            /* CTE transmission parameters are set */
+	BT_CONN_CTE_REQ_ENABLED,              /* CTE request procedure is enabled */
+	BT_CONN_CTE_RSP_ENABLED,              /* CTE response procedure is enabled */
 
 	/* Total number of flags - must be at the end of the enum */
 	BT_CONN_NUM_FLAGS,
 };
 
 struct bt_conn_le {
-	bt_addr_le_t		dst;
+	bt_addr_le_t dst;
 
-	bt_addr_le_t		init_addr;
-	bt_addr_le_t		resp_addr;
+	bt_addr_le_t init_addr;
+	bt_addr_le_t resp_addr;
 
-	uint16_t			interval;
-	uint16_t			interval_min;
-	uint16_t			interval_max;
+	uint16_t interval;
+	uint16_t interval_min;
+	uint16_t interval_max;
 
-	uint16_t			latency;
-	uint16_t			timeout;
-	uint16_t			pending_latency;
-	uint16_t			pending_timeout;
+	uint16_t latency;
+	uint16_t timeout;
+	uint16_t pending_latency;
+	uint16_t pending_timeout;
 
-	uint8_t			features[8];
+#if defined(CONFIG_BT_GAP_AUTO_UPDATE_CONN_PARAMS)
+	uint8_t  conn_param_retry_countdown;
+#endif
 
-	struct bt_keys		*keys;
+	uint8_t features[8];
+
+	struct bt_keys *keys;
 
 #if defined(CONFIG_BT_USER_PHY_UPDATE)
-	struct bt_conn_le_phy_info      phy;
+	struct bt_conn_le_phy_info phy;
 #endif
 
 #if defined(CONFIG_BT_USER_DATA_LEN_UPDATE)
@@ -118,11 +130,11 @@ struct bt_conn_iso {
 		uint8_t			bis_id;
 	};
 
-	/** If true, this is a ISO for a BIS, else it is a ISO for a CIS */
-	bool is_bis;
+	/** Stored information about the ISO stream */
+	struct bt_iso_info info;
 };
 
-typedef void (*bt_conn_tx_cb_t)(struct bt_conn *conn, void *user_data);
+typedef void (*bt_conn_tx_cb_t)(struct bt_conn *conn, void *user_data, int err);
 
 struct bt_conn_tx {
 	sys_snode_t node;
@@ -147,7 +159,7 @@ struct acl_data {
 
 struct bt_conn {
 	uint16_t			handle;
-	uint8_t			type;
+	enum bt_conn_type	type;
 	uint8_t			role;
 
 	ATOMIC_DEFINE(flags, BT_CONN_NUM_FLAGS);
@@ -160,6 +172,15 @@ struct bt_conn {
 	bt_security_t		required_sec_level;
 	uint8_t			encrypt;
 #endif /* CONFIG_BT_SMP || CONFIG_BT_BREDR */
+
+#if defined(CONFIG_BT_DF_CONNECTION_CTE_RX)
+	/**
+	 * @brief Bitfield with allowed CTE types.
+	 *
+	 *  Allowed values are defined by @ref bt_df_cte_type, except BT_DF_CTE_TYPE_NONE.
+	 */
+	uint8_t cte_types;
+#endif /* CONFIG_BT_DF_CONNECTION_CTE_RX */
 
 	/* Connection error or reason for disconnect */
 	uint8_t			err;
@@ -177,8 +198,9 @@ struct bt_conn {
 
 	/* Completed TX for which we need to call the callback */
 	sys_slist_t		tx_complete;
+#if defined(CONFIG_BT_CONN_TX)
 	struct k_work           tx_complete_work;
-
+#endif /* CONFIG_BT_CONN_TX */
 
 	/* Queue for outgoing ACL data */
 	struct k_fifo		tx_queue;
@@ -232,6 +254,15 @@ void bt_conn_recv(struct bt_conn *conn, struct net_buf *buf, uint8_t flags);
 int bt_conn_send_cb(struct bt_conn *conn, struct net_buf *buf,
 		    bt_conn_tx_cb_t cb, void *user_data);
 
+/* Thin wrapper over `bt_conn_send_cb`
+ *
+ * Used to set the TS_Flag bit in `buf`'s metadata.
+ *
+ * Return values & buf ownership same as parent.
+ */
+int bt_conn_send_iso_cb(struct bt_conn *conn, struct net_buf *buf,
+			bt_conn_tx_cb_t cb, bool has_ts);
+
 static inline int bt_conn_send(struct bt_conn *conn, struct net_buf *buf)
 {
 	return bt_conn_send_cb(conn, buf, NULL, NULL);
@@ -252,9 +283,6 @@ struct bt_iso_create_param {
 };
 
 int bt_conn_iso_init(void);
-
-/* Add a new ISO connection */
-struct bt_conn *bt_conn_add_iso(struct bt_conn *acl);
 
 /* Cleanup ISO references */
 void bt_iso_cleanup_acl(struct bt_conn *iso_conn);
@@ -280,16 +308,16 @@ void bt_conn_disconnect_all(uint8_t id);
 struct bt_conn *bt_conn_new(struct bt_conn *conns, size_t size);
 
 /* Look up an existing connection */
-struct bt_conn *bt_conn_lookup_handle(uint16_t handle);
+struct bt_conn *bt_conn_lookup_handle(uint16_t handle, enum bt_conn_type type);
 
 static inline bool bt_conn_is_handle_valid(struct bt_conn *conn)
 {
 	switch (conn->state) {
 	case BT_CONN_CONNECTED:
-	case BT_CONN_DISCONNECT:
+	case BT_CONN_DISCONNECTING:
 	case BT_CONN_DISCONNECT_COMPLETE:
 		return true;
-	case BT_CONN_CONNECT:
+	case BT_CONN_CONNECTING:
 		/* ISO connection handle assigned at connect state */
 		if (IS_ENABLED(CONFIG_BT_ISO) &&
 		    conn->type == BT_CONN_TYPE_ISO) {
@@ -336,7 +364,13 @@ void notify_le_phy_updated(struct bt_conn *conn);
 
 bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param);
 
+void notify_tx_power_report(struct bt_conn *conn,
+			    struct bt_conn_le_tx_power_report report);
+
 #if defined(CONFIG_BT_SMP)
+/* If role specific LTK is present */
+bool bt_conn_ltk_present(const struct bt_conn *conn);
+
 /* rand and ediv should be in BT order */
 int bt_conn_le_start_encryption(struct bt_conn *conn, uint8_t rand[8],
 				uint8_t ediv[2], const uint8_t *ltk, size_t len);
@@ -396,7 +430,10 @@ struct net_buf *bt_conn_create_frag_timeout(size_t reserve,
 /* Initialize connection management */
 int bt_conn_init(void);
 
-/* Selects based on connecton type right semaphore for ACL packets */
+/* Reset states of connections and set state to BT_CONN_DISCONNECTED. */
+void bt_conn_cleanup_all(void);
+
+/* Selects based on connection type right semaphore for ACL packets */
 struct k_sem *bt_conn_get_pkts(struct bt_conn *conn);
 
 /* k_poll related helpers for the TX thread */

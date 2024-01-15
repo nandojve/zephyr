@@ -17,10 +17,10 @@
 
 #else
 
-#include <net/socket.h>
-#include <kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/kernel.h>
 
-#include <net/net_pkt.h>
+#include <zephyr/net/net_pkt.h>
 
 #endif
 
@@ -40,7 +40,7 @@ static const char content[] = {
 #endif
 };
 
-void main(void)
+int main(void)
 {
 	int serv;
 	struct sockaddr_in bind_addr;
@@ -145,4 +145,5 @@ close_client:
 #endif
 
 	}
+	return 0;
 }

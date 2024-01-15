@@ -4,15 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <sys/printk.h>
-#include <sys_clock.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys_clock.h>
 #include <stdio.h>
 
-#include <device.h>
-#include <drivers/sensor.h>
-#include <drivers/i2c.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/i2c.h>
 
 #define MAX_TEST_TIME	15000
 #define SLEEPTIME	300
@@ -170,16 +170,16 @@ static void test_trigger_mode(const struct device *bmg160)
 	printf("Gyro: Data ready trigger test finished.\n");
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *bmg160 = DEVICE_DT_GET_ANY(bosch_bmg160);
+	const struct device *const bmg160 = DEVICE_DT_GET_ANY(bosch_bmg160);
 #if defined(CONFIG_BMG160_RANGE_RUNTIME)
 	struct sensor_value attr;
 #endif
 
 	if (!device_is_ready(bmg160)) {
 		printf("Device %s is not ready.\n", bmg160->name);
-		return;
+		return 0;
 	}
 
 #if defined(CONFIG_BMG160_RANGE_RUNTIME)
@@ -192,7 +192,7 @@ void main(void)
 	if (sensor_attr_set(bmg160, SENSOR_CHAN_GYRO_XYZ,
 			    SENSOR_ATTR_FULL_SCALE, &attr) < 0) {
 		printf("Cannot set gyro range.\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -203,4 +203,5 @@ void main(void)
 	printf("Testing the trigger mode.\n");
 	test_trigger_mode(bmg160);
 	printf("Trigger mode test finished.\n");
+	return 0;
 }

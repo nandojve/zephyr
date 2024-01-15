@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f103rb.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F103RB
 
@@ -97,6 +95,12 @@ The Zephyr nucleo_f103rb board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | Direct Memory Access                |
 +-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
++-----------+------------+-------------------------------------+
+| COUNTER   | on-chip    | rtc                                 |
++-----------+------------+-------------------------------------+
+| RTC       | on-chip    | rtc                                 |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
 
@@ -113,10 +117,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f103rb_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f103rb_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F103RB connectors
 
 Default Zephyr Peripheral Mapping:
@@ -149,7 +151,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application to Nucleo F103RB
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -162,7 +164,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -176,13 +178,13 @@ References
 .. target-notes::
 
 .. _Nucleo F103RB website:
-   http://www.st.com/en/evaluation-tools/nucleo-f103rb.html
+   https://www.st.com/en/evaluation-tools/nucleo-f103rb.html
 
 .. _STM32F103 reference manual:
-   http://www.st.com/resource/en/reference_manual/cd00171190.pdf
+   https://www.st.com/resource/en/reference_manual/cd00171190.pdf
 
 .. _STM32F103 data sheet:
-   http://www.st.com/resource/en/datasheet/stm32f103rb.pdf
+   https://www.st.com/resource/en/datasheet/stm32f103rb.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf

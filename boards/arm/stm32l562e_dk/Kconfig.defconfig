@@ -8,11 +8,6 @@ if BOARD_STM32L562E_DK
 config BOARD
 	default "stm32l562e_dk"
 
-choice STM32_LPTIM_CLOCK
-	default STM32_LPTIM_CLOCK_LSE
-	depends on STM32_LPTIM_TIMER
-endchoice
-
 if BT
 
 config SPI
@@ -21,9 +16,6 @@ config SPI
 choice BT_HCI_BUS_TYPE
 	default BT_SPI
 endchoice
-
-config BT_SPI_BLUENRG
-	default y
 
 config BT_BLUENRG_ACI
 	default y

@@ -8,14 +8,6 @@ Overview
 
 This board configuration will use QEMU to emulate the Altera MAX 10 platform.
 
-
-.. figure:: qemu_nios2.png
-   :width: 600px
-   :align: center
-   :alt: Qemu
-
-   Qemu (Credit: qemu.org)
-
 This configuration provides support for an Altera Nios-II CPU and these devices:
 
 * Internal Interrupt Controller
@@ -82,7 +74,7 @@ Programming and Debugging
 *************************
 
 Use this configuration to run basic Zephyr applications and kernel tests in the QEMU
-emulated environment, for example, with the :ref:`synchronization_sample`:
+emulated environment, for example, with the :zephyr:code-sample:`synchronization` sample:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/synchronization

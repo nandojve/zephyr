@@ -16,7 +16,6 @@ supported:
   - counter
   - gpio
   - i2c
-  - ieee802154
   - pwm
   - spi
   - qspi
@@ -24,3 +23,4 @@ supported:
   - usb_device
   - watchdog
   - netif:openthread
+vendor: u-blox

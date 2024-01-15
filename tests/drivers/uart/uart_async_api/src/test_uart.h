@@ -14,66 +14,17 @@
 #ifndef __TEST_UART_H__
 #define __TEST_UART_H__
 
-#include <drivers/uart.h>
-#include <ztest.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/ztest.h>
 
 /* RX and TX pins have to be connected together*/
 
-#if defined(CONFIG_BOARD_NRF52840DK_NRF52840)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(uart0))
-#elif defined(CONFIG_BOARD_NRF9160DK_NRF9160)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(uart1))
-#elif defined(CONFIG_BOARD_ATSAMD21_XPRO)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(sercom1))
-#elif defined(CONFIG_BOARD_ATSAMR21_XPRO)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(sercom3))
-#elif defined(CONFIG_BOARD_ATSAME54_XPRO)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(sercom1))
-#elif defined(CONFIG_BOARD_NUCLEO_F103RB) || \
-	defined(CONFIG_BOARD_NUCLEO_G071RB) || \
-	defined(CONFIG_BOARD_NUCLEO_G474RE)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(usart1))
-#elif defined(CONFIG_BOARD_NUCLEO_L4R5ZI) || \
-	defined(CONFIG_BOARD_NUCLEO_L152RE)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(usart3))
-#elif defined(CONFIG_BOARD_NUCLEO_F429ZI) || \
-	defined(CONFIG_BOARD_NUCLEO_F207ZG)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(usart6))
-#elif defined(CONFIG_BOARD_DISCO_L475_IOT1)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(uart4))
-#elif defined(CONFIG_BOARD_NUCLEO_L552ZE_Q)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(usart3))
-#elif defined(CONFIG_BOARD_STM32L562E_DK)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(usart3))
-#elif defined(CONFIG_BOARD_NUCLEO_H723ZG) || \
-	defined(CONFIG_BOARD_STM32F3_DISCO)
-#define UART_DEVICE_NAME DT_LABEL(DT_NODELABEL(usart2))
+#if DT_NODE_EXISTS(DT_NODELABEL(dut))
+#define UART_NODE DT_NODELABEL(dut)
+#elif defined(CONFIG_SOC_SERIES_ESP32C3)
+#define UART_NODE DT_NODELABEL(uart1)
 #else
-#define UART_DEVICE_NAME DT_LABEL(DT_CHOSEN(zephyr_console))
-#endif
-
-void init_test(void);
-
-void test_single_read(void);
-void test_chained_read(void);
-void test_double_buffer(void);
-void test_read_abort(void);
-void test_write_abort(void);
-void test_forever_timeout(void);
-void test_long_buffers(void);
-void test_chained_write(void);
-
-void test_single_read_setup(void);
-void test_chained_read_setup(void);
-void test_double_buffer_setup(void);
-void test_read_abort_setup(void);
-void test_write_abort_setup(void);
-void test_forever_timeout_setup(void);
-void test_long_buffers_setup(void);
-void test_chained_write_setup(void);
-
-#ifdef CONFIG_USERSPACE
-void set_permissions(void);
+#define UART_NODE DT_CHOSEN(zephyr_console)
 #endif
 
 #endif /* __TEST_UART_H__ */

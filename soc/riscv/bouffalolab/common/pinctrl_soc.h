@@ -11,9 +11,9 @@
 #ifndef ZEPHYR_SOC_RISCV_BFLB_COMMON_PINCTRL_SOC_H_
 #define ZEPHYR_SOC_RISCV_BFLB_COMMON_PINCTRL_SOC_H_
 
-#include <devicetree.h>
+#include <zephyr/devicetree.h>
 #include <zephyr/types.h>
-#include <dt-bindings/pinctrl/bflb-pinctrl.h>
+#include <zephyr/dt-bindings/pinctrl/bflb-pinctrl.h>
 
 #ifdef __cplusplus
 extern "C" {

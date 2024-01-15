@@ -8,7 +8,7 @@
  * @file Synchronization demo using CMSIS RTOS V2 APIs.
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <cmsis_os2.h>
 
 /* specify delay between greetings (in ms); compute equivalent in ticks */
@@ -63,7 +63,7 @@ int send_msg_thread(void)
 	return 1;
 }
 
-void main(void)
+int main(void)
 {
 	osTimerId_t timer_id;
 	osStatus_t status;
@@ -105,4 +105,5 @@ exit:
 	} else {
 		printk("Error in execution! \n");
 	}
+	return 0;
 }

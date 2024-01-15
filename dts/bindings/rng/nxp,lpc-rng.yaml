@@ -8,11 +8,5 @@ compatible: "nxp,lpc-rng"
 include: base.yaml
 
 properties:
-    reg:
-      required: true
-
-    interrupts:
-      required: false
-
-    label:
-      required: true
+  reg:
+    required: true

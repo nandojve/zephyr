@@ -7,11 +7,13 @@
 #define DT_DRV_COMPAT nxp_lpc_mailbox
 
 #include <errno.h>
-#include <device.h>
-#include <drivers/ipm.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/ipm.h>
 #include <fsl_mailbox.h>
 #include <fsl_clock.h>
 #include <soc.h>
+#include <zephyr/irq.h>
+#include <zephyr/sys/barrier.h>
 
 #define MCUX_IPM_DATA_REGS 1
 #define MCUX_IPM_MAX_ID_VAL 0
@@ -68,7 +70,7 @@ static void mcux_mailbox_isr(const struct device *dev)
 	 * might vector to incorrect interrupt
 	 */
 #if defined __CORTEX_M && (__CORTEX_M == 4U)
-	__DSB();
+	barrier_dsync_fence_full();
 #endif
 }
 
@@ -79,9 +81,8 @@ static int mcux_mailbox_ipm_send(const struct device *d, int wait,
 {
 	const struct mcux_mailbox_config *config = d->config;
 	MAILBOX_Type *base = config->base;
-	uint32_t data32[MCUX_IPM_DATA_REGS]; /* Until we change API
-					   * to uint32_t array
-					   */
+	/* Until we change API to uint32_t array */
+	uint32_t data32[MCUX_IPM_DATA_REGS] = {0};
 	unsigned int flags;
 	int i;
 
@@ -91,7 +92,7 @@ static int mcux_mailbox_ipm_send(const struct device *d, int wait,
 		return -EINVAL;
 	}
 
-	if (size > MCUX_IPM_DATA_REGS * sizeof(uint32_t)) {
+	if ((size < 0) || (size > MCUX_IPM_DATA_REGS * sizeof(uint32_t))) {
 		return -EMSGSIZE;
 	}
 

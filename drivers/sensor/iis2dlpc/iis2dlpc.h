@@ -11,18 +11,18 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_IIS2DLPC_IIS2DLPC_H_
 #define ZEPHYR_DRIVERS_SENSOR_IIS2DLPC_IIS2DLPC_H_
 
-#include <drivers/gpio.h>
-#include <sys/util.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/drivers/sensor.h>
 #include <stmemsc.h>
 #include "iis2dlpc_reg.h"
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
-#include <drivers/i2c.h>
+#include <zephyr/drivers/i2c.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
 
 /* Return ODR reg value based on data rate set */
@@ -54,7 +54,7 @@
  * @bus_name: Pointer to bus master identifier.
  * @pm: Power mode (lis2dh_powermode).
  * @irq_dev_name: Pointer to GPIO PORT identifier.
- * @irq_pin: GPIO pin number connecter to sensor int pin.
+ * @irq_pin: GPIO pin number connected to sensor int pin.
  * @drdy_int: Sensor drdy int (int1/int2).
  */
 struct iis2dlpc_config {
@@ -95,10 +95,17 @@ struct iis2dlpc_data {
 	uint8_t gpio_pin;
 	struct gpio_callback gpio_cb;
 	sensor_trigger_handler_t drdy_handler;
+	const struct sensor_trigger *drdy_trig;
 #ifdef CONFIG_IIS2DLPC_TAP
 	sensor_trigger_handler_t tap_handler;
+	const struct sensor_trigger *tap_trig;
 	sensor_trigger_handler_t double_tap_handler;
+	const struct sensor_trigger *double_tap_trig;
 #endif /* CONFIG_IIS2DLPC_TAP */
+#ifdef CONFIG_IIS2DLPC_ACTIVITY
+	sensor_trigger_handler_t activity_handler;
+	const struct sensor_trigger *activity_trig;
+#endif /* CONFIG_IIS2DLPC_ACTIVITY */
 #if defined(CONFIG_IIS2DLPC_TRIGGER_OWN_THREAD)
 	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_IIS2DLPC_THREAD_STACK_SIZE);
 	struct k_thread thread;

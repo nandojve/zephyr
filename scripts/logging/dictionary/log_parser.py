@@ -28,7 +28,7 @@ LOG_HEX_SEP = "##ZLOGV1##"
 
 def parse_args():
     """Parse command line arguments"""
-    argparser = argparse.ArgumentParser()
+    argparser = argparse.ArgumentParser(allow_abbrev=False)
 
     argparser.add_argument("dbfile", help="Dictionary Logging Database file")
     argparser.add_argument("logfile", help="Log Data file")
@@ -42,22 +42,11 @@ def parse_args():
     return argparser.parse_args()
 
 
-def main():
-    """Main function of log parser"""
-    args = parse_args()
-
-    # Setup logging for parser
-    logging.basicConfig(format=LOGGER_FORMAT)
-    if args.debug:
-        logger.setLevel(logging.DEBUG)
-    else:
-        logger.setLevel(logging.INFO)
-
-    # Read from database file
-    database = LogDatabase.read_json_database(args.dbfile)
-    if database is None:
-        logger.error("ERROR: Cannot open database file: %s, exiting...", args.dbfile)
-        sys.exit(1)
+def read_log_file(args):
+    """
+    Read the log from file
+    """
+    logdata = None
 
     # Open log data file for reading
     if args.hex:
@@ -67,7 +56,7 @@ def main():
         else:
             hexdata = ''
 
-            with open(args.logfile, "r") as hexfile:
+            with open(args.logfile, "r", encoding="iso-8859-1") as hexfile:
                 for line in hexfile.readlines():
                     hexdata += line.strip()
 
@@ -108,6 +97,31 @@ def main():
         logdata = logfile.read()
 
         logfile.close()
+
+    return logdata
+
+
+def main():
+    """Main function of log parser"""
+    args = parse_args()
+
+    # Setup logging for parser
+    logging.basicConfig(format=LOGGER_FORMAT)
+    if args.debug:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.INFO)
+
+    # Read from database file
+    database = LogDatabase.read_json_database(args.dbfile)
+    if database is None:
+        logger.error("ERROR: Cannot open database file: %s, exiting...", args.dbfile)
+        sys.exit(1)
+
+    logdata = read_log_file(args)
+    if logdata is None:
+        logger.error("ERROR: cannot read log from file: %s, exiting...", args.logfile)
+        sys.exit(1)
 
     log_parser = dictionary_parser.get_parser(database)
     if log_parser is not None:

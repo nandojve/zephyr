@@ -6,11 +6,11 @@
 
 #define DT_DRV_COMPAT nuvoton_npcx_bbram
 
-#include <drivers/bbram.h>
+#include <zephyr/drivers/bbram.h>
 #include <errno.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bbram, CONFIG_BBRAM_LOG_LEVEL);
 
 /** Device config */
@@ -27,9 +27,8 @@ struct bbram_npcx_config {
 #define NPCX_STATUS_VSBY BIT(1)
 #define NPCX_STATUS_VCC1 BIT(0)
 
-#define DRV_CONFIG(dev) ((const struct bbram_npcx_config *)(dev)->config)
 #define DRV_STATUS(dev)                                                        \
-	(*((volatile uint8_t *)DRV_CONFIG(dev)->status_reg_addr))
+	(*((volatile uint8_t *)((const struct bbram_npcx_config *)(dev)->config)->status_reg_addr))
 
 static int get_bit_and_reset(const struct device *dev, int mask)
 {
@@ -58,7 +57,7 @@ static int bbram_npcx_check_power(const struct device *dev)
 
 static int bbram_npcx_get_size(const struct device *dev, size_t *size)
 {
-	const struct bbram_npcx_config *config = DRV_CONFIG(dev);
+	const struct bbram_npcx_config *config = dev->config;
 
 	*size = config->size;
 	return 0;
@@ -67,7 +66,7 @@ static int bbram_npcx_get_size(const struct device *dev, size_t *size)
 static int bbram_npcx_read(const struct device *dev, size_t offset, size_t size,
 			   uint8_t *data)
 {
-	const struct bbram_npcx_config *config = DRV_CONFIG(dev);
+	const struct bbram_npcx_config *config = dev->config;
 
 	if (size < 1 || offset + size > config->size || bbram_npcx_check_invalid(dev)) {
 		return -EFAULT;
@@ -81,7 +80,7 @@ static int bbram_npcx_read(const struct device *dev, size_t offset, size_t size,
 static int bbram_npcx_write(const struct device *dev, size_t offset, size_t size,
 			    const uint8_t *data)
 {
-	const struct bbram_npcx_config *config = DRV_CONFIG(dev);
+	const struct bbram_npcx_config *config = dev->config;
 
 	if (size < 1 || offset + size > config->size || bbram_npcx_check_invalid(dev)) {
 		return -EFAULT;
@@ -100,13 +99,6 @@ static const struct bbram_driver_api bbram_npcx_driver_api = {
 	.write = bbram_npcx_write,
 };
 
-static int bbram_npcx_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	return 0;
-}
-
 #define BBRAM_INIT(inst)                                                                           \
 	static struct {                                                                            \
 	} bbram_data_##inst;                                                                       \
@@ -115,7 +107,7 @@ static int bbram_npcx_init(const struct device *dev)
 		.size = DT_INST_REG_SIZE_BY_NAME(inst, memory),                                    \
 		.status_reg_addr = DT_INST_REG_ADDR_BY_NAME(inst, status),                         \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(inst, bbram_npcx_init, NULL, &bbram_data_##inst, &bbram_cfg_##inst,  \
+	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &bbram_data_##inst, &bbram_cfg_##inst,             \
 			      PRE_KERNEL_1, CONFIG_BBRAM_INIT_PRIORITY, &bbram_npcx_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(BBRAM_INIT);

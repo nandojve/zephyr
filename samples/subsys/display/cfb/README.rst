@@ -1,7 +1,8 @@
-.. _character_frame_buffer_sample:
+.. zephyr:code-sample:: character-frame-buffer
+   :name: Character frame buffer
+   :relevant-api: monochrome_character_framebuffer
 
-Character frame buffer
-######################
+   Display character strings using the Character Frame Buffer (CFB).
 
 Overview
 ********
@@ -21,7 +22,7 @@ Building and Running
 Build this sample application with the following commands:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/display/cfb
+   :zephyr-app: samples/subsys/display/cfb
    :board: reel_board
    :goals: build
    :compact:

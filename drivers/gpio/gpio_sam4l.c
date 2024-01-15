@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018 Justin Watson
- * Copyright (c) 2020 Gerson Fernando Budke <nandojve@gmail.com>
+ * Copyright (c) 2020-2023 Gerson Fernando Budke <nandojve@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,13 +8,15 @@
 #define DT_DRV_COMPAT atmel_sam4l_gpio
 
 #include <errno.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
+#include <zephyr/irq.h>
 
-#include "gpio_utils.h"
+#include <zephyr/drivers/gpio/gpio_utils.h>
 
 typedef void (*config_func_t)(const struct device *dev);
 
@@ -23,7 +25,8 @@ struct gpio_sam_config {
 	struct gpio_driver_config common;
 	Gpio *regs;
 	config_func_t config_func;
-	uint32_t periph_id;
+
+	const struct atmel_sam_pmc_config clock_cfg;
 };
 
 struct gpio_sam_runtime {
@@ -32,18 +35,13 @@ struct gpio_sam_runtime {
 	sys_slist_t cb;
 };
 
-#define DEV_CFG(dev) \
-	((const struct gpio_sam_config * const)(dev)->config)
-#define DEV_DATA(dev) \
-	((struct gpio_sam_runtime * const)(dev)->data)
-
 #define GPIO_SAM_ALL_PINS    0xFFFFFFFF
 
 static int gpio_sam_port_configure(const struct device *dev,
 				   uint32_t mask,
 				   gpio_flags_t flags)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	/* No hardware support */
@@ -104,7 +102,7 @@ static int gpio_sam_config(const struct device *dev,
 static int gpio_sam_port_get_raw(const struct device *dev,
 				 uint32_t *value)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	*value = gpio->PVR;
@@ -116,7 +114,7 @@ static int gpio_sam_port_set_masked_raw(const struct device *dev,
 					uint32_t mask,
 					uint32_t value)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	gpio->OVR = (gpio->PVR & ~mask) | (mask & value);
@@ -127,7 +125,7 @@ static int gpio_sam_port_set_masked_raw(const struct device *dev,
 static int gpio_sam_port_set_bits_raw(const struct device *dev,
 				      uint32_t mask)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	gpio->OVRS = mask;
@@ -138,7 +136,7 @@ static int gpio_sam_port_set_bits_raw(const struct device *dev,
 static int gpio_sam_port_clear_bits_raw(const struct device *dev,
 					uint32_t mask)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	gpio->OVRC = mask;
@@ -149,7 +147,7 @@ static int gpio_sam_port_clear_bits_raw(const struct device *dev,
 static int gpio_sam_port_toggle_bits(const struct device *dev,
 				     uint32_t mask)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	gpio->OVRT = mask;
@@ -162,7 +160,7 @@ static int gpio_sam_port_interrupt_configure(const struct device *dev,
 					     enum gpio_int_mode mode,
 					     enum gpio_int_trig trig)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 
 	if (mode == GPIO_INT_MODE_LEVEL) {
@@ -199,7 +197,7 @@ static int gpio_sam_pin_interrupt_configure(const struct device *dev,
 
 static void gpio_sam_isr(const struct device *dev)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 	Gpio * const gpio = cfg->regs;
 	struct gpio_sam_runtime *context = dev->data;
 	uint32_t int_stat;
@@ -232,9 +230,11 @@ static const struct gpio_driver_api gpio_sam_api = {
 
 int gpio_sam_init(const struct device *dev)
 {
-	const struct gpio_sam_config * const cfg = DEV_CFG(dev);
+	const struct gpio_sam_config * const cfg = dev->config;
 
-	soc_pmc_peripheral_enable(cfg->periph_id);
+	/* Enable GPIO clock in PM */
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&cfg->clock_cfg);
 
 	cfg->config_func(dev);
 
@@ -248,7 +248,7 @@ int gpio_sam_init(const struct device *dev)
 			    gpio_sam_isr,				\
 			    DEVICE_DT_INST_GET(n), 0);			\
 		irq_enable(DT_INST_IRQ_BY_IDX(n, m, irq));		\
-	} while (0)
+	} while (false)
 
 #define GPIO_SAM_INIT(n)						\
 	static void port_##n##_sam_config_func(const struct device *dev);\
@@ -258,7 +258,7 @@ int gpio_sam_init(const struct device *dev)
 			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),\
 		},							\
 		.regs = (Gpio *)DT_INST_REG_ADDR(n),			\
-		.periph_id = DT_INST_PROP(n, peripheral_id),		\
+		.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(n),		\
 		.config_func = port_##n##_sam_config_func,		\
 	};								\
 									\
@@ -266,8 +266,8 @@ int gpio_sam_init(const struct device *dev)
 									\
 	DEVICE_DT_INST_DEFINE(n, gpio_sam_init, NULL,			\
 			    &port_##n##_sam_runtime,			\
-			    &port_##n##_sam_config, POST_KERNEL,	\
-			    CONFIG_KERNEL_INIT_PRIORITY_DEVICE,		\
+			    &port_##n##_sam_config, PRE_KERNEL_1,	\
+			    CONFIG_GPIO_INIT_PRIORITY,			\
 			    &gpio_sam_api);				\
 									\
 	static void port_##n##_sam_config_func(const struct device *dev)\

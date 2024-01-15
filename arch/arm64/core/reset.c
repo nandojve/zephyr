@@ -5,6 +5,7 @@
  */
 
 #include <kernel_internal.h>
+#include <zephyr/sys/barrier.h>
 #include "boot.h"
 
 void z_arm64_el2_init(void);
@@ -37,7 +38,7 @@ void z_arm64_el_highest_init(void)
 
 	z_arm64_el_highest_plat_init();
 
-	isb();
+	barrier_isync_fence_full();
 }
 
 enum el3_next_el {
@@ -68,7 +69,7 @@ void z_arm64_el3_init(void)
 
 	/* Setup vector table */
 	write_vbar_el3((uint64_t)_vector_table);
-	isb();
+	barrier_isync_fence_full();
 
 	reg = 0U;			/* Mostly RES0 */
 	reg &= ~(CPTR_TTA_BIT |		/* Do not trap sysreg accesses */
@@ -79,6 +80,10 @@ void z_arm64_el3_init(void)
 	reg = 0U;			/* Reset */
 #ifdef CONFIG_ARMV8_A_NS
 	reg |= SCR_NS_BIT;		/* EL2 / EL3 non-secure */
+#else
+	if (is_in_secure_state() && is_el2_sec_supported()) {
+		reg |= SCR_EEL2_BIT;    /* Enable EL2 secure */
+	}
 #endif
 	reg |= (SCR_RES1 |		/* RES1 */
 		SCR_RW_BIT |		/* EL2 execution state is AArch64 */
@@ -89,14 +94,16 @@ void z_arm64_el3_init(void)
 
 #if defined(CONFIG_GIC_V3)
 	reg = read_sysreg(ICC_SRE_EL3);
-	reg = (ICC_SRE_ELx_SRE_BIT |	/* System register interface is used */
-	       ICC_SRE_EL3_EN_BIT);	/* Enables lower Exception level access to ICC_SRE_EL1 */
+	reg |= (ICC_SRE_ELx_DFB_BIT |	/* Disable FIQ bypass */
+		ICC_SRE_ELx_DIB_BIT |	/* Disable IRQ bypass */
+		ICC_SRE_ELx_SRE_BIT |	/* System register interface is used */
+		ICC_SRE_EL3_EN_BIT);	/* Enables lower Exception level access to ICC_SRE_EL1 */
 	write_sysreg(reg, ICC_SRE_EL3);
 #endif
 
 	z_arm64_el3_plat_init();
 
-	isb();
+	barrier_isync_fence_full();
 
 	if (el3_get_next_el() == EL3_TO_EL1_SKIP_EL2) {
 		/*
@@ -118,6 +125,12 @@ void z_arm64_el2_init(void)
 	write_sctlr_el2(reg);
 
 	reg = read_hcr_el2();
+	/* when EL2 is enable in current security status:
+	 * Clear TGE bit: All exceptions that would not be routed to EL2;
+	 * Clear AMO bit: Physical SError interrupts are not taken to EL2 and EL3.
+	 * Clear IMO bit: Physical IRQ interrupts are not taken to EL2 and EL3.
+	 */
+	reg &= ~(HCR_IMO_BIT | HCR_AMO_BIT | HCR_TGE_BIT);
 	reg |= HCR_RW_BIT;		/* EL1 Execution state is AArch64 */
 	write_hcr_el2(reg);
 
@@ -129,7 +142,17 @@ void z_arm64_el2_init(void)
 
 	zero_cntvoff_el2();		/* Set 64-bit virtual timer offset to 0 */
 	zero_cnthctl_el2();
+#ifdef CONFIG_CPU_AARCH64_CORTEX_R
+	zero_cnthps_ctl_el2();
+#else
 	zero_cnthp_ctl_el2();
+#endif
+
+#ifdef CONFIG_ARM64_SET_VMPIDR_EL2
+	reg = read_mpidr_el1();
+	write_vmpidr_el2(reg);
+#endif
+
 	/*
 	 * Enable this if/when we use the hypervisor timer.
 	 * write_cnthp_cval_el2(~(uint64_t)0);
@@ -137,7 +160,7 @@ void z_arm64_el2_init(void)
 
 	z_arm64_el2_plat_init();
 
-	isb();
+	barrier_isync_fence_full();
 }
 
 void z_arm64_el1_init(void)
@@ -146,7 +169,7 @@ void z_arm64_el1_init(void)
 
 	/* Setup vector table */
 	write_vbar_el1((uint64_t)_vector_table);
-	isb();
+	barrier_isync_fence_full();
 
 	reg = 0U;			/* RES0 */
 	reg |= CPACR_EL1_FPEN_NOTRAP;	/* Do not trap NEON/SIMD/FP initially */
@@ -156,6 +179,7 @@ void z_arm64_el1_init(void)
 	reg = read_sctlr_el1();
 	reg |= (SCTLR_EL1_RES1 |	/* RES1 */
 		SCTLR_I_BIT |		/* Enable i-cache */
+		SCTLR_C_BIT |		/* Enable d-cache */
 		SCTLR_SA_BIT);		/* Enable SP alignment check */
 	write_sctlr_el1(reg);
 
@@ -168,7 +192,7 @@ void z_arm64_el1_init(void)
 
 	z_arm64_el1_plat_init();
 
-	isb();
+	barrier_isync_fence_full();
 }
 
 void z_arm64_el3_get_next_el(uint64_t switch_addr)

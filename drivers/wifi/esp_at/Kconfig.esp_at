@@ -3,12 +3,15 @@
 
 menuconfig WIFI_ESP_AT
 	bool "Espressif AT Command support"
+	default y
+	depends on DT_HAS_ESPRESSIF_ESP_AT_ENABLED
 	select MODEM
 	select MODEM_CONTEXT
 	select MODEM_CMD_HANDLER
 	select MODEM_IFACE_UART
 	select NET_L2_WIFI_MGMT
 	select WIFI_OFFLOAD
+	imply UART_USE_RUNTIME_CONFIGURE
 	help
 	  Enable Espressif AT Command offloaded WiFi driver. It is supported on
 	  any serial capable platform and communicates with Espressif chips
@@ -130,7 +133,7 @@ endif
 
 choice WIFI_ESP_AT_VERSION
 	prompt "AT version"
-	default WIFI_ESP_AT_VERSION_2_0
+	default WIFI_ESP_AT_VERSION_2_1
 	help
 	  Select which version of AT command set should be used.
 
@@ -144,6 +147,11 @@ config WIFI_ESP_AT_VERSION_2_0
 	help
 	  Use AT command set version 2.0.
 
+config WIFI_ESP_AT_VERSION_2_1
+	bool "AT version 2.1"
+	help
+	  Use AT command set version 2.1.
+
 endchoice
 
 config WIFI_ESP_AT_DNS_USE
@@ -152,5 +160,13 @@ config WIFI_ESP_AT_DNS_USE
 	help
 	  Fetch DNS servers from ESP chip with AT+CIPDNS? command and apply that
 	  list to system DNS resolver.
+
+config WIFI_ESP_AT_FETCH_VERSION
+	bool "Fetch and log ESP-AT firmware version"
+	default y
+	depends on LOG
+	help
+	  Fetch information about ESP-AT firmware version. This includes AT
+	  command version, SDK (ESP-IDF), board and compile time.
 
 endif # WIFI_ESP_AT

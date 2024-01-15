@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f091rc.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F091RC
 
@@ -92,17 +90,23 @@ The Zephyr nucleo_f091rc board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | WATCHDOG  | on-chip    | independent watchdog                |
 +-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
 | COUNTER   | on-chip    | rtc                                 |
 +-----------+------------+-------------------------------------+
 | I2C       | on-chip    | i2c controller                      |
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | SPI controller                      |
 +-----------+------------+-------------------------------------+
+| CAN       | on-chip    | CAN controller                      |
++-----------+------------+-------------------------------------+
 | ADC       | on-chip    | ADC controller                      |
 +-----------+------------+-------------------------------------+
 | DAC       | on-chip    | DAC controller                      |
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | Direct Memory Access                |
++-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
 +-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
@@ -120,10 +124,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f091rc_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f091rc_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F091RC connectors
 
 Default Zephyr Peripheral Mapping:
@@ -132,12 +134,14 @@ Default Zephyr Peripheral Mapping:
 - UART_1 TX/RX : PB6/PB7
 - UART_2 TX/RX : PA2/PA3 (ST-Link Virtual COM Port)
 - I2C1 SCL/SDA : PB8/PB9 (Arduino I2C)
-- I2C2 SCL/SDA : PA11/PA12
+- I2C2 SCL/SDA : PA11/PA12 (disabled by default, uses same pins as CAN)
+- CAN RX/TX : PA11/PA12
 - SPI1 SCK/MISO/MOSI : PA5/PA6/PA7 (Arduino SPI)
 - SPI2 SCK/MISO/MOSI : PB13/PB14/PB15
 - USER_PB : PC13
-- LD1 : PA5
+- LD2 : PA5
 - DAC_OUT1 : PA4
+- PWM_2_CH1 : PA5 (might conflict with SPI1)
 
 For mode details please refer to `STM32 Nucleo-64 board User Manual`_.
 
@@ -157,7 +161,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application to Nucleo F091RC
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -184,10 +188,10 @@ References
 .. target-notes::
 
 .. _Nucleo F091RC website:
-   http://www.st.com/en/evaluation-tools/nucleo-f091rc.html
+   https://www.st.com/en/evaluation-tools/nucleo-f091rc.html
 
 .. _STM32F091 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00031936.pdf
+   https://www.st.com/resource/en/reference_manual/dm00031936.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf

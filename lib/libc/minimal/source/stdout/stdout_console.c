@@ -7,8 +7,8 @@
  */
 
 #include <stdio.h>
-#include <sys/libc-hooks.h>
-#include <syscall_handler.h>
+#include <zephyr/sys/libc-hooks.h>
+#include <zephyr/internal/syscall_handler.h>
 #include <string.h>
 
 static int _stdout_hook_default(int c)
@@ -18,9 +18,9 @@ static int _stdout_hook_default(int c)
 	return EOF;
 }
 
-static int (*_stdout_hook)(int) = _stdout_hook_default;
+static int (*_stdout_hook)(int c) = _stdout_hook_default;
 
-void __stdout_hook_install(int (*hook)(int))
+void __stdout_hook_install(int (*hook)(int c))
 {
 	_stdout_hook = hook;
 }
@@ -51,6 +51,18 @@ int fputs(const char *ZRESTRICT s, FILE *ZRESTRICT stream)
 	ret = fwrite(s, 1, len, stream);
 
 	return len == ret ? 0 : EOF;
+}
+
+#undef putc
+int putc(int c, FILE *stream)
+{
+	return zephyr_fputc(c, stream);
+}
+
+#undef putchar
+int putchar(int c)
+{
+	return zephyr_fputc(c, stdout);
 }
 
 size_t z_impl_zephyr_fwrite(const void *ZRESTRICT ptr, size_t size,
@@ -89,7 +101,7 @@ static inline size_t z_vrfy_zephyr_fwrite(const void *ZRESTRICT ptr,
 					  FILE *ZRESTRICT stream)
 {
 
-	Z_OOPS(Z_SYSCALL_MEMORY_ARRAY_READ(ptr, nitems, size));
+	K_OOPS(K_SYSCALL_MEMORY_ARRAY_READ(ptr, nitems, size));
 	return z_impl_zephyr_fwrite((const void *ZRESTRICT)ptr, size,
 				    nitems, (FILE *ZRESTRICT)stream);
 }

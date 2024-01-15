@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/led_strip.h>
+#include <zephyr/drivers/led_strip.h>
 
 #include <errno.h>
 #include <string.h>
@@ -16,13 +16,13 @@
 #endif
 
 #define LOG_LEVEL CONFIG_LED_STRIP_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(lpd880x);
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/spi.h>
-#include <sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/sys/util.h>
 
 /*
  * LPD880X SPI master configuration:
@@ -32,8 +32,7 @@ LOG_MODULE_REGISTER(lpd880x);
  */
 #define LPD880X_SPI_OPERATION (SPI_OP_MODE_MASTER | \
 			       SPI_TRANSFER_MSB |   \
-			       SPI_WORD_SET(8) |    \
-			       SPI_LINES_SINGLE)
+			       SPI_WORD_SET(8))
 
 struct lpd880x_config {
 	struct spi_dt_spec bus;
@@ -47,7 +46,7 @@ static int lpd880x_update(const struct device *dev, void *data, size_t size)
 	 * a zero byte propagates through at most 32 LED driver ICs.
 	 * The LPD8803 is the worst case, at 3 output channels per IC.
 	 */
-	uint8_t reset_size = ceiling_fraction(ceiling_fraction(size, 3), 32);
+	uint8_t reset_size = DIV_ROUND_UP(DIV_ROUND_UP(size, 3), 32);
 	uint8_t reset_buf[reset_size];
 	uint8_t last = 0x00;
 	const struct spi_buf bufs[3] = {
@@ -130,7 +129,7 @@ static int lpd880x_strip_init(const struct device *dev)
 {
 	const struct lpd880x_config *config = dev->config;
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI device %s not ready", config->bus.bus->name);
 		return -ENODEV;
 	}

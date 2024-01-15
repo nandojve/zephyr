@@ -1,7 +1,8 @@
-.. _jesd216-sample:
+.. zephyr:code-sample:: jesd216
+   :name: JESD216 flash
+   :relevant-api: flash_interface
 
-JESD216 Sample
-##############
+   Use the JESD216 flash API to extract information from a compatible serial memory device.
 
 Overview
 ********
@@ -15,7 +16,7 @@ Building and Running
 
 The application will build only for a target that has a devicetree entry
 with ``jedec,spi-nor`` as a compatible, and for which the driver
-supports :kconfig:`CONFIG_FLASH_JESD216_API`.
+supports :kconfig:option:`CONFIG_FLASH_JESD216_API`.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/drivers/jesd216

@@ -4,10 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <arch/cpu.h>
-#include <init.h>
 #include <soc.h>
-#include <linker/linker-defs.h>
+#include <zephyr/linker/linker-defs.h>
 
 /* (Secure System Control) Base Address */
 #define SSE_200_SYSTEM_CTRL_S_BASE	(0x50021000UL)
@@ -20,7 +18,7 @@
 #define BL2_HEADER_SIZE		(0x400)
 
 /**
- * @brief Wake up CPU 1 from another CPU, this is plaform specific.
+ * @brief Wake up CPU 1 from another CPU, this is platform specific.
  *
  */
 void wakeup_cpu1(void)
@@ -36,7 +34,7 @@ void wakeup_cpu1(void)
 }
 
 /**
- * @brief Get the current CPU ID, this is plaform specific.
+ * @brief Get the current CPU ID, this is platform specific.
  *
  * @return Current CPU ID
  */
@@ -46,23 +44,3 @@ uint32_t sse_200_platform_get_cpu_id(void)
 
 	return (uint32_t)*p_cpu_id;
 }
-
-/**
- * @brief Perform basic hardware initialization at boot.
- *
- * @return 0
- */
-static int arm_musca_b1_init(const struct device *arg)
-{
-	ARG_UNUSED(arg);
-
-	/*
-	 * Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	return 0;
-}
-
-SYS_INIT(arm_musca_b1_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

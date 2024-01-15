@@ -11,13 +11,15 @@
  */
 
 #include <errno.h>
-#include <kernel.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <soc.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/irq.h>
+#include <zephyr/irq_multilevel.h>
 
-#include "gpio_utils.h"
+#include <zephyr/drivers/gpio/gpio_utils.h>
 
 typedef void (*sifive_cfg_func_t)(void);
 
@@ -66,33 +68,17 @@ struct gpio_sifive_data {
 #define DEV_GPIO_DATA(dev)				\
 	((struct gpio_sifive_data *)(dev)->data)
 
-/* _irq_level and _level2_irq are copied from
- * soc/riscv/riscv-privileged/common/soc_common_irq.c
- * Ideally this kind of thing should be made available in include/irq.h or
- * somewhere similar since the multi-level IRQ format is generic to
-  Zephyr, and then both this copy and the one in riscv-privileged
- * be removed for the shared implementation
- */
-static inline unsigned int _irq_level(unsigned int irq)
-{
-	return ((irq >> 8) && 0xff) == 0U ? 1 : 2;
-}
-
-static inline unsigned int _level2_irq(unsigned int irq)
-{
-	return (irq >> 8) - 1;
-}
 
 /* Given gpio_irq_base and the pin number, return the IRQ number for the pin */
 static inline unsigned int gpio_sifive_pin_irq(unsigned int base_irq, int pin)
 {
-	unsigned int level = _irq_level(base_irq);
+	unsigned int level = irq_get_level(base_irq);
 	unsigned int pin_irq = 0;
 
 	if (level == 1) {
 		pin_irq = base_irq + pin;
 	} else if (level == 2) {
-		pin_irq = base_irq + (pin << 8);
+		pin_irq = base_irq + (pin << CONFIG_1ST_LEVEL_INTERRUPT_BITS);
 	}
 
 	return pin_irq;
@@ -103,10 +89,10 @@ static inline unsigned int gpio_sifive_pin_irq(unsigned int base_irq, int pin)
  */
 static inline int gpio_sifive_plic_to_pin(unsigned int base_irq, int plic_irq)
 {
-	unsigned int level = _irq_level(base_irq);
+	unsigned int level = irq_get_level(base_irq);
 
 	if (level == 2) {
-		base_irq = _level2_irq(base_irq);
+		base_irq = irq_from_level_2(base_irq);
 	}
 
 	return (plic_irq - base_irq);
@@ -119,7 +105,8 @@ static void gpio_sifive_irq_handler(const struct device *dev)
 	const struct gpio_sifive_config *cfg = DEV_GPIO_CFG(dev);
 
 	/* Calculate pin and mask from base level 2 line */
-	uint8_t pin = 1 + (riscv_plic_get_irq() - (uint8_t)(cfg->gpio_irq_base >> 8));
+	uint8_t pin = 1 + (riscv_plic_get_irq() -
+			   (uint8_t)(cfg->gpio_irq_base >> CONFIG_1ST_LEVEL_INTERRUPT_BITS));
 
 	/* This peripheral tracks each condition separately: a
 	 * transition from low to high will mark the pending bit for
@@ -303,6 +290,26 @@ static int gpio_sifive_manage_callback(const struct device *dev,
 	return gpio_manage_callback(&data->cb, callback, set);
 }
 
+#ifdef CONFIG_GPIO_GET_DIRECTION
+static int gpio_sifive_port_get_dir(const struct device *dev, gpio_port_pins_t map,
+				    gpio_port_pins_t *inputs, gpio_port_pins_t *outputs)
+{
+	const struct gpio_sifive_config *cfg = DEV_GPIO_CFG(dev);
+
+	map &= cfg->common.port_pin_mask;
+
+	if (inputs != NULL) {
+		*inputs = map & DEV_GPIO(dev)->in_en;
+	}
+
+	if (outputs != NULL) {
+		*outputs = map & DEV_GPIO(dev)->out_en;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_GPIO_GET_DIRECTION */
+
 static const struct gpio_driver_api gpio_sifive_driver = {
 	.pin_configure           = gpio_sifive_config,
 	.port_get_raw            = gpio_sifive_port_get_raw,
@@ -312,6 +319,9 @@ static const struct gpio_driver_api gpio_sifive_driver = {
 	.port_toggle_bits        = gpio_sifive_port_toggle_bits,
 	.pin_interrupt_configure = gpio_sifive_pin_interrupt_configure,
 	.manage_callback         = gpio_sifive_manage_callback,
+#ifdef CONFIG_GPIO_GET_DIRECTION
+	.port_get_direction      = gpio_sifive_port_get_dir,
+#endif /* CONFIG_GPIO_GET_DIRECTION */
 };
 
 /**
@@ -336,6 +346,8 @@ static int gpio_sifive_init(const struct device *dev)
 	gpio->fall_ie = 0U;
 	gpio->high_ie = 0U;
 	gpio->low_ie  = 0U;
+	gpio->iof_en  = 0U;
+	gpio->iof_sel = 0U;
 	gpio->invert  = 0U;
 
 	/* Setup IRQ handler for each gpio pin */
@@ -361,11 +373,11 @@ DEVICE_DT_INST_DEFINE(0,
 		    gpio_sifive_init,
 		    NULL,
 		    &gpio_sifive_data0, &gpio_sifive_config0,
-		    POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
 		    &gpio_sifive_driver);
 
 #define		IRQ_INIT(n)					\
-IRQ_CONNECT(DT_INST_IRQ_BY_IDX(0, n, irq),			\
+IRQ_CONNECT(DT_INST_IRQN_BY_IDX(0, n),				\
 		DT_INST_IRQ_BY_IDX(0, n, priority),		\
 		gpio_sifive_irq_handler,			\
 		DEVICE_DT_INST_GET(0),				\

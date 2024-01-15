@@ -1,5 +1,7 @@
 /* att_internal.h - Attribute protocol handling */
 
+#include <zephyr/bluetooth/l2cap.h>
+
 /*
  * Copyright (c) 2015-2016 Intel Corporation
  *
@@ -10,8 +12,21 @@
 #define BT_ATT_DEFAULT_LE_MTU	23
 #define BT_ATT_TIMEOUT		K_SECONDS(30)
 
-/* ATT MTU must be equal for RX and TX, so select the smallest value */
-#define BT_ATT_MTU (MIN(BT_L2CAP_RX_MTU, BT_L2CAP_TX_MTU))
+/* Local ATT Rx MTU
+ *
+ * This is the local 'Client Rx MTU'/'Server Rx MTU'. Core v5.3 Vol 3 Part F
+ * 3.4.2.2 requires that they are equal.
+ *
+ * The local ATT Server Rx MTU is limited to BT_L2CAP_TX_MTU because the GATT
+ * long attribute read protocol (Core v5.3 Vol 3 Part G 4.8.3) treats the ATT
+ * MTU as a promise about the read size. This requires the server to negotiate
+ * the ATT_MTU down to what it is actually able to send. This will unfortunately
+ * also limit how much the client is allowed to send.
+ */
+#define BT_LOCAL_ATT_MTU_EATT MIN(BT_L2CAP_SDU_RX_MTU, BT_L2CAP_SDU_TX_MTU)
+#define BT_LOCAL_ATT_MTU_UATT MIN(BT_L2CAP_RX_MTU, BT_L2CAP_TX_MTU)
+
+#define BT_ATT_BUF_SIZE MAX(BT_LOCAL_ATT_MTU_UATT, BT_LOCAL_ATT_MTU_EATT)
 
 struct bt_att_hdr {
 	uint8_t  code;
@@ -226,7 +241,7 @@ struct bt_att_read_mult_vl_req {
 	uint16_t handles[0];
 } __packed;
 
-/* Read Multiple Respose */
+/* Read Multiple Response */
 #define BT_ATT_OP_READ_MULT_VL_RSP		0x21
 struct bt_att_read_mult_vl_rsp {
 	uint16_t len;
@@ -255,7 +270,7 @@ struct bt_att_signed_write_cmd {
 	uint8_t  value[0];
 } __packed;
 
-typedef void (*bt_att_func_t)(struct bt_conn *conn, uint8_t err,
+typedef void (*bt_att_func_t)(struct bt_conn *conn, int err,
 			      const void *pdu, uint16_t length,
 			      void *user_data);
 
@@ -276,8 +291,6 @@ struct bt_att_req {
 	void *user_data;
 };
 
-void att_sent(struct bt_conn *conn, void *user_data);
-
 void bt_att_init(void);
 uint16_t bt_att_get_mtu(struct bt_conn *conn);
 struct net_buf *bt_att_create_pdu(struct bt_conn *conn, uint8_t op,
@@ -290,8 +303,7 @@ struct bt_att_req *bt_att_req_alloc(k_timeout_t timeout);
 void bt_att_req_free(struct bt_att_req *req);
 
 /* Send ATT PDU over a connection */
-int bt_att_send(struct bt_conn *conn, struct net_buf *buf, bt_conn_tx_cb_t cb,
-		void *user_data);
+int bt_att_send(struct bt_conn *conn, struct net_buf *buf);
 
 /* Send ATT Request over a connection */
 int bt_att_req_send(struct bt_conn *conn, struct bt_att_req *req);
@@ -299,8 +311,39 @@ int bt_att_req_send(struct bt_conn *conn, struct bt_att_req *req);
 /* Cancel ATT request */
 void bt_att_req_cancel(struct bt_conn *conn, struct bt_att_req *req);
 
-/* Connect EATT channels */
-int bt_eatt_connect(struct bt_conn *conn, uint8_t num_channels);
-
 /* Disconnect EATT channels */
 int bt_eatt_disconnect(struct bt_conn *conn);
+
+/** @brief Find a pending ATT request by its user_data pointer.
+ *  @param conn The connection the request was issued on.
+ *  @param user_data The pointer value to look for.
+ *  @return The found request. NULL if not found.
+ */
+struct bt_att_req *bt_att_find_req_by_user_data(struct bt_conn *conn, const void *user_data);
+
+/* Checks if only the fixed ATT channel is connected */
+bool bt_att_fixed_chan_only(struct bt_conn *conn);
+
+/* Clear the out of sync flag on all channels */
+void bt_att_clear_out_of_sync_sent(struct bt_conn *conn);
+
+/* Check if BT_ATT_ERR_DB_OUT_OF_SYNC has been sent on the fixed ATT channel */
+bool bt_att_out_of_sync_sent_on_fixed(struct bt_conn *conn);
+
+typedef void (*bt_gatt_complete_func_t) (struct bt_conn *conn, void *user_data);
+void bt_att_set_tx_meta_data(struct net_buf *buf, bt_gatt_complete_func_t func, void *user_data,
+			     enum bt_att_chan_opt chan_opt);
+void bt_att_increment_tx_meta_data_attr_count(struct net_buf *buf, uint16_t attr_count);
+
+bool bt_att_tx_meta_data_match(const struct net_buf *buf, bt_gatt_complete_func_t func,
+			       const void *user_data, enum bt_att_chan_opt chan_opt);
+
+#if defined(CONFIG_BT_EATT)
+#define BT_ATT_CHAN_OPT(_params) (_params)->chan_opt
+#else
+#define BT_ATT_CHAN_OPT(_params) BT_ATT_CHAN_OPT_UNENHANCED_ONLY
+#endif /* CONFIG_BT_EATT */
+
+bool bt_att_chan_opt_valid(struct bt_conn *conn, enum bt_att_chan_opt chan_opt);
+
+void bt_gatt_req_set_mtu(struct bt_att_req *req, uint16_t mtu);

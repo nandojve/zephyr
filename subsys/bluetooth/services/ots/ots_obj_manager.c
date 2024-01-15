@@ -8,13 +8,13 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/dlist.h>
-#include <sys/byteorder.h>
+#include <zephyr/sys/dlist.h>
+#include <zephyr/sys/byteorder.h>
 
-#include <bluetooth/services/ots.h>
+#include <zephyr/bluetooth/services/ots.h>
 #include "ots_internal.h"
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(bt_ots, CONFIG_BT_OTS_LOG_LEVEL);
 
@@ -159,9 +159,7 @@ int bt_gatt_ots_obj_manager_obj_get(
 		return -ENOENT;
 	}
 
-	if (id < BT_OTS_OBJ_ID_MIN &&
-	    (IS_ENABLED(CONFIG_BT_OTS_DIR_LIST_OBJ) &&
-		id != OTS_OBJ_ID_DIR_LIST)) {
+	if (id == OTS_OBJ_ID_DIR_LIST && !IS_ENABLED(CONFIG_BT_OTS_DIR_LIST_OBJ)) {
 		return -EINVAL;
 	}
 

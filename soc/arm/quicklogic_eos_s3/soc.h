@@ -7,9 +7,8 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 #include <eoss3_dev.h>
-#include <devicetree.h>
 
 /* Available frequencies */
 #define HSOSC_1MHZ	1024000
@@ -47,11 +46,7 @@
 #define OSC_SET_FREQ_INC(FREQ)	(AIP->OSC_CTRL_1 = ((FREQ / 32768) - 3) & 0xFFF)
 #define OSC_GET_FREQ_INC()	(((AIP->OSC_CTRL_1 & 0xFFF) + 3) * 32768)
 
-#define EOS_S3_MAX_PAD_NR			45
-
 void eos_s3_lock_enable(void);
 void eos_s3_lock_disable(void);
-
-int eos_s3_io_mux(uint32_t pad_nr, uint32_t pad_cfg);
 
 #endif /* _SOC__H_ */

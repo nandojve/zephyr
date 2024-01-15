@@ -25,8 +25,6 @@ some highlights of the Nucleo G071RB board:
 - Two push-buttons: USER and RESET
 
 .. image:: img/nucleo_g071rb.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo G071RB
 
@@ -112,6 +110,8 @@ The Zephyr nucleo_g071rb board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | DAC       | on-chip    | dac                                 |
 +-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported in this Zephyr port.
 
@@ -159,7 +159,7 @@ Nucleo G071RB board includes an ST-LINK/V3 embedded debug tool interface.
 Flashing an application to Nucleo G071RB
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -186,13 +186,13 @@ References
 .. target-notes::
 
 .. _Nucleo G071RB website:
-   http://www.st.com/en/evaluation-tools/nucleo-g071rb.html
+   https://www.st.com/en/evaluation-tools/nucleo-g071rb.html
 
 .. _STM32G071 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00371828.pdf
+   https://www.st.com/resource/en/reference_manual/dm00371828.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00452640.pdf
+   https://www.st.com/resource/en/user_manual/dm00452640.pdf
 
 .. _G071RB on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32g071rb.html
+   https://www.st.com/en/microcontrollers/stm32g071rb.html

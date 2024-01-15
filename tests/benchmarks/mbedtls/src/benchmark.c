@@ -69,12 +69,12 @@
 #include "mbedtls/error.h"
 
 #include <zephyr/types.h>
-#include <sys/byteorder.h>
-#include <random/rand32.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/random/random.h>
 
-#include "kernel.h"
+#include <zephyr/kernel.h>
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 #define  MBEDTLS_PRINT ((int(*)(const char *, ...)) printk)
 
 static void my_debug(void *ctx, int level,
@@ -299,7 +299,7 @@ typedef struct {
 	     havege, ctr_drbg, hmac_drbg, rsa, dhm, ecdsa, ecdh;
 } todo_list;
 
-void main(void)
+int main(void)
 {
 	mbedtls_ssl_config conf;
 	unsigned char tmp[200];
@@ -309,7 +309,6 @@ void main(void)
 
 	printk("\tMBEDTLS Benchmark sample\n");
 
-	mbedtls_debug_set_threshold(CONFIG_MBEDTLS_DEBUG_LEVEL);
 #if defined(MBEDTLS_PLATFORM_PRINTF_ALT)
 	mbedtls_platform_set_printf(MBEDTLS_PRINT);
 #endif
@@ -1030,4 +1029,5 @@ void main(void)
 	}
 #endif
 	mbedtls_printf("\n       Done\n");
+	return 0;
 }

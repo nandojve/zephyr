@@ -9,10 +9,14 @@
  *  Basic example of userspace thread protected memory
  *
  *  NOTE: The encryption algorithm is unverified and
- *  based on a 1930's erra piece of hardware.
+ *  based on a 1930's era piece of hardware.
  *  DO NOT USE THIS CODE FOR SECURITY
  *
  */
+
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/libc-hooks.h> /* for z_libc_partition */
+
 #include "main.h"
 #include "enc.h"
 /* the following definition name prefix is to avoid a conflict */
@@ -23,7 +27,7 @@
  * the definition of variables.  A possible alternative
  * is using one source file per thread and implementing
  * a objcopy to rename the data and bss section for the
- * thread to the partiotion name.
+ * thread to the partition name.
  */
 
 /* prepare the memory partition structures  */
@@ -96,11 +100,22 @@ _app_ct_d char ctMSG[] = "CT!\n";
 
 
 
-void main(void)
+int main(void)
 {
-	struct k_mem_partition *enc_parts[] = {&enc_part, &red_part, &blk_part};
-	struct k_mem_partition *pt_parts[] = {&user_part, &red_part};
+	struct k_mem_partition *enc_parts[] = {
+#if Z_LIBC_PARTITION_EXISTS
+		&z_libc_partition,
+#endif
+		&enc_part, &red_part, &blk_part
+	};
+	struct k_mem_partition *pt_parts[] = {
+#if Z_LIBC_PARTITION_EXISTS
+		&z_libc_partition,
+#endif
+		&user_part, &red_part
+	};
 	k_tid_t tPT, tENC, tCT;
+	int ret;
 
 	fBUFIN = 0; /* clear flags */
 	fBUFOUT = 0;
@@ -118,38 +133,55 @@ void main(void)
 	 * then add the thread to the domain.
 	 */
 	tENC = k_thread_create(&enc_thread, enc_stack, STACKSIZE,
-			(k_thread_entry_t)enc, NULL, NULL, NULL,
+			enc, NULL, NULL, NULL,
 			-1, K_USER,
 			K_FOREVER);
 	k_thread_access_grant(tENC, &allforone);
 	/* use K_FOREVER followed by k_thread_start*/
 	printk("ENC Thread Created %p\n", tENC);
-	k_mem_domain_init(&enc_domain, 3, enc_parts);
+
+	ret = k_mem_domain_init(&enc_domain, ARRAY_SIZE(enc_parts), enc_parts);
+	__ASSERT(ret == 0, "k_mem_domain_init() on enc_domain failed %d", ret);
+	ARG_UNUSED(ret);
+
 	printk("Partitions added to enc_domain\n");
 	k_mem_domain_add_thread(&enc_domain, tENC);
 	printk("enc_domain Created\n");
 
 
 	tPT = k_thread_create(&pt_thread, pt_stack, STACKSIZE,
-			(k_thread_entry_t)pt, NULL, NULL, NULL,
+			pt, NULL, NULL, NULL,
 			-1, K_USER,
 			K_FOREVER);
 	k_thread_access_grant(tPT, &allforone);
 	printk("PT Thread Created %p\n", tPT);
-	k_mem_domain_init(&pt_domain, 2, pt_parts);
+
+	ret = k_mem_domain_init(&pt_domain, ARRAY_SIZE(pt_parts), pt_parts);
+	__ASSERT(ret == 0, "k_mem_domain_init() on pt_domain failed %d", ret);
+
 	k_mem_domain_add_thread(&pt_domain, tPT);
 	printk("pt_domain Created\n");
 
 	tCT = k_thread_create(&ct_thread, ct_stack, STACKSIZE,
-			(k_thread_entry_t)ct, NULL, NULL, NULL,
+			ct, NULL, NULL, NULL,
 			-1, K_USER,
 			K_FOREVER);
 	k_thread_access_grant(tCT, &allforone);
 	printk("CT Thread Created %p\n", tCT);
 	/* Re-using the default memory domain for CT */
-	k_mem_domain_add_partition(&k_mem_domain_default, &ct_part);
-	k_mem_domain_add_partition(&k_mem_domain_default, &blk_part);
+	ret = k_mem_domain_add_partition(&k_mem_domain_default, &ct_part);
+	if (ret != 0) {
+		printk("Failed to add ct_part to mem domain (%d)\n", ret);
+		k_oops();
+	}
 	printk("ct partitions installed\n");
+
+	ret = k_mem_domain_add_partition(&k_mem_domain_default, &blk_part);
+	if (ret != 0) {
+		printk("Failed to add blk_part to mem domain (%d)\n", ret);
+		k_oops();
+	}
+	printk("blk partitions installed\n");
 
 	k_thread_start(&enc_thread);
 	/* need to start all three threads.  let enc go first to perform init step */
@@ -161,18 +193,22 @@ void main(void)
 	k_thread_start(&ct_thread);
 	k_sem_give(&allforone);
 	printk("CT thread started\n");
+	return 0;
 }
 
 
 
 /*
  * The enc thread.
- * Function: initialize the the simulation of the wheels.
+ * Function: initialize the simulation of the wheels.
  * Copy memory from pt thread and encrypt to a local buffer
  * then copy to the ct thread.
  */
-void enc(void)
+void enc(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 
 	int index, index_out;
 
@@ -219,8 +255,11 @@ void enc(void)
  * It can be extended to receive data from a serial port
  * and pass the data to enc
  */
-void pt(void)
+void pt(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 
 	k_sleep(K_MSEC(20));
 	while (1) {
@@ -249,15 +288,18 @@ void pt(void)
  * CT waits for fBUFOUT = 1 then copies
  * the message clears the flag and prints
  */
-void ct(void)
+void ct(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
 
 	char tbuf[60];
 
 	while (1) {
 		k_sem_take(&allforone, K_FOREVER);
 		if (fBUFOUT == 1) {
-			printk("CT Thread Receivedd Message\n");
+			printk("CT Thread Received Message\n");
 			memset((void *)&tbuf, 0, sizeof(tbuf));
 			memcpy((void *)&tbuf, (void *)BUFOUT, SAMP_BLOCKSIZE);
 			fBUFOUT = 0;

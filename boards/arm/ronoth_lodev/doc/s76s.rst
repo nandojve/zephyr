@@ -14,10 +14,8 @@ from the `AcSIP Product Data Download`_ site (may need login). The parts are `av
 
 Zephyr applications may use the **acsip_s76s** configuration to use this SiP.
 
-.. figure:: img/acsip_s76s.png
-     :width: 189px
+.. figure:: img/acsip_s76s.jpg
      :align: center
-     :height: 115px
      :alt: AcSIP S76S system on a chip, containing STMicro STM32L073RZ and Semtech SX1276
 
      AcSIP S76S
@@ -233,7 +231,7 @@ References
 
 .. _AcSIP S76S: http://www.acsip.com.tw/index.php?action=products-detail&fid1=11&fid2=29&fid3=27&id=79&lang=3
 
-.. _AcSIP S76S Product Information Brief: http://www.acsip.com.tw/upload/product_attach/S76S_Brief_ver02.pdf
+.. _AcSIP S76S Product Information Brief: https://www.acsip.com.tw/index.php?action=download_pro&perm=d&id=365
 
 .. _AcSIP Product Data Download: http://www.acsip.com.tw/index.php?action=technical
 
@@ -243,7 +241,7 @@ References
 
 .. _LoDev: https://ronoth.com/products/lodev-s76s-lora-soc-development-board?variant=31608819417220
 
-.. _STMicro STM32L073RZ: STMicro STM32L073RZ
+.. _STMicro STM32L073RZ: https://www.st.com/en/microcontrollers-microprocessors/stm32l073rz.html
 
 .. _Semtech SX1276: https://www.semtech.com/products/wireless-rf/lora-transceivers/sx1276
 

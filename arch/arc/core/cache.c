@@ -13,16 +13,16 @@
  * This module contains functions for manipulation of the d-cache.
  */
 
-#include <kernel.h>
-#include <arch/cpu.h>
-#include <sys/util.h>
-#include <toolchain.h>
-#include <cache.h>
-#include <linker/linker-defs.h>
-#include <arch/arc/v2/aux_regs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/cache.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/arch/arc/v2/aux_regs.h>
 #include <kernel_internal.h>
-#include <sys/__assert.h>
-#include <init.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/init.h>
 #include <stdbool.h>
 
 #if defined(CONFIG_DCACHE_LINE_SIZE_DETECT)
@@ -39,7 +39,6 @@ size_t sys_cache_line_size;
 #define DC_CTRL_DIRECT_ACCESS        0x0  /* direct access mode  */
 #define DC_CTRL_INDIRECT_ACCESS      0x20 /* indirect access mode */
 #define DC_CTRL_OP_SUCCEEDED         0x4  /* d-cache operation succeeded */
-
 
 static bool dcache_available(void)
 {
@@ -61,7 +60,12 @@ void arch_dcache_enable(void)
 	dcache_dc_ctrl(DC_CTRL_DC_ENABLE);
 }
 
-static void arch_dcache_flush(void *start_addr_ptr, size_t size)
+void arch_dcache_disable(void)
+{
+	/* nothing */
+}
+
+int arch_dcache_flush_range(void *start_addr_ptr, size_t size)
 {
 	size_t line_size = sys_cache_data_line_size_get();
 	uintptr_t start_addr = (uintptr_t)start_addr_ptr;
@@ -69,7 +73,7 @@ static void arch_dcache_flush(void *start_addr_ptr, size_t size)
 	unsigned int key;
 
 	if (!dcache_available() || (size == 0U) || line_size == 0U) {
-		return;
+		return -ENOTSUP;
 	}
 
 	end_addr = start_addr + size;
@@ -95,9 +99,10 @@ static void arch_dcache_flush(void *start_addr_ptr, size_t size)
 
 	arch_irq_unlock(key); /* --exit critical section-- */
 
+	return 0;
 }
 
-static void arch_dcache_invd(void *start_addr_ptr, size_t size)
+int arch_dcache_invd_range(void *start_addr_ptr, size_t size)
 {
 	size_t line_size = sys_cache_data_line_size_get();
 	uintptr_t start_addr = (uintptr_t)start_addr_ptr;
@@ -105,7 +110,7 @@ static void arch_dcache_invd(void *start_addr_ptr, size_t size)
 	unsigned int key;
 
 	if (!dcache_available() || (size == 0U) || line_size == 0U) {
-		return;
+		return -ENOTSUP;
 	}
 	end_addr = start_addr + size;
 	start_addr = ROUND_DOWN(start_addr, line_size);
@@ -120,23 +125,28 @@ static void arch_dcache_invd(void *start_addr_ptr, size_t size)
 		start_addr += line_size;
 	} while (start_addr < end_addr);
 	irq_unlock(key); /* -exit critical section- */
-}
-
-int arch_dcache_range(void *addr, size_t size, int op)
-{
-	if (op == K_CACHE_INVD) {
-		/*
-		 * TODO: On invalidate we can contextually flush by setting the
-		 * DC_CTRL_INVALID_FLUSH bit
-		 */
-		arch_dcache_invd(addr, size);
-	} else if (op == K_CACHE_WB) {
-		arch_dcache_flush(addr, size);
-	} else {
-		return -ENOTSUP;
-	}
 
 	return 0;
+}
+
+int arch_dcache_flush_and_invd_range(void *start_addr_ptr, size_t size)
+{
+	return -ENOTSUP;
+}
+
+int arch_dcache_flush_all(void)
+{
+	return -ENOTSUP;
+}
+
+int arch_dcache_invd_all(void)
+{
+	return -ENOTSUP;
+}
+
+int arch_dcache_flush_and_invd_all(void)
+{
+	return -ENOTSUP;
 }
 
 #if defined(CONFIG_DCACHE_LINE_SIZE_DETECT)
@@ -157,9 +167,57 @@ size_t arch_dcache_line_size_get(void)
 }
 #endif
 
-static int init_dcache(const struct device *unused)
+void arch_icache_enable(void)
 {
-	ARG_UNUSED(unused);
+	/* nothing */
+}
+
+void arch_icache_disable(void)
+{
+	/* nothing */
+}
+
+int arch_icache_flush_all(void)
+{
+	return -ENOTSUP;
+}
+
+int arch_icache_invd_all(void)
+{
+	return -ENOTSUP;
+}
+
+int arch_icache_flush_and_invd_all(void)
+{
+	return -ENOTSUP;
+}
+
+int arch_icache_flush_range(void *addr, size_t size)
+{
+	ARG_UNUSED(addr);
+	ARG_UNUSED(size);
+
+	return -ENOTSUP;
+}
+
+int arch_icache_invd_range(void *addr, size_t size)
+{
+	ARG_UNUSED(addr);
+	ARG_UNUSED(size);
+
+	return -ENOTSUP;
+}
+
+int arch_icache_flush_and_invd_range(void *addr, size_t size)
+{
+	ARG_UNUSED(addr);
+	ARG_UNUSED(size);
+
+	return -ENOTSUP;
+}
+
+static int init_dcache(void)
+{
 
 	arch_dcache_enable();
 

@@ -15,8 +15,15 @@ toolchain:
 ram: 256
 flash: 16384
 supported:
-  - gpio
   - counter
   - can
+  - dma
+  - gpio
+  - hwinfo
+  - i2c
+  - netif:eth
+  - pwm
   - spi
+  - usb_device
   - watchdog
+vendor: nxp

@@ -8,8 +8,6 @@ include: [base.yaml, power.yaml]
 on-bus: i2c
 
 properties:
-    reg:
-      required: true
-      description: device address on i2c bus
-    label:
-      required: true
+  reg:
+    required: true
+    description: device address on i2c bus

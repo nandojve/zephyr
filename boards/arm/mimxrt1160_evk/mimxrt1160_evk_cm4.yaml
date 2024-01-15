@@ -15,5 +15,9 @@ toolchain:
 ram: 128
 flash: 128
 supported:
+  - dma
+  - i2c
   - gpio
+  - pwm
   - uart
+vendor: nxp

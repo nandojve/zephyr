@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/printk.h>
 
 static struct sensor_value temp_value[64];
 
@@ -48,15 +48,14 @@ void print_buffer(void *ptr, size_t l)
 	printk("\n");
 }
 
-void main(void)
+int main(void)
 {
 	int ret;
-	const struct device *dev = device_get_binding(
-				DT_LABEL(DT_INST(0, panasonic_amg88xx)));
+	const struct device *const dev = DEVICE_DT_GET_ONE(panasonic_amg88xx);
 
-	if (dev == NULL) {
-		printk("Could not get AMG88XX device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	printk("device: %p, name: %s\n", dev, dev->name);
@@ -70,7 +69,7 @@ void main(void)
 	if (sensor_attr_set(dev, SENSOR_CHAN_AMBIENT_TEMP,
 			    SENSOR_ATTR_UPPER_THRESH, &attr)) {
 		printk("Could not set threshold\n");
-		return;
+		return 0;
 	}
 
 	struct sensor_trigger trig = {
@@ -80,7 +79,7 @@ void main(void)
 
 	if (sensor_trigger_set(dev, &trig, trigger_handler)) {
 		printk("Could not set trigger\n");
-		return;
+		return 0;
 	}
 #endif
 
@@ -93,14 +92,14 @@ void main(void)
 		ret = sensor_sample_fetch(dev);
 		if (ret) {
 			printk("Failed to fetch a sample, %d\n", ret);
-			return;
+			return 0;
 		}
 
 		ret = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP,
 					 (struct sensor_value *)temp_value);
 		if (ret) {
 			printk("Failed to get sensor values, %d\n", ret);
-			return;
+			return 0;
 		}
 
 		printk("new sample:\n");

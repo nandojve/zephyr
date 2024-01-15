@@ -12,8 +12,10 @@
 
 #define DT_DRV_COMPAT gaisler_gptimer
 
-#include <drivers/timer/system_timer.h>
-#include <sys_clock.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/irq.h>
+#include <zephyr/sys_clock.h>
 
 /* GPTIMER subtimer increments each microsecond. */
 #define PRESCALER (CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000000)
@@ -101,9 +103,8 @@ static void init_downcounter(volatile struct gptimer_timer_regs *tmr)
 	tmr->ctrl = GPTIMER_CTRL_LD | GPTIMER_CTRL_RS | GPTIMER_CTRL_EN;
 }
 
-int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
-	ARG_UNUSED(dev);
 	const int timer_interrupt = get_timer_irq();
 	volatile struct gptimer_regs *regs = get_regs();
 	volatile struct gptimer_timer_regs *tmr = &regs->timer[0];
@@ -127,3 +128,6 @@ int sys_clock_driver_init(const struct device *dev)
 	irq_enable(timer_interrupt);
 	return 0;
 }
+
+SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2,
+	 CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);

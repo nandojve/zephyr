@@ -8,18 +8,18 @@
 
 #define DT_DRV_COMPAT	wiznet_w5500
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(eth_w5500, CONFIG_ETHERNET_LOG_LEVEL);
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <string.h>
 #include <errno.h>
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/ethernet.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ethernet.h>
 #include <ethernet/eth_stats.h>
 
 #include "eth.h"
@@ -157,21 +157,19 @@ static int w5500_writebuf(const struct device *dev, uint16_t offset, uint8_t *bu
 static int w5500_command(const struct device *dev, uint8_t cmd)
 {
 	uint8_t reg;
-	uint64_t end = sys_clock_timeout_end_calc(K_MSEC(100));
+	k_timepoint_t end = sys_timepoint_calc(K_MSEC(100));
 
 	w5500_spi_write(dev, W5500_S0_CR, &cmd, 1);
-	do {
-		int64_t remaining = end - sys_clock_tick_get();
-
-		if (remaining <= 0) {
-			return -EIO;
-		}
-
+	while (1) {
 		w5500_spi_read(dev, W5500_S0_CR, &reg, 1);
-
-		k_msleep(1);
-	} while (reg != 0);
-
+		if (!reg) {
+			break;
+			}
+		if (sys_timepoint_expired(end)) {
+			return -EIO;
+			}
+		k_busy_wait(W5500_PHY_ACCESS_DELAY);
+		}
 	return 0;
 }
 
@@ -208,7 +206,6 @@ static int w5500_tx(const struct device *dev, struct net_pkt *pkt)
 
 static void w5500_rx(const struct device *dev)
 {
-	uint8_t mask = 0;
 	uint8_t header[2];
 	uint8_t tmp[2];
 	uint16_t off;
@@ -221,8 +218,6 @@ static void w5500_rx(const struct device *dev)
 	struct w5500_runtime *ctx = dev->data;
 	const struct w5500_config *config = dev->config;
 
-	/* disable interrupt */
-	w5500_spi_write(dev, W5500_SIMR, &mask, 1);
 	w5500_spi_read(dev, W5500_S0_RX_RSR, tmp, 2);
 	rx_buf_len = sys_get_be16(tmp);
 
@@ -280,34 +275,40 @@ static void w5500_rx(const struct device *dev)
 	w5500_command(dev, S0_CR_RECV);
 }
 
-static void w5500_isr(const struct device *dev)
+static void w5500_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	const struct device *dev = p1;
 	uint8_t ir;
-	uint8_t mask = 0;
 	struct w5500_runtime *ctx = dev->data;
+	const struct w5500_config *config = dev->config;
 
 	while (true) {
 		k_sem_take(&ctx->int_sem, K_FOREVER);
 
-		w5500_spi_read(dev, W5500_S0_IR, &ir, 1);
-		if (!ir) {
-			goto done;
-		}
+		while (gpio_pin_get_dt(&(config->interrupt))) {
+			/* Read interrupt */
+			w5500_spi_read(dev, W5500_S0_IR, &ir, 1);
 
-		w5500_spi_write(dev, W5500_S0_IR, &ir, 1);
+			if (ir) {
+				/* Clear interrupt */
+				w5500_spi_write(dev, W5500_S0_IR, &ir, 1);
 
-		if (ir & S0_IR_SENDOK) {
-			k_sem_give(&ctx->tx_sem);
-			LOG_DBG("TX Done");
-		}
+				LOG_DBG("IR received");
 
-		if (ir & S0_IR_RECV) {
-			w5500_rx(dev);
+				if (ir & S0_IR_SENDOK) {
+					k_sem_give(&ctx->tx_sem);
+					LOG_DBG("TX Done");
+				}
+
+				if (ir & S0_IR_RECV) {
+					w5500_rx(dev);
+					LOG_DBG("RX Done");
+				}
+			}
 		}
-done:
-		/* enable interrupt */
-		mask = IR_S0;
-		w5500_spi_write(dev, W5500_SIMR, &mask, 1);
 	}
 }
 
@@ -342,36 +343,64 @@ static int w5500_set_config(const struct device *dev,
 			    enum ethernet_config_type type,
 			    const struct ethernet_config *config)
 {
-	uint8_t mode;
-	uint8_t mr = W5500_S0_MR_MF;
+	struct w5500_runtime *ctx = dev->data;
 
-	w5500_spi_read(dev, W5500_S0_MR, &mode, 1);
-	if (IS_ENABLED(CONFIG_NET_PROMISCUOUS_MODE) &&
-	    type == ETHERNET_CONFIG_TYPE_PROMISC_MODE) {
-		if (config->promisc_mode) {
-			if (!(mode & BIT(mr)))
-				return -EALREADY;
+	switch (type) {
+	case ETHERNET_CONFIG_TYPE_MAC_ADDRESS:
+		memcpy(ctx->mac_addr,
+			config->mac_address.addr,
+			sizeof(ctx->mac_addr));
+		w5500_spi_write(dev, W5500_SHAR, ctx->mac_addr, sizeof(ctx->mac_addr));
+		LOG_INF("%s MAC set to %02x:%02x:%02x:%02x:%02x:%02x",
+			dev->name,
+			ctx->mac_addr[0], ctx->mac_addr[1],
+			ctx->mac_addr[2], ctx->mac_addr[3],
+			ctx->mac_addr[4], ctx->mac_addr[5]);
+
+		/* Register Ethernet MAC Address with the upper layer */
+		net_if_set_link_addr(ctx->iface, ctx->mac_addr,
+			sizeof(ctx->mac_addr),
+			NET_LINK_ETHERNET);
+
+		return 0;
+	case ETHERNET_CONFIG_TYPE_PROMISC_MODE:
+		if (IS_ENABLED(CONFIG_NET_PROMISCUOUS_MODE)) {
+			uint8_t mode;
+			uint8_t mr = W5500_S0_MR_MF;
+
+			w5500_spi_read(dev, W5500_S0_MR, &mode, 1);
+
+			if (config->promisc_mode) {
+				if (!(mode & BIT(mr))) {
+					return -EALREADY;
+				}
+
+				/* disable MAC filtering */
+				WRITE_BIT(mode, mr, 0);
+			} else {
+				if (mode & BIT(mr)) {
+					return -EALREADY;
+				}
+
+				/* enable MAC filtering */
+				WRITE_BIT(mode, mr, 1);
 			}
 
-			/* clear */
-			WRITE_BIT(mode, mr, 0);
-	} else {
-		if (mode & BIT(mr)) {
-			return -EALREADY;
+			return w5500_spi_write(dev, W5500_S0_MR, &mode, 1);
 		}
 
-		/* set */
-		WRITE_BIT(mode, mr, 1);
+		return -ENOTSUP;
+	default:
+		return -ENOTSUP;
 	}
-
-	return w5500_spi_write(dev, W5500_S0_MR, &mode, 1);
 }
 
 static int w5500_hw_start(const struct device *dev)
 {
-	uint8_t mode = S0_MR_MACRAW;
+	uint8_t mode = S0_MR_MACRAW | BIT(W5500_S0_MR_MF);
 	uint8_t mask = IR_S0;
 
+	/* configure Socket 0 with MACRAW mode and MAC filtering enabled */
 	w5500_spi_write(dev, W5500_S0_MR, &mode, 1);
 	w5500_command(dev, S0_CR_OPEN);
 
@@ -434,6 +463,7 @@ static void w5500_set_macaddr(const struct device *dev)
 {
 	struct w5500_runtime *ctx = dev->data;
 
+#if DT_INST_PROP(0, zephyr_random_mac_address)
 	/* override vendor bytes */
 	memset(ctx->mac_addr, '\0', sizeof(ctx->mac_addr));
 	ctx->mac_addr[0] = WIZNET_OUI_B0;
@@ -442,6 +472,7 @@ static void w5500_set_macaddr(const struct device *dev)
 	if (ctx->generate_mac) {
 		ctx->generate_mac(ctx->mac_addr);
 	}
+#endif
 
 	w5500_spi_write(dev, W5500_SHAR, ctx->mac_addr, sizeof(ctx->mac_addr));
 }
@@ -474,12 +505,12 @@ static int w5500_init(const struct device *dev)
 	const struct w5500_config *config = dev->config;
 	struct w5500_runtime *ctx = dev->data;
 
-	if (!spi_is_ready(&config->spi)) {
+	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("SPI master port %s not ready", config->spi.bus->name);
 		return -EINVAL;
 	}
 
-	if (!device_is_ready(config->interrupt.port)) {
+	if (!gpio_is_ready_dt(&config->interrupt)) {
 		LOG_ERR("GPIO port %s not ready", config->interrupt.port->name);
 		return -EINVAL;
 	}
@@ -500,7 +531,7 @@ static int w5500_init(const struct device *dev)
 					GPIO_INT_EDGE_FALLING);
 
 	if (config->reset.port) {
-		if (!device_is_ready(config->reset.port)) {
+		if (!gpio_is_ready_dt(&config->reset)) {
 			LOG_ERR("GPIO port %s not ready", config->reset.port->name);
 			return -EINVAL;
 		}
@@ -530,7 +561,7 @@ static int w5500_init(const struct device *dev)
 
 	k_thread_create(&ctx->thread, ctx->thread_stack,
 			CONFIG_ETH_W5500_RX_THREAD_STACK_SIZE,
-			(k_thread_entry_t)w5500_isr,
+			w5500_thread,
 			(void *)dev, NULL, NULL,
 			K_PRIO_COOP(CONFIG_ETH_W5500_RX_THREAD_PRIO),
 			0, K_NO_WAIT);
@@ -541,6 +572,9 @@ static int w5500_init(const struct device *dev)
 }
 
 static struct w5500_runtime w5500_0_runtime = {
+#if NODE_HAS_VALID_MAC_ADDR(DT_DRV_INST(0))
+	.mac_addr = DT_INST_PROP(0, local_mac_address),
+#endif
 	.generate_mac = w5500_random_mac,
 	.tx_sem = Z_SEM_INITIALIZER(w5500_0_runtime.tx_sem,
 					1,  UINT_MAX),

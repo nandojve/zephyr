@@ -10,10 +10,10 @@ supported:
   - adc
   - usb_device
   - ble
-  - ieee802154
   - pwm
   - watchdog
   - gpio
   - counter
   - spi
   - i2c
+vendor: lairdconnect

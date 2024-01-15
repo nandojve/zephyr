@@ -5,6 +5,8 @@ import contextlib
 import os
 import re
 import tempfile
+from copy import deepcopy
+from typing import Optional
 
 import pytest
 
@@ -56,10 +58,8 @@ def verify_error(dts, expected_msg):
     '''Verify that parsing 'dts' results in a DTError with the
     given error message 'msg'. The message must match exactly.'''
 
-    with pytest.raises(dtlib.DTError) as e:
+    with dtlib_raises(expected_msg):
         parse(dts[1:])
-    actual_msg = str(e.value)
-    assert actual_msg == expected_msg, f'wrong error from {dts}'
 
 def verify_error_endswith(dts, expected_msg):
     '''
@@ -67,10 +67,8 @@ def verify_error_endswith(dts, expected_msg):
     'expected_msg' instead of checking for strict equality.
     '''
 
-    with pytest.raises(dtlib.DTError) as e:
+    with dtlib_raises(err_endswith=expected_msg):
         parse(dts[1:])
-    actual_msg = str(e.value)
-    assert actual_msg.endswith(expected_msg), f'wrong error from {dts}'
 
 def verify_error_matches(dts, expected_re):
     '''
@@ -78,13 +76,8 @@ def verify_error_matches(dts, expected_re):
     expression 'expected_re' instead of checking for strict equality.
     '''
 
-    with pytest.raises(dtlib.DTError) as e:
+    with dtlib_raises(err_matches=expected_re):
         parse(dts[1:])
-    actual_msg = str(e.value)
-    assert re.fullmatch(expected_re, actual_msg), \
-        f'wrong error from {dts}' \
-        f'actual message:\n{actual_msg!r}\n' \
-        f'does not match:\n{expected_re!r}'
 
 @contextlib.contextmanager
 def temporary_chdir(dirname):
@@ -99,6 +92,34 @@ def temporary_chdir(dirname):
         yield
     finally:
         os.chdir(here)
+
+@contextlib.contextmanager
+def dtlib_raises(err: Optional[str] = None,
+                 err_endswith: Optional[str] = None,
+                 err_matches: Optional[str] = None):
+    '''A context manager for running a block of code that should raise
+    DTError. Exactly one of the arguments 'err', 'err_endswith',
+    and 'err_matches' must be given. The semantics are:
+
+    - err: error message must be exactly this
+    - err_endswith: error message must end with this
+    - err_matches: error message must match this regular expression
+    '''
+
+    assert sum([bool(err), bool(err_endswith), bool(err_matches)]) == 1
+
+    with pytest.raises(dtlib.DTError) as e:
+        yield
+
+    actual_err = str(e.value)
+    if err:
+        assert actual_err == err
+    elif err_endswith:
+        assert actual_err.endswith(err_endswith)
+    else:
+        assert re.fullmatch(err_matches, actual_err), \
+            f'actual message:\n{actual_err!r}\n' \
+            f'does not match:\n{err_matches!r}'
 
 def test_invalid_nodenames():
     # Regression test that verifies node names are not matched against
@@ -1050,11 +1071,9 @@ def test_include_misc(tmp_path):
 
 /include/ "tmp2.dts"
 """)
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises("tmp2.dts:3 (column 3): parse error: "
+                          "expected '/dts-v1/;' at start of file"):
             dtlib.DT("tmp.dts")
-
-        assert str(e.value) == \
-            "tmp2.dts:3 (column 3): parse error: expected '/dts-v1/;' at start of file"
 
 def test_include_recursion(tmp_path):
     '''Test recursive /include/ detection'''
@@ -1067,26 +1086,23 @@ def test_include_recursion(tmp_path):
 
         with open("tmp.dts", "w") as f:
             f.write('/include/ "tmp2.dts"\n')
-        with pytest.raises(dtlib.DTError) as e:
-            dtlib.DT("tmp.dts")
-
         expected_err = """\
 tmp3.dts:1 (column 1): parse error: recursive /include/:
 tmp.dts:1 ->
 tmp2.dts:1 ->
 tmp3.dts:1 ->
 tmp.dts"""
-        assert str(e.value) == expected_err
+        with dtlib_raises(expected_err):
+            dtlib.DT("tmp.dts")
 
         with open("tmp.dts", "w") as f:
             f.write('/include/ "tmp.dts"\n')
-        with pytest.raises(dtlib.DTError) as e:
-            dtlib.DT("tmp.dts")
         expected_err = """\
 tmp.dts:1 (column 1): parse error: recursive /include/:
 tmp.dts:1 ->
 tmp.dts"""
-        assert str(e.value) == expected_err
+        with dtlib_raises(expected_err):
+            dtlib.DT("tmp.dts")
 
 def test_omit_if_no_ref():
     '''The /omit-if-no-ref/ marker is a bit of undocumented
@@ -1354,9 +1370,8 @@ def verify_path_error(path, msg, dt):
     '''Verify that an attempt to get node 'path' from 'dt' raises
     a DTError whose str is 'msg'.'''
 
-    with pytest.raises(dtlib.DTError) as e:
+    with dtlib_raises(msg):
         dt.get_node(path)
-    assert str(e.value) == msg, f"'{path}' gives the wrong error"
 
 def test_get_node():
     '''Test DT.get_node().'''
@@ -1624,13 +1639,8 @@ def test_prop_type_casting():
             f"{prop} has bad {signed_str} numeric value"
 
     def verify_to_num_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_num()
-        actual_msg = str(e.value)
-        assert re.fullmatch(expected_re, actual_msg), \
-            f"'{prop}' to_num gives the wrong error: " \
-            f"actual message:\n{actual_msg!r}\n" \
-            f"does not match:\n{expected_re!r}"
 
     verify_to_num("u", False, 1)
     verify_to_num("u", True, 1)
@@ -1667,10 +1677,8 @@ def test_prop_type_casting():
             f"'{prop}' gives the wrong {signed_str} numbers"
 
     def verify_to_nums_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_nums()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop}' to_nums gives the wrong error"
 
     verify_to_nums("zero", False, [])
     verify_to_nums("u", False, [1])
@@ -1698,10 +1706,8 @@ def test_prop_type_casting():
         assert actual == expected, f"'{prop}' gives the wrong bytes"
 
     def verify_to_bytes_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_bytes()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop}' gives the wrong error"
 
     verify_to_bytes("u8", b"\x01")
     verify_to_bytes("bytes", b"\x01\x02\x03")
@@ -1723,10 +1729,8 @@ def test_prop_type_casting():
         assert actual == expected, f"'{prop}' to_string gives the wrong string"
 
     def verify_to_string_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_string()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop}' gives the wrong error"
 
     verify_to_string("empty_string", "")
     verify_to_string("string", "foo\tbar baz")
@@ -1752,10 +1756,8 @@ def test_prop_type_casting():
         assert actual == expected, f"'{prop}' to_strings gives the wrong value"
 
     def verify_to_strings_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_strings()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop}' gives the wrong error"
 
     verify_to_strings("empty_string", [""])
     verify_to_strings("string", ["foo\tbar baz"])
@@ -1778,10 +1780,8 @@ def test_prop_type_casting():
         assert actual == path, f"'{prop}' points at wrong path"
 
     def verify_to_node_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_node()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop} gives the wrong error"
 
     verify_to_node("ref", "/target")
 
@@ -1801,10 +1801,8 @@ def test_prop_type_casting():
         assert actual == paths, f"'{prop} gives wrong node paths"
 
     def verify_to_nodes_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_nodes()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop} gives wrong error"
 
     verify_to_nodes("zero", [])
     verify_to_nodes("ref", ["/target"])
@@ -1828,10 +1826,8 @@ def test_prop_type_casting():
         assert actual == path, f"'{prop} gives the wrong path"
 
     def verify_to_path_error_matches(prop, expected_re):
-        with pytest.raises(dtlib.DTError) as e:
+        with dtlib_raises(err_matches=expected_re):
             dt.root.props[prop].to_path()
-        assert re.fullmatch(expected_re, str(e.value)), \
-            f"'{prop} gives the wrong error"
 
     verify_to_path("path", "/target")
     verify_to_path("manualpath", "/target")
@@ -1853,6 +1849,8 @@ def test_prop_type_casting():
             f"{fn.__name__}(<{prop}>, {length}, {signed}) gives wrong value"
 
     def verify_raw_to_num_error(fn, data, length, msg):
+        # We're using this instead of dtlib_raises() for the extra
+        # context we get from the assertion below.
         with pytest.raises(dtlib.DTError) as e:
             fn(data, length)
         assert str(e.value) == msg, \
@@ -2270,3 +2268,202 @@ def test_dangling_alias():
 };
 ''', force=True)
     assert dt.get_node('/aliases').props['foo'].to_string() == '/missing'
+
+def test_duplicate_nodes():
+    # Duplicate node names in the same {} block are an error in dtc,
+    # so we want to reproduce the same behavior. But we also need to
+    # make sure that doesn't break overlays modifying the same node.
+
+    verify_error_endswith("""
+/dts-v1/;
+
+/ {
+	foo {};
+	foo {};
+};
+""", "/foo: duplicate node name")
+
+    verify_parse("""
+/dts-v1/;
+
+/ {
+	foo { prop = <3>; };
+};
+/ {
+	foo { prop = <4>; };
+};
+""",
+"""
+/dts-v1/;
+
+/ {
+	foo {
+		prop = < 0x4 >;
+	};
+};
+""")
+
+def test_deepcopy():
+    dt = parse('''
+/dts-v1/;
+
+memreservelabel: /memreserve/ 0xdeadbeef 0x4000;
+
+/ {
+	aliases {
+		foo = &nodelabel;
+	};
+	rootprop_label: rootprop = prop_offset0: <0x12345678 prop_offset4: 0x0>;
+	nodelabel: node@1234 {
+		nodeprop = <3>;
+		subnode {
+			ref-to-node = <&nodelabel>;
+		};
+	};
+};
+''')
+    dt_copy = deepcopy(dt)
+    assert dt_copy.filename == dt.filename
+
+    # dt_copy.root checks:
+    root_copy = dt_copy.root
+    assert root_copy is not dt.root
+    assert root_copy.parent is None
+    assert root_copy.dt is dt_copy
+    assert root_copy.labels == []
+    assert root_copy.labels is not dt.root.labels
+
+    # dt_copy.memreserves checks:
+    assert dt_copy.memreserves == [
+        (set(['memreservelabel']), 0xdeadbeef, 0x4000)
+    ]
+    assert dt_copy.memreserves is not dt.memreserves
+
+    # Miscellaneous dt_copy node and property checks:
+    assert 'rootprop' in root_copy.props
+    rootprop_copy = root_copy.props['rootprop']
+    assert rootprop_copy is not dt.root.props['rootprop']
+    assert rootprop_copy.name == 'rootprop'
+    assert rootprop_copy.value == b'\x12\x34\x56\x78\0\0\0\0'
+    assert rootprop_copy.type == dtlib.Type.NUMS
+    assert rootprop_copy.labels == ['rootprop_label']
+    assert rootprop_copy.labels is not dt.root.props['rootprop'].labels
+    assert rootprop_copy.offset_labels == {
+        'prop_offset0': 0,
+        'prop_offset4': 4,
+    }
+    assert rootprop_copy.offset_labels is not \
+        dt.root.props['rootprop'].offset_labels
+    assert rootprop_copy.node is root_copy
+
+    assert dt_copy.has_node('/node@1234')
+    node_copy = dt_copy.get_node('/node@1234')
+    assert node_copy is not dt.get_node('/node@1234')
+    assert node_copy.labels == ['nodelabel']
+    assert node_copy.labels is not dt.get_node('/node@1234').labels
+    assert node_copy.name == 'node@1234'
+    assert node_copy.unit_addr == '1234'
+    assert node_copy.path == '/node@1234'
+    assert set(node_copy.props.keys()) == set(['nodeprop', 'phandle'])
+    assert node_copy.props is not dt.get_node('/node@1234').props
+    assert node_copy.props['nodeprop'].name == 'nodeprop'
+    assert node_copy.props['nodeprop'].labels == []
+    assert node_copy.props['nodeprop'].offset_labels == {}
+    assert node_copy.props['nodeprop'].node is node_copy
+    assert node_copy.dt is dt_copy
+
+    assert 'subnode' in node_copy.nodes
+    subnode_copy = node_copy.nodes['subnode']
+    assert subnode_copy is not dt.get_node('/node@1234/subnode')
+    assert subnode_copy.parent is node_copy
+
+    # dt_copy.label2prop and .label2prop_offset checks:
+    assert 'rootprop_label' in dt_copy.label2prop
+    assert dt_copy.label2prop['rootprop_label'] is rootprop_copy
+    assert list(dt_copy.label2prop_offset.keys()) == ['prop_offset0',
+                                                      'prop_offset4']
+    assert dt_copy.label2prop_offset['prop_offset4'][0] is rootprop_copy
+    assert dt_copy.label2prop_offset['prop_offset4'][1] == 4
+
+    # dt_copy.foo2node checks:
+    def check_node_lookup_table(attr_name):
+        original = getattr(dt, attr_name)
+        copy = getattr(dt_copy, attr_name)
+        assert original is not copy
+        assert list(original.keys()) == list(copy.keys())
+        assert all([original_node.path == copy_node.path and
+                    original_node is not copy_node
+                    for original_node, copy_node in
+                    zip(original.values(), copy.values())])
+
+    check_node_lookup_table('alias2node')
+    check_node_lookup_table('label2node')
+    check_node_lookup_table('phandle2node')
+
+    assert list(dt_copy.alias2node.keys()) == ['foo']
+    assert dt_copy.alias2node['foo'] is node_copy
+
+    assert list(dt_copy.label2node.keys()) == ['nodelabel']
+    assert dt_copy.label2node['nodelabel'] is node_copy
+
+    assert dt_copy.phandle2node
+    # This is a little awkward because of the way dtlib allocates
+    # phandles.
+    phandle2node_copy_values = set(dt_copy.phandle2node.values())
+    assert node_copy in phandle2node_copy_values
+    for node in dt.node_iter():
+        assert node not in phandle2node_copy_values
+
+def test_move_node():
+    # Test cases for DT.move_node().
+
+    dt = parse('''
+/dts-v1/;
+
+/ {
+	aliases {
+		parent-alias = &parent_label;
+	};
+	parent_label: parent {
+		child {};
+	};
+    bar {
+        shouldbechosen {
+            foo = "bar";
+        };
+    };
+};
+''')
+    parent = dt.get_node('/parent')
+    child = dt.get_node('/parent/child')
+
+    dt.move_node(parent, '/newpath')
+
+    assert parent.path == '/newpath'
+    assert child.path == '/newpath/child'
+    assert child.parent is parent
+    assert child.parent is dt.get_node('/newpath')
+    assert dt.get_node('parent-alias') is parent
+    assert dt.label2node['parent_label'] is parent
+
+    assert not dt.has_node('/chosen')
+    dt.move_node(dt.get_node('/bar/shouldbechosen'), '/chosen')
+    assert dt.has_node('/chosen')
+    assert 'foo' in dt.get_node('/chosen').props
+
+    with dtlib_raises("the root node can't be moved"):
+        dt.move_node(dt.root, '/somewhere/else')
+
+    with dtlib_raises("can't move '/newpath' to '/aliases': "
+                      "destination node exists"):
+        dt.move_node(parent, '/aliases')
+
+    with dtlib_raises("path 'xyz' doesn't start with '/'"):
+        dt.move_node(parent, 'xyz')
+
+    with dtlib_raises("new path '/ invalid': bad character ' '"):
+        dt.move_node(parent, '/ invalid')
+
+    with dtlib_raises("can't move '/newpath' to '/foo/bar': "
+                      "parent node '/foo' doesn't exist"):
+        dt.move_node(parent, '/foo/bar')

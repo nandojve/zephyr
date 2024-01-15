@@ -18,3 +18,8 @@ supported:
   - watchdog
   - adc
   - dac
+  - pwm
+  - counter
+  - rng
+  - eeprom
+vendor: st

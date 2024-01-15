@@ -45,9 +45,7 @@ Key Features
 - Arm* Mbed Enabled* compliant (only for some Nucleo part numbers)
 
 .. image:: img/nucleo_f756zg.jpg
-   :width: 720px
    :align: center
-   :height: 720px
    :alt: Nucleo F756ZG
 
 More information about the board can be found at the `Nucleo F756ZG website`_.
@@ -211,7 +209,7 @@ You can debug an application in the usual way.  Here is an example for the
    https://www.st.com/en/evaluation-tools/nucleo-f756zg.html
 
 .. _STM32 Nucleo-144 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf
 
 .. _STM32F756ZG on www.st.com:
    https://www.st.com/content/st_com/en/products/microcontrollers/stm32-32-bit-arm-cortex-mcus/stm32-high-performance-mcus/stm32f7-series/stm32f7x6/stm32f756zg.html

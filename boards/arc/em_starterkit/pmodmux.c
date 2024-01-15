@@ -4,8 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <soc.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #define PMODMUX_BASE_ADDR	0xF0000000
 
@@ -124,7 +123,7 @@
 #define PM6_LR_CSS_STAT		((1 << BIT2) << PM6_OFFSET)
 
 
-static int pmod_mux_init(const struct device *dev)
+static int pmod_mux_init(void)
 {
 	volatile uint32_t *mux_regs = (uint32_t *)(PMODMUX_BASE_ADDR);
 

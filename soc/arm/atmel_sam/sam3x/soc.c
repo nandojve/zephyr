@@ -1,6 +1,7 @@
 /*
- * Copyright (c) 2016 Intel Corporation.
  * Copyright (c) 2013-2015 Wind River Systems, Inc.
+ * Copyright (c) 2016 Intel Corporation.
+ * Copyright (c) 2023 Gerson Fernando Budke <nandojve@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,12 +14,10 @@
  * for the Atmel SAM3X series processor.
  */
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
 
 /*
  * PLL clock = Main * (MULA + 1) / DIVA
@@ -193,22 +192,8 @@ static ALWAYS_INLINE void clock_init(void)
 	}
 }
 
-/**
- * @brief Perform basic hardware initialization at boot.
- *
- * This has to be run at the very beginning thus the init priority is set at
- * 0 (zero).
- *
- * @return 0
- */
-static int atmel_sam3x_init(const struct device *arg)
+void z_arm_platform_init(void)
 {
-	uint32_t key;
-
-	ARG_UNUSED(arg);
-
-	key = irq_lock();
-
 	/*
 	 * Set FWS (Flash Wait State) value before increasing Master Clock
 	 * (MCK) frequency.
@@ -220,15 +205,4 @@ static int atmel_sam3x_init(const struct device *arg)
 
 	/* Setup system clocks */
 	clock_init();
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
-
-	return 0;
 }
-
-SYS_INIT(atmel_sam3x_init, PRE_KERNEL_1, 0);

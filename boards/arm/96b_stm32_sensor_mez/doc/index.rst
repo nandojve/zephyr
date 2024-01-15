@@ -12,7 +12,7 @@ STM32F446VE Cortex M4 CPU.
 This board acts as a mezzanine platform for all 96Boards CE compliant
 boards. It can also be used as a standalone board.
 
-.. figure:: img/96b_stm32_sensor_mez.png
+.. figure:: img/96b_stm32_sensor_mez.jpg
      :align: center
      :alt: 96Boards STM32 Sensor Mezzanine
 
@@ -32,7 +32,7 @@ Hardware
 - On board sensors:
 
   - Temperature/Pressure: STMicro LPS22HB
-  - Acclerometer/Gyroscope: STMicro LSM6DS3H
+  - Accelerometer/Gyroscope: STMicro LSM6DS3H
   - Magnetometer: STMicro LIS3MDL
   - Microphone: STMicro MP34DT01
 
@@ -242,7 +242,7 @@ References
    https://www.96boards.org/documentation/mezzanine/stm32/
 
 .. _STM32F446VE on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f446ve.html
+   https://www.st.com/en/microcontrollers/stm32f446ve.html
 
 .. _STM32F446 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00135183.pdf
+   https://www.st.com/resource/en/reference_manual/dm00135183.pdf

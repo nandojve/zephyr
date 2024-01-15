@@ -1,7 +1,8 @@
-.. _led_lpd8806_sample:
+.. zephyr:code-sample:: led-lpd8806
+   :name: LPD880x LED strip
+   :relevant-api: led_strip_interface
 
-LPD880x Sample Application
-##########################
+   Control an LED strip using an LPD880x-compatible driver chip.
 
 Overview
 ********
@@ -85,5 +86,4 @@ References
 **********
 
 - `LPD8806 datasheet <https://cdn-shop.adafruit.com/datasheets/lpd8806+english.pdf>`_
-- `RGB LED strips: an overview <http://nut-bolt.nl/2012/rgb-led-strips/>`_
 - `74AHCT125 datasheet <https://cdn-shop.adafruit.com/datasheets/74AHC125.pdf>`_

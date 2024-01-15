@@ -7,25 +7,22 @@
 #define DT_DRV_COMPAT st_stm32_i2s
 
 #include <string.h>
-#include <drivers/dma.h>
-#include <drivers/i2s.h>
-#include <drivers/dma/dma_stm32.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/i2s.h>
+#include <zephyr/drivers/dma/dma_stm32.h>
 #include <soc.h>
 #include <stm32_ll_rcc.h>
 #include <stm32_ll_spi.h>
-#include <drivers/clock_control/stm32_clock_control.h>
-#include <drivers/clock_control.h>
-#include <pinmux/pinmux_stm32.h>
+#include <zephyr/drivers/clock_control/stm32_clock_control.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/pinctrl.h>
 
 #include "i2s_ll_stm32.h"
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(i2s_ll_stm32);
 
-/* FIXME change to
- * #if __DCACHE_PRESENT == 1
- * when cache support is added
- */
-#if 0
+#if __DCACHE_PRESENT == 1
 #define DCACHE_INVALIDATE(addr, size) \
 	SCB_InvalidateDCache_by_Addr((uint32_t *)addr, size)
 #define DCACHE_CLEAN(addr, size) \
@@ -96,72 +93,52 @@ static int queue_put(struct ring_buf *rb, void *mem_block, size_t size)
 
 static int i2s_stm32_enable_clock(const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
 	const struct device *clk;
 	int ret;
 
 	clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
 
-	ret = clock_control_on(clk, (clock_control_subsys_t *) &cfg->pclken);
+	if (!device_is_ready(clk)) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
+	}
+
+	ret = clock_control_on(clk, (clock_control_subsys_t)&cfg->pclken[0]);
 	if (ret != 0) {
 		LOG_ERR("Could not enable I2S clock");
 		return -EIO;
 	}
 
+	if (cfg->pclk_len > 1) {
+		/* Enable I2S clock source */
+		ret = clock_control_configure(clk,
+					      (clock_control_subsys_t)&cfg->pclken[1],
+					      NULL);
+		if (ret < 0) {
+			LOG_ERR("Could not configure I2S domain clock");
+			return -EIO;
+		}
+	}
+
 	return 0;
 }
-
-#ifdef CONFIG_I2S_STM32_USE_PLLI2S_ENABLE
-#define PLLI2S_MAX_MS_TIME	1 /* PLLI2S lock time is 300us max */
-static uint16_t plli2s_ms_count;
-
-#define z_pllr(v) LL_RCC_PLLI2SR_DIV_ ## v
-#define pllr(v) z_pllr(v)
-#endif
 
 static int i2s_stm32_set_clock(const struct device *dev,
 			       uint32_t bit_clk_freq)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
-	uint32_t pll_src = LL_RCC_PLL_GetMainSource();
-	int freq_in;
+	const struct i2s_stm32_cfg *cfg = dev->config;
+	uint32_t freq_in = 0U;
 	uint8_t i2s_div, i2s_odd;
 
-	freq_in = (pll_src == LL_RCC_PLLSOURCE_HSI) ?
-		   HSI_VALUE : CONFIG_CLOCK_STM32_HSE_CLOCK;
-
-#ifdef CONFIG_I2S_STM32_USE_PLLI2S_ENABLE
-	/* Set PLLI2S */
-	LL_RCC_PLLI2S_Disable();
-	LL_RCC_PLLI2S_ConfigDomain_I2S(pll_src,
-				       CONFIG_I2S_STM32_PLLI2S_PLLM,
-				       CONFIG_I2S_STM32_PLLI2S_PLLN,
-				       pllr(CONFIG_I2S_STM32_PLLI2S_PLLR));
-	LL_RCC_PLLI2S_Enable();
-
-	/* wait until PLLI2S gets locked */
-	while (!LL_RCC_PLLI2S_IsReady()) {
-		if (plli2s_ms_count++ > PLLI2S_MAX_MS_TIME) {
+	if (cfg->pclk_len > 1) {
+		if (clock_control_get_rate(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
+					   (clock_control_subsys_t)&cfg->pclken[1],
+					   &freq_in) < 0) {
+			LOG_ERR("Failed call clock_control_get_rate(pclken[1])");
 			return -EIO;
 		}
-
-		/* wait 1 ms */
-		k_sleep(K_MSEC(1));
 	}
-	LOG_DBG("PLLI2S is locked");
-
-	/* Adjust freq_in according to PLLM, PLLN, PLLR */
-	float freq_tmp;
-
-	freq_tmp = freq_in / CONFIG_I2S_STM32_PLLI2S_PLLM;
-	freq_tmp *= CONFIG_I2S_STM32_PLLI2S_PLLN;
-	freq_tmp /= CONFIG_I2S_STM32_PLLI2S_PLLR;
-	freq_in = (int) freq_tmp;
-#endif /* CONFIG_I2S_STM32_USE_PLLI2S_ENABLE */
-
-	/* Select clock source */
-	LL_RCC_SetI2SClockSource(cfg->i2s_clk_sel);
-
 	/*
 	 * The ratio between input clock (I2SxClk) and output
 	 * clock on the pad (I2S_CK) is obtained using the
@@ -171,6 +148,12 @@ static int i2s_stm32_set_clock(const struct device *dev,
 	i2s_div = div_round_closest(freq_in, bit_clk_freq);
 	i2s_odd = (i2s_div & 0x1) ? 1 : 0;
 	i2s_div >>= 1;
+
+	/* i2s_div == 0 || i2s_div == 1 are forbidden */
+	if (i2s_div < 2U) {
+		LOG_ERR("The linear prescaler value is unsupported");
+		return -EINVAL;
+	}
 
 	LOG_DBG("i2s_div: %d - i2s_odd: %d", i2s_div, i2s_odd);
 
@@ -183,13 +166,26 @@ static int i2s_stm32_set_clock(const struct device *dev,
 static int i2s_stm32_configure(const struct device *dev, enum i2s_dir dir,
 			       const struct i2s_config *i2s_cfg)
 {
-	const struct i2s_stm32_cfg *const cfg = DEV_CFG(dev);
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	const struct i2s_stm32_cfg *const cfg = dev->config;
+	struct i2s_stm32_data *const dev_data = dev->data;
+	/* For words greater than 16-bit the channel length is considered 32-bit */
+	const uint32_t channel_length = i2s_cfg->word_size > 16U ? 32U : 16U;
+	/*
+	 * comply with the i2s_config driver remark:
+	 * When I2S data format is selected parameter channels is ignored,
+	 * number of words in a frame is always 2.
+	 */
+	const uint32_t num_channels = i2s_cfg->format & I2S_FMT_DATA_FORMAT_MASK
+				      ? 2U : i2s_cfg->channels;
 	struct stream *stream;
 	uint32_t bit_clk_freq;
+	bool enable_mck;
 	int ret;
 
 	if (dir == I2S_DIR_RX) {
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+		return -ENOSYS;
+#endif
 		stream = &dev_data->rx;
 	} else if (dir == I2S_DIR_TX) {
 		stream = &dev_data->tx;
@@ -221,23 +217,39 @@ static int i2s_stm32_configure(const struct device *dev, enum i2s_dir dir,
 
 	memcpy(&stream->cfg, i2s_cfg, sizeof(struct i2s_config));
 
+	/* conditions to enable master clock output */
+	enable_mck = stream->master && cfg->master_clk_sel;
+
 	/* set I2S bitclock */
 	bit_clk_freq = i2s_cfg->frame_clk_freq *
-		       i2s_cfg->word_size * i2s_cfg->channels;
+		       channel_length * num_channels;
+
+	if (enable_mck) {
+		/*
+		 * Compensate for the master clock dividers.
+		 * MCK = N * CK, where N:
+		 * 8 when the channel frame is 16-bit wide
+		 * 4 when the channel frame is 32-bit wide
+		 */
+		bit_clk_freq *= channel_length == 16U ? 4U * 2U : 4U;
+	}
 
 	ret = i2s_stm32_set_clock(dev, bit_clk_freq);
 	if (ret < 0) {
 		return ret;
 	}
 
-	/* set I2S Master Clock */
-	if (stream->master) {
+	/* set I2S Master Clock output in the MCK pin, enabled in the DT */
+	if (enable_mck) {
 		LL_I2S_EnableMasterClock(cfg->i2s);
 	} else {
 		LL_I2S_DisableMasterClock(cfg->i2s);
 	}
 
-	/* set I2S Data Format */
+	/*
+	 * set I2S Data Format
+	 * 16-bit data extended on 32-bit channel length excluded
+	 */
 	if (i2s_cfg->word_size == 16U) {
 		LL_I2S_SetDataFormat(cfg->i2s, LL_I2S_DATAFORMAT_16B);
 	} else if (i2s_cfg->word_size == 24U) {
@@ -289,7 +301,7 @@ static int i2s_stm32_configure(const struct device *dev, enum i2s_dir dir,
 static int i2s_stm32_trigger(const struct device *dev, enum i2s_dir dir,
 			     enum i2s_trigger_cmd cmd)
 {
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	struct i2s_stm32_data *const dev_data = dev->data;
 	struct stream *stream;
 	unsigned int key;
 	int ret;
@@ -382,7 +394,7 @@ static int i2s_stm32_trigger(const struct device *dev, enum i2s_dir dir,
 static int i2s_stm32_read(const struct device *dev, void **mem_block,
 			  size_t *size)
 {
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	struct i2s_stm32_data *const dev_data = dev->data;
 	int ret;
 
 	if (dev_data->rx.state == I2S_STATE_NOT_READY) {
@@ -410,7 +422,7 @@ static int i2s_stm32_read(const struct device *dev, void **mem_block,
 static int i2s_stm32_write(const struct device *dev, void *mem_block,
 			   size_t size)
 {
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	struct i2s_stm32_data *const dev_data = dev->data;
 	int ret;
 
 	if (dev_data->tx.state != I2S_STATE_RUNNING &&
@@ -505,13 +517,13 @@ static void dma_rx_callback(const struct device *dma_dev, void *arg,
 			    uint32_t channel, int status)
 {
 	const struct device *dev = get_dev_from_rx_dma_channel(channel);
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
+	struct i2s_stm32_data *const dev_data = dev->data;
 	struct stream *stream = &dev_data->rx;
 	void *mblk_tmp;
 	int ret;
 
-	if (status != 0) {
+	if (status < 0) {
 		ret = -EIO;
 		stream->state = I2S_STATE_ERROR;
 		goto rx_disable;
@@ -536,7 +548,11 @@ static void dma_rx_callback(const struct device *dma_dev, void *arg,
 
 	ret = reload_dma(stream->dev_dma, stream->dma_channel,
 			&stream->dma_cfg,
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+			(void *)LL_SPI_DMA_GetRxRegAddr(cfg->i2s),
+#else
 			(void *)LL_SPI_DMA_GetRegAddr(cfg->i2s),
+#endif
 			stream->mem_block,
 			stream->cfg.block_size);
 	if (ret < 0) {
@@ -572,13 +588,13 @@ static void dma_tx_callback(const struct device *dma_dev, void *arg,
 			    uint32_t channel, int status)
 {
 	const struct device *dev = get_dev_from_tx_dma_channel(channel);
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
+	struct i2s_stm32_data *const dev_data = dev->data;
 	struct stream *stream = &dev_data->tx;
 	size_t mem_block_size;
 	int ret;
 
-	if (status != 0) {
+	if (status < 0) {
 		ret = -EIO;
 		stream->state = I2S_STATE_ERROR;
 		goto tx_disable;
@@ -587,7 +603,7 @@ static void dma_tx_callback(const struct device *dma_dev, void *arg,
 	__ASSERT_NO_MSG(stream->mem_block != NULL);
 
 	/* All block data sent */
-	k_mem_slab_free(stream->cfg.mem_slab, &stream->mem_block);
+	k_mem_slab_free(stream->cfg.mem_slab, stream->mem_block);
 	stream->mem_block = NULL;
 
 	/* Stop transmission if there was an error */
@@ -621,7 +637,11 @@ static void dma_tx_callback(const struct device *dma_dev, void *arg,
 	ret = reload_dma(stream->dev_dma, stream->dma_channel,
 			&stream->dma_cfg,
 			stream->mem_block,
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+			(void *)LL_SPI_DMA_GetTxRegAddr(cfg->i2s),
+#else
 			(void *)LL_SPI_DMA_GetRegAddr(cfg->i2s),
+#endif
 			stream->cfg.block_size);
 	if (ret < 0) {
 		LOG_DBG("Failed to start TX DMA transfer: %d", ret);
@@ -636,11 +656,12 @@ tx_disable:
 
 static uint32_t i2s_stm32_irq_count;
 static uint32_t i2s_stm32_irq_ovr_count;
+static uint32_t i2s_stm32_irq_udr_count;
 
 static void i2s_stm32_isr(const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
+	struct i2s_stm32_data *const dev_data = dev->data;
 	struct stream *stream = &dev_data->rx;
 
 	LOG_ERR("%s: err=%d", __func__, (int)LL_I2S_ReadReg(cfg->i2s, SR));
@@ -652,13 +673,19 @@ static void i2s_stm32_isr(const struct device *dev)
 		LL_I2S_ClearFlag_OVR(cfg->i2s);
 	}
 
+	/* NOTE: UDR error must be explicitly cleared on STM32H7 */
+	if (LL_I2S_IsActiveFlag_UDR(cfg->i2s)) {
+		i2s_stm32_irq_udr_count++;
+		LL_I2S_ClearFlag_UDR(cfg->i2s);
+	}
+
 	i2s_stm32_irq_count++;
 }
 
 static int i2s_stm32_initialize(const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
-	struct i2s_stm32_data *const dev_data = DEV_DATA(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
+	struct i2s_stm32_data *const dev_data = dev->data;
 	int ret, i;
 
 	/* Enable I2S clock propagation */
@@ -669,9 +696,7 @@ static int i2s_stm32_initialize(const struct device *dev)
 	}
 
 	/* Configure dt provided device signals when available */
-	ret = stm32_dt_pinctrl_configure(cfg->pinctrl_list,
-					 cfg->pinctrl_list_size,
-					 (uint32_t)cfg->i2s);
+	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
 	if (ret < 0) {
 		LOG_ERR("I2S pinctrl setup failed (%d)", ret);
 		return ret;
@@ -705,7 +730,7 @@ static int i2s_stm32_initialize(const struct device *dev)
 
 static int rx_stream_start(struct stream *stream, const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
 	int ret;
 
 	ret = k_mem_slab_alloc(stream->cfg.mem_slab, &stream->mem_block,
@@ -725,7 +750,11 @@ static int rx_stream_start(struct stream *stream, const struct device *dev)
 
 	ret = start_dma(stream->dev_dma, stream->dma_channel,
 			&stream->dma_cfg,
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+			(void *)LL_SPI_DMA_GetRxRegAddr(cfg->i2s),
+#else
 			(void *)LL_SPI_DMA_GetRegAddr(cfg->i2s),
+#endif
 			stream->src_addr_increment, stream->mem_block,
 			stream->dst_addr_increment, stream->fifo_threshold,
 			stream->cfg.block_size);
@@ -736,15 +765,24 @@ static int rx_stream_start(struct stream *stream, const struct device *dev)
 
 	LL_I2S_EnableDMAReq_RX(cfg->i2s);
 
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+	LL_I2S_EnableIT_OVR(cfg->i2s);
+	LL_I2S_EnableIT_UDR(cfg->i2s);
+	LL_I2S_EnableIT_FRE(cfg->i2s);
+	LL_I2S_Enable(cfg->i2s);
+	LL_SPI_StartMasterTransfer(cfg->i2s);
+#else
 	LL_I2S_EnableIT_ERR(cfg->i2s);
 	LL_I2S_Enable(cfg->i2s);
+#endif
+
 
 	return 0;
 }
 
 static int tx_stream_start(struct stream *stream, const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
 	size_t mem_block_size;
 	int ret;
 
@@ -770,7 +808,11 @@ static int tx_stream_start(struct stream *stream, const struct device *dev)
 	ret = start_dma(stream->dev_dma, stream->dma_channel,
 			&stream->dma_cfg,
 			stream->mem_block, stream->src_addr_increment,
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+			(void *)LL_SPI_DMA_GetTxRegAddr(cfg->i2s),
+#else
 			(void *)LL_SPI_DMA_GetRegAddr(cfg->i2s),
+#endif
 			stream->dst_addr_increment, stream->fifo_threshold,
 			stream->cfg.block_size);
 	if (ret < 0) {
@@ -780,22 +822,37 @@ static int tx_stream_start(struct stream *stream, const struct device *dev)
 
 	LL_I2S_EnableDMAReq_TX(cfg->i2s);
 
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+	LL_I2S_EnableIT_OVR(cfg->i2s);
+	LL_I2S_EnableIT_UDR(cfg->i2s);
+	LL_I2S_EnableIT_FRE(cfg->i2s);
+
+	LL_I2S_Enable(cfg->i2s);
+	LL_SPI_StartMasterTransfer(cfg->i2s);
+#else
 	LL_I2S_EnableIT_ERR(cfg->i2s);
 	LL_I2S_Enable(cfg->i2s);
+#endif
 
 	return 0;
 }
 
 static void rx_stream_disable(struct stream *stream, const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
 
 	LL_I2S_DisableDMAReq_RX(cfg->i2s);
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+	LL_I2S_DisableIT_OVR(cfg->i2s);
+	LL_I2S_DisableIT_UDR(cfg->i2s);
+	LL_I2S_DisableIT_FRE(cfg->i2s);
+#else
 	LL_I2S_DisableIT_ERR(cfg->i2s);
+#endif
 
 	dma_stop(stream->dev_dma, stream->dma_channel);
 	if (stream->mem_block != NULL) {
-		k_mem_slab_free(stream->cfg.mem_slab, &stream->mem_block);
+		k_mem_slab_free(stream->cfg.mem_slab, stream->mem_block);
 		stream->mem_block = NULL;
 	}
 
@@ -806,14 +863,20 @@ static void rx_stream_disable(struct stream *stream, const struct device *dev)
 
 static void tx_stream_disable(struct stream *stream, const struct device *dev)
 {
-	const struct i2s_stm32_cfg *cfg = DEV_CFG(dev);
+	const struct i2s_stm32_cfg *cfg = dev->config;
 
 	LL_I2S_DisableDMAReq_TX(cfg->i2s);
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32h7_i2s)
+	LL_I2S_DisableIT_OVR(cfg->i2s);
+	LL_I2S_DisableIT_UDR(cfg->i2s);
+	LL_I2S_DisableIT_FRE(cfg->i2s);
+#else
 	LL_I2S_DisableIT_ERR(cfg->i2s);
+#endif
 
 	dma_stop(stream->dev_dma, stream->dma_channel);
 	if (stream->mem_block != NULL) {
-		k_mem_slab_free(stream->cfg.mem_slab, &stream->mem_block);
+		k_mem_slab_free(stream->cfg.mem_slab, stream->mem_block);
 		stream->mem_block = NULL;
 	}
 
@@ -828,7 +891,7 @@ static void rx_queue_drop(struct stream *stream)
 	void *mem_block;
 
 	while (queue_get(&stream->mem_block_queue, &mem_block, &size) == 0) {
-		k_mem_slab_free(stream->cfg.mem_slab, &mem_block);
+		k_mem_slab_free(stream->cfg.mem_slab, mem_block);
 	}
 
 	k_sem_reset(&stream->sem);
@@ -841,7 +904,7 @@ static void tx_queue_drop(struct stream *stream)
 	unsigned int n = 0U;
 
 	while (queue_get(&stream->mem_block_queue, &mem_block, &size) == 0) {
-		k_mem_slab_free(stream->cfg.mem_slab, &mem_block);
+		k_mem_slab_free(stream->cfg.mem_slab, mem_block);
 		n++;
 	}
 
@@ -863,28 +926,26 @@ static const struct device *get_dev_from_tx_dma_channel(uint32_t dma_channel)
 /* src_dev and dest_dev should be 'MEMORY' or 'PERIPHERAL'. */
 #define I2S_DMA_CHANNEL_INIT(index, dir, dir_cap, src_dev, dest_dev)	\
 .dir = {								\
-	.dev_dma = DEVICE_DT_GET(DT_DMAS_CTLR_BY_NAME(DT_NODELABEL(i2s##index), dir)),\
-	.dma_channel = \
-		DT_DMAS_CELL_BY_NAME(DT_NODELABEL(i2s##index), dir, channel),\
+	.dev_dma = DEVICE_DT_GET(STM32_DMA_CTLR(index, dir)),		\
+	.dma_channel = DT_INST_DMAS_CELL_BY_NAME(index, dir, channel),	\
 	.dma_cfg = {							\
 		.block_count = 2,					\
-		.dma_slot = \
-		    DT_DMAS_CELL_BY_NAME(DT_NODELABEL(i2s##index), dir, slot),\
+		.dma_slot = STM32_DMA_SLOT(index, dir, slot),\
 		.channel_direction = src_dev##_TO_##dest_dev,		\
 		.source_data_size = 2,  /* 16bit default */		\
 		.dest_data_size = 2,    /* 16bit default */		\
 		.source_burst_length = 1, /* SINGLE transfer */		\
 		.dest_burst_length = 1,					\
 		.channel_priority = STM32_DMA_CONFIG_PRIORITY(		\
-	 DT_DMAS_CELL_BY_NAME(DT_NODELABEL(i2s##index), dir, channel_config)),\
+					STM32_DMA_CHANNEL_CONFIG(index, dir)),\
 		.dma_callback = dma_##dir##_callback,			\
 	},								\
 	.src_addr_increment = STM32_DMA_CONFIG_##src_dev##_ADDR_INC(	\
-	 DT_DMAS_CELL_BY_NAME(DT_NODELABEL(i2s##index), dir, channel_config)),\
+				STM32_DMA_CHANNEL_CONFIG(index, dir)),	\
 	.dst_addr_increment = STM32_DMA_CONFIG_##dest_dev##_ADDR_INC(	\
-	 DT_DMAS_CELL_BY_NAME(DT_NODELABEL(i2s##index), dir, channel_config)),\
+				STM32_DMA_CHANNEL_CONFIG(index, dir)),	\
 	.fifo_threshold = STM32_DMA_FEATURES_FIFO_THRESHOLD(		\
-	 DT_DMAS_CELL_BY_NAME(DT_NODELABEL(i2s##index), dir, channel_config)),\
+				STM32_DMA_FEATURES(index, dir)),	\
 	.stream_start = dir##_stream_start,				\
 	.stream_disable = dir##_stream_disable,				\
 	.queue_drop = dir##_queue_drop,					\
@@ -892,63 +953,45 @@ static const struct device *get_dev_from_tx_dma_channel(uint32_t dma_channel)
 	.mem_block_queue.len = ARRAY_SIZE(dir##_##index##_ring_buf)	\
 }
 
-#define I2S_INIT(index, clk_sel)					\
-static const struct soc_gpio_pinctrl i2s_pins_##index[] =		\
-				     ST_STM32_DT_PINCTRL(i2s##index, 0);\
+#define I2S_STM32_INIT(index)							\
 									\
 static void i2s_stm32_irq_config_func_##index(const struct device *dev);\
 									\
+PINCTRL_DT_INST_DEFINE(index);						\
+									\
+static const struct stm32_pclken clk_##index[] =			\
+				 STM32_DT_INST_CLOCKS(index);		\
+									\
 static const struct i2s_stm32_cfg i2s_stm32_config_##index = {		\
-	.i2s = (SPI_TypeDef *) DT_REG_ADDR(DT_NODELABEL(i2s##index)),	\
-	.pclken = {							\
-		.enr = DT_CLOCKS_CELL(DT_NODELABEL(i2s##index), bits),	\
-		.bus = DT_CLOCKS_CELL(DT_NODELABEL(i2s##index), bus),	\
-	},								\
-	.i2s_clk_sel = CLK_SEL_##clk_sel,				\
-	.pinctrl_list = i2s_pins_##index,				\
-	.pinctrl_list_size = ARRAY_SIZE(i2s_pins_##index),		\
+	.i2s = (SPI_TypeDef *)DT_INST_REG_ADDR(index),			\
+	.pclken = clk_##index,						\
+	.pclk_len = DT_INST_NUM_CLOCKS(index),				\
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),			\
 	.irq_config = i2s_stm32_irq_config_func_##index,		\
+	.master_clk_sel = DT_INST_PROP(index, mck_enabled)		\
 };									\
 									\
 struct queue_item rx_##index##_ring_buf[CONFIG_I2S_STM32_RX_BLOCK_COUNT + 1];\
 struct queue_item tx_##index##_ring_buf[CONFIG_I2S_STM32_TX_BLOCK_COUNT + 1];\
 									\
 static struct i2s_stm32_data i2s_stm32_data_##index = {			\
-	UTIL_AND(DT_DMAS_HAS_NAME(DT_NODELABEL(i2s##index), rx),	\
+	UTIL_AND(DT_INST_DMAS_HAS_NAME(index, rx),			\
 		I2S_DMA_CHANNEL_INIT(index, rx, RX, PERIPHERAL, MEMORY)),\
-	UTIL_AND(DT_DMAS_HAS_NAME(DT_NODELABEL(i2s##index), tx),	\
+	UTIL_AND(DT_INST_DMAS_HAS_NAME(index, tx),			\
 		I2S_DMA_CHANNEL_INIT(index, tx, TX, MEMORY, PERIPHERAL)),\
 };									\
-DEVICE_DT_DEFINE(DT_NODELABEL(i2s##index),				\
-		    &i2s_stm32_initialize, NULL,			\
-		    &i2s_stm32_data_##index,				\
-		    &i2s_stm32_config_##index, POST_KERNEL,		\
-		    CONFIG_I2S_INIT_PRIORITY, &i2s_stm32_driver_api);	\
+DEVICE_DT_INST_DEFINE(index,						\
+		      &i2s_stm32_initialize, NULL,			\
+		      &i2s_stm32_data_##index,				\
+		      &i2s_stm32_config_##index, POST_KERNEL,		\
+		      CONFIG_I2S_INIT_PRIORITY, &i2s_stm32_driver_api);	\
 									\
 static void i2s_stm32_irq_config_func_##index(const struct device *dev)	\
 {									\
-	IRQ_CONNECT(DT_IRQN(DT_NODELABEL(i2s##index)),			\
-		    DT_IRQ(DT_NODELABEL(i2s##index), priority),		\
-		    i2s_stm32_isr, DEVICE_DT_GET(DT_NODELABEL(i2s##index)), 0);\
-	irq_enable(DT_IRQN(DT_NODELABEL(i2s##index)));			\
+	IRQ_CONNECT(DT_INST_IRQN(index),				\
+		    DT_INST_IRQ(index, priority),			\
+		    i2s_stm32_isr, DEVICE_DT_INST_GET(index), 0);	\
+	irq_enable(DT_INST_IRQN(index));				\
 }
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2s1), okay)
-I2S_INIT(1, 2)
-#endif
-
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2s2), okay)
-I2S_INIT(2, 1)
-#endif
-
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2s3), okay)
-I2S_INIT(3, 1)
-#endif
-
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2s4), okay)
-I2S_INIT(4, 2)
-#endif
-
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2s5), okay)
-I2S_INIT(5, 2)
-#endif
+DT_INST_FOREACH_STATUS_OKAY(I2S_STM32_INIT)

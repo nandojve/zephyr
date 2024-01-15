@@ -20,8 +20,7 @@ interface, SPDIF, and I2S audio interface.
 The following document refers to the discontinued MIMXRT1050-EVK board. For the
 MIMXRT1050-EVKB board, refer to `Board Revisions`_ section.
 
-.. image:: ./mimxrt1050_evk.jpg
-   :width: 720px
+.. image:: mimxrt1050_evk.jpg
    :align: center
    :alt: MIMXRT1050-EVK
 
@@ -86,11 +85,32 @@ these references:
 - `MIMXRT1050-EVK User Guide`_
 - `MIMXRT1050-EVK Schematics`_
 
+External Memory
+===============
+
+This platform has the following external memories:
+
++--------------------+------------+-------------------------------------+
+| Device             | Controller | Status                              |
++====================+============+=====================================+
+| IS42S16160J        | SEMC       | Enabled via device configuration    |
+|                    |            | data block, which sets up SEMC at   |
+|                    |            | boot time                           |
++--------------------+------------+-------------------------------------+
+| S26KS512SDPBHI020  | FLEXSPI    | Enabled via flash configurationn    |
+|                    |            | block, which sets up FLEXSPI at     |
+|                    |            | boot time.                          |
++--------------------+------------+-------------------------------------+
+
 Supported Features
 ==================
 
-The mimxrt1050_evk board configuration supports the following hardware
-features:
+The mimxrt1050_evk board configuration supports the hardware features listed
+below.  For additional features not yet supported, please also refer to the
+:ref:`mimxrt1064_evk` , which is the superset board in NXP's i.MX RT10xx family.
+NXP prioritizes enabling the superset board with NXP's Full Platform Support for
+Zephyr.  Therefore, the mimxrt1064_evk board may have additional features
+already supported, which can also be re-used on this mimxrt1050_evk board:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -117,6 +137,12 @@ features:
 | USB       | on-chip    | USB device                          |
 +-----------+------------+-------------------------------------+
 | ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| GPT       | on-chip    | gpt                                 |
++-----------+------------+-------------------------------------+
+| TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| FLEXSPI   | on-chip    | flash programming                   |
 +-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -247,6 +273,10 @@ The MIMXRT1050 SoC has five pairs of pinmux/gpio controllers.
 +---------------+-----------------+---------------------------+
 | GPIO_SD_B0_05 | USDHC1_DATA3    | SD Card                   |
 +---------------+-----------------+---------------------------+
+| GPIO_AD_B1_02 | 1588_EVENT2_OUT | 1588                      |
++---------------+-----------------+---------------------------+
+| GPIO_AD_B1_03 | 1588_EVENT2_IN  | 1588                      |
++---------------+-----------------+---------------------------+
 
 .. note::
         In order to use the SPI peripheral on this board, resistors R278,
@@ -255,8 +285,13 @@ The MIMXRT1050 SoC has five pairs of pinmux/gpio controllers.
 System Clock
 ============
 
-The MIMXRT1050 SoC is configured to use the 24 MHz external oscillator on the
-board with the on-chip PLL to generate a 600 MHz core clock.
+The MIMXRT1050 SoC is configured to use SysTick as the system clock source,
+running at 600MHz.
+
+When power management is enabled, the 32 KHz low frequency
+oscillator on the board will be used as a source for the GPT timer to
+generate a system clock. This clock enables lower power states, at the
+cost of reduced resolution
 
 Serial Port
 ===========
@@ -297,6 +332,10 @@ Follow the instructions in :ref:`opensda-jlink-onboard-debug-probe` to program
 the `OpenSDA J-Link MIMXRT1050-EVK-Hyperflash Firmware`_. Check that jumpers
 J32 and J33 are **on** (they are on by default when boards ship from the
 factory) to ensure SWD signals are connected to the OpenSDA microcontroller.
+
+Follow the instructions in `Enable QSPI flash support in SEGGER JLink`_
+in order to support your EVK if you have modified it to boot from QSPI NOR
+flash as specified by NXP AN12108.
 
 Option 2: :ref:`jlink-external-debug-probe`
 -------------------------------------------
@@ -367,7 +406,7 @@ Troubleshooting
 
 If the debug probe fails to connect with the following error, it's possible
 that the boot header in HyperFlash is invalid or corrupted. The boot header is
-configured by :kconfig:`CONFIG_NXP_IMX_RT_BOOT_HEADER`.
+configured by :kconfig:option:`CONFIG_NXP_IMX_RT_BOOT_HEADER`.
 
 .. code-block:: console
 
@@ -397,9 +436,9 @@ Board Revisions
 ***************
 
 The original MIMXRT1050-EVK (rev A0) board was updated with a newer
-MIMXRT1050-EVKB (rev A1) board, with these major hardware differences::
+MIMXRT1050-EVKB (rev A1) board, with these major hardware differences:
 
-- SoC changed from MIMXRT1052DVL6**A** to MIMXRT1052DVL6**B**
+- SoC changed from MIMXRT1052DVL6\ **A** to MIMXRT1052DVL6\ **B**
 - Hardware bug fixes for: power, interfaces, and memory
 - Arduino headers included
 
@@ -430,3 +469,16 @@ Current Zephyr build supports the new MIMXRT1050-EVKB
 
 .. _NXP i.MXRT1050 A0 to A1 Migration Guide:
    https://www.nxp.com/docs/en/nxp/application-notes/AN12146.pdf
+
+.. _Enable QSPI flash support in SEGGER JLink:
+   https://wiki.segger.com/i.MXRT1050#QSPI_flash
+
+Experimental ENET Driver
+========================
+
+Current default ethernet driver is eth_mcux, with binding `nxp,kinetis-ethernet`. There is a new
+driver with binding `nxp,enet`, which is experimental and undergoing development, but will have
+enhanced capability, such as not hardcoding code for only one phy in the driver like eth_mcux.
+
+To build for this EVK with the new driver, include the experimental overlay to west build with
+the option `-DEXTRA_DTC_OVERLAY_FILE=nxp,enet-experimental.overlay`.

@@ -15,19 +15,19 @@
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
-#include <bluetooth/hci.h>
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/l2cap.h>
-#include <bluetooth/rfcomm.h>
-#include <bluetooth/sdp.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/l2cap.h>
+#include <zephyr/bluetooth/rfcomm.h>
+#include <zephyr/bluetooth/sdp.h>
 
-#include <shell/shell.h>
+#include <zephyr/shell/shell.h>
 
 #include "bt.h"
 
@@ -38,11 +38,11 @@ static struct bt_conn *pairing_conn;
 
 #define DATA_BREDR_MTU		48
 
-NET_BUF_POOL_FIXED_DEFINE(data_pool, 1, DATA_BREDR_MTU, NULL);
+NET_BUF_POOL_FIXED_DEFINE(data_pool, 1, DATA_BREDR_MTU, 8, NULL);
 
 #define SDP_CLIENT_USER_BUF_LEN		512
 NET_BUF_POOL_FIXED_DEFINE(sdp_client_pool, CONFIG_BT_MAX_CONN,
-			  SDP_CLIENT_USER_BUF_LEN, NULL);
+			  SDP_CLIENT_USER_BUF_LEN, 8, NULL);
 
 static int cmd_auth_pincode(const struct shell *sh,
 			    size_t argc, char *argv[])
@@ -243,7 +243,8 @@ static struct bt_l2cap_br_chan l2cap_chan = {
 	.rx.mtu		= 48,
 };
 
-static int l2cap_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
+static int l2cap_accept(struct bt_conn *conn, struct bt_l2cap_server *server,
+			struct bt_l2cap_chan **chan)
 {
 	shell_print(ctx_shell, "Incoming BR/EDR conn %p", conn);
 

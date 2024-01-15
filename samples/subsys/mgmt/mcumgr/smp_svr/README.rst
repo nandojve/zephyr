@@ -1,7 +1,7 @@
-.. _smp_svr_sample:
+.. zephyr:code-sample:: smp-svr
+   :name: SMP server
 
-SMP Server Sample
-#################
+   Implement a Simple Management Protocol (SMP) server.
 
 Overview
 ********
@@ -85,10 +85,7 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
 
    .. group-tab:: Bluetooth
 
-      The sample application comes in two bluetooth flavours: a normal one and a tiny one
-      for resource constrained bluetooth devices.
-
-      To build the normal bluetooth sample:
+      To build the bluetooth sample:
 
       .. code-block:: console
 
@@ -96,17 +93,7 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
             -b nrf52dk_nrf52832 \
             samples/subsys/mgmt/mcumgr/smp_svr \
             -- \
-            -DOVERLAY_CONFIG=overlay-bt.conf
-
-      And to build the tiny bluetooth sample:
-
-      .. code-block:: console
-
-         west build \
-            -b nrf51dk_nrf51422 \
-            samples/subsys/mgmt/mcumgr/smp_svr \
-            -- \
-            -DOVERLAY_CONFIG=overlay-bt-tiny.conf
+            -DEXTRA_CONF_FILE=overlay-bt.conf
 
    .. group-tab:: Serial
 
@@ -118,7 +105,7 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
             -b frdm_k64f \
             samples/subsys/mgmt/mcumgr/smp_svr \
             -- \
-            -DOVERLAY_CONFIG='overlay-serial.conf;overlay-fs.conf;overlay-shell-mgmt.conf'
+            -DEXTRA_CONF_FILE='overlay-serial.conf;overlay-fs.conf;overlay-shell-mgmt.conf'
 
    .. group-tab:: USB CDC_ACM
 
@@ -130,7 +117,8 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
             -b nrf52840dk_nrf52840 \
             samples/subsys/mgmt/mcumgr/smp_svr \
             -- \
-            -DOVERLAY_CONFIG=overlay-cdc.conf
+            -DEXTRA_CONF_FILE=overlay-cdc.conf \
+            -DDTC_OVERLAY_FILE=usb.overlay
 
    .. group-tab:: Shell
 
@@ -142,7 +130,7 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
             -b frdm_k64f \
             samples/subsys/mgmt/mcumgr/smp_svr \
             -- \
-            -DOVERLAY_CONFIG='overlay-shell.conf'
+            -DEXTRA_CONF_FILE='overlay-shell.conf'
 
    .. group-tab:: UDP
 
@@ -158,7 +146,7 @@ Zephyr. The ``smp_svr`` sample comes in different flavours.
             -b frdm_k64f \
             samples/subsys/mgmt/mcumgr/smp_svr \
             -- \
-            -DOVERLAY_CONFIG=overlay-udp.conf
+            -DEXTRA_CONF_FILE=overlay-udp.conf
 
 .. _smp_svr_sample_sign:
 
@@ -194,8 +182,8 @@ the image.
 
     west flash --bin-file build/zephyr/zephyr.signed.bin
 
-We need to explicity specify the *signed* image file, otherwise the non-signed version
-will be used and the image wont be runnable.
+We need to explicitly specify the *signed* image file, otherwise the non-signed version
+will be used and the image won't be runnable.
 
 Sample image: hello world!
 ==========================
@@ -245,6 +233,18 @@ send a string to the remote target device and have it echo it back:
 .. note::
    In the following sections, examples will use ``<connection string>`` to represent
    the ``--conntype <type>`` and ``--connstring=<string>`` :file:`mcumgr` parameters.
+
+J-Link Virtual MSD Interaction Note
+***********************************
+
+On boards where a J-Link OB is present which has both CDC and MSC (virtual Mass
+Storage Device, also known as drag-and-drop) support, the MSD functionality can
+prevent mcumgr commands over the CDC UART port from working due to how USB
+endpoints are configured in the J-Link firmware (for example on the Nordic
+``nrf52840dk``) because of limiting the maximum packet size (most likely to occur
+when using image management commands for updating firmware). This issue can be
+resolved by disabling MSD functionality on the J-Link device, follow the
+instructions on :ref:`nordic_segger_msd` to disable MSD support.
 
 Device Firmware Upgrade (DFU)
 *****************************

@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/dma.h>
-#include <drivers/pcie/endpoint/pcie_ep.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/pcie/endpoint/pcie_ep.h>
 
 #define LOG_LEVEL CONFIG_PCIE_EP_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(iproc_pcie);
 
 #include "pcie_ep_iproc.h"
@@ -163,8 +164,9 @@ static int iproc_pcie_register_reset_cb(const struct device *dev,
 {
 	struct iproc_pcie_ep_ctx *ctx = dev->data;
 
-	if (reset < PCIE_PERST || reset >= PCIE_RESET_MAX)
+	if (reset < PCIE_PERST || reset >= PCIE_RESET_MAX) {
 		return -EINVAL;
+	}
 
 	LOG_DBG("Registering the callback for reset %d", reset);
 	ctx->reset_cb[reset] = cb;
@@ -173,6 +175,7 @@ static int iproc_pcie_register_reset_cb(const struct device *dev,
 	return 0;
 }
 
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(dmas)
 static int iproc_pcie_pl330_dma_xfer(const struct device *dev,
 				     uint64_t mapped_addr,
 				     uintptr_t local_addr, uint32_t size,
@@ -220,6 +223,7 @@ static int iproc_pcie_pl330_dma_xfer(const struct device *dev,
 out:
 	return ret;
 }
+#endif
 
 #if DT_INST_IRQ_HAS_NAME(0, perst)
 static void iproc_pcie_perst(const struct device *dev)
@@ -467,7 +471,7 @@ err_out:
 
 static struct iproc_pcie_ep_ctx iproc_pcie_ep_ctx_0;
 
-static struct iproc_pcie_ep_config iproc_pcie_ep_config_0 = {
+static const struct iproc_pcie_ep_config iproc_pcie_ep_config_0 = {
 	.id = 0,
 	.base = (struct iproc_pcie_reg *)DT_INST_REG_ADDR(0),
 	.reg_size = DT_INST_REG_SIZE(0),
@@ -475,19 +479,23 @@ static struct iproc_pcie_ep_config iproc_pcie_ep_config_0 = {
 	.map_low_size = DT_INST_REG_SIZE_BY_NAME(0, map_lowmem),
 	.map_high_base = DT_INST_REG_ADDR_BY_NAME(0, map_highmem),
 	.map_high_size = DT_INST_REG_SIZE_BY_NAME(0, map_highmem),
+#if DT_INST_NODE_HAS_PROP(0, dmas)
 	.pl330_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_IDX(0, 0)),
 	.pl330_tx_chan_id = DT_INST_DMAS_CELL_BY_NAME(0, txdma, channel),
 	.pl330_rx_chan_id = DT_INST_DMAS_CELL_BY_NAME(0, rxdma, channel),
+#endif
 };
 
-static struct pcie_ep_driver_api iproc_pcie_ep_api = {
+static const struct pcie_ep_driver_api iproc_pcie_ep_api = {
 	.conf_read = iproc_pcie_conf_read,
 	.conf_write = iproc_pcie_conf_write,
 	.map_addr = iproc_pcie_map_addr,
 	.unmap_addr = iproc_pcie_unmap_addr,
 	.raise_irq = iproc_pcie_raise_irq,
 	.register_reset_cb = iproc_pcie_register_reset_cb,
+#if DT_INST_NODE_HAS_PROP(0, dmas)
 	.dma_xfer = iproc_pcie_pl330_dma_xfer,
+#endif
 };
 
 DEVICE_DT_INST_DEFINE(0, &iproc_pcie_ep_init, NULL,

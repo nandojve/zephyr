@@ -5,6 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <nrf_erratas.h>
+
 /* NRF Radio HW timing constants
  * - provided in US and NS (for higher granularity)
  * - based on empirical measurements and sniffer logs
@@ -337,32 +339,16 @@
 #endif /* !CONFIG_BT_CTLR_TIFS_HW */
 #endif /* !CONFIG_BT_CTLR_RADIO_ENABLE_FAST */
 
-#if !defined(CONFIG_BT_CTLR_TIFS_HW)
-#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
-#undef EVENT_TIMER_ID
-#define EVENT_TIMER_ID 4
-#define SW_SWITCH_TIMER EVENT_TIMER
-#define SW_SWITCH_TIMER_EVTS_COMP_BASE 3
-#define SW_SWITCH_TIMER_EVTS_COMP_S2_BASE 5
-#undef HAL_EVENT_TIMER_SAMPLE_CC_OFFSET
-#define HAL_EVENT_TIMER_SAMPLE_CC_OFFSET 2
-#undef HAL_EVENT_TIMER_SAMPLE_TASK
-#define HAL_EVENT_TIMER_SAMPLE_TASK NRF_TIMER_TASK_CAPTURE2
-
-#else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
-#define SW_SWITCH_TIMER NRF_TIMER1
-#define SW_SWITCH_TIMER_EVTS_COMP_BASE 0
-#define SW_SWITCH_TIMER_EVTS_COMP_S2_BASE 2
-#endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
-
-#define SW_SWITCH_TIMER_TASK_GROUP_BASE 0
-#endif /* !CONFIG_BT_CTLR_TIFS_HW */
-
 static inline void hal_radio_reset(void)
 {
-	/* Anomalies 102, 106 and 107 */
-	*(volatile uint32_t *)0x40001774 = ((*(volatile uint32_t *)0x40001774) &
-					 0xfffffffe) | 0x01000000;
+	/* TODO: Add any required setup for each radio event
+	 */
+}
+
+static inline void hal_radio_stop(void)
+{
+	/* TODO: Add any required cleanup of actions taken in hal_radio_reset()
+	 */
 }
 
 static inline void hal_radio_ram_prio_setup(void)
@@ -415,8 +401,10 @@ static inline uint32_t hal_radio_phy_mode_get(uint8_t phy, uint8_t flags)
 		mode = RADIO_MODE_MODE_Ble_1Mbit;
 
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
-		/* Workaround: nRF52840 Engineering A Errata ID 164 */
-		*(volatile uint32_t *)0x4000173c &= ~0x80000000;
+		/* Workaround: nRF52840 Revision 3 Errata 191 */
+		if (nrf52_errata_191()) {
+			*(volatile uint32_t *)0x40001740 &= ~0x80000000;
+		}
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 
 		break;
@@ -425,8 +413,10 @@ static inline uint32_t hal_radio_phy_mode_get(uint8_t phy, uint8_t flags)
 		mode = RADIO_MODE_MODE_Ble_2Mbit;
 
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
-		/* Workaround: nRF52840 Engineering A Errata ID 164 */
-		*(volatile uint32_t *)0x4000173c &= ~0x80000000;
+		/* Workaround: nRF52840 Revision 3 Errata 191 */
+		if (nrf52_errata_191()) {
+			*(volatile uint32_t *)0x40001740 &= ~0x80000000;
+		}
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 
 		break;
@@ -439,11 +429,12 @@ static inline uint32_t hal_radio_phy_mode_get(uint8_t phy, uint8_t flags)
 			mode = RADIO_MODE_MODE_Ble_LR500Kbit;
 		}
 
-		/* Workaround: nRF52840 Engineering A Errata ID 164 */
-		*(volatile uint32_t *)0x4000173c |= 0x80000000;
-		*(volatile uint32_t *)0x4000173c =
-				((*(volatile uint32_t *)0x4000173c) & 0xFFFFFF00) |
-				0x5C;
+		/* Workaround: nRF52840 Revision 3 Errata 191 */
+		if (nrf52_errata_191()) {
+			*(volatile uint32_t *)0x40001740 =
+				((*(volatile uint32_t *)0x40001740) & 0x7FFF00FF) |
+				0x80000000 | ((uint32_t)(196U) << 8U);
+		}
 		break;
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 	}

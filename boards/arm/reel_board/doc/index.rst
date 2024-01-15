@@ -48,15 +48,13 @@ MMA8652FC is a 12-bit Digital Accelerometer.
 All sensors are connected to the I2C bus and one GPIO pin each,
 which can be used as an interrupt source.
 
-.. figure:: img/reel_board.png
-     :width: 442px
+.. figure:: img/reel_board.jpg
      :align: center
      :alt: reel board front
 
      reel board front (Credit: PHYTEC)
 
-.. figure:: img/reel_board_descr_back.png
-     :width: 442px
+.. figure:: img/reel_board_descr_back.jpg
      :align: center
      :alt: reel board back
 
@@ -87,7 +85,7 @@ used for building an application.
 | Good Display | HINK-E0213         | SSD1673 /            | reel_board        |
 | GDEH0213B1   |                    | ssd16xx              |                   |
 +--------------+--------------------+----------------------+-------------------+
-| Good Display | HINK-E0213A22      | IL3897 /             | reel_board_v2     |
+| Good Display | HINK-E0213A22      | SSD1675A /           | reel_board_v2     |
 | GDEH0213B72  |                    | ssd16xx              |                   |
 +--------------+--------------------+----------------------+-------------------+
 
@@ -146,7 +144,7 @@ hardware features:
 |           |            | HDC1010 polling      |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Connections and IOs
 ===================
@@ -268,8 +266,7 @@ There are several labeled solder jumpers on the board.
 These can be used to connect a logic analyzer to check the behavior of a
 driver or to measure the voltage of a signal.
 
-.. figure:: img/reel_board_tp.png
-     :width: 442px
+.. figure:: img/reel_board_tp.jpg
      :align: center
      :alt: reel board Jumper and Testpoints
 
@@ -328,7 +325,7 @@ Power supply testpoint
 | TP13  | testpoint             | testpoint boost converter input voltage   |
 +-------+-----------------------+-------------------------------------------+
 
-Build-in Debug Adapter
+Built-in Debug Adapter
 ======================
 
 The debug adapter is based on the DAPLink interface firmware and
@@ -338,8 +335,7 @@ reel board can be flashed and debugged, powered either from battery or USB.
 If the Adapter is powered via USB, the Adapter circuit heats the board
 slightly and the temperature sensor can output values up to 1.5 degrees higher.
 
-.. figure:: img/reel_board_debug.png
-     :width: 442px
+.. figure:: img/reel_board_debug.jpg
      :align: center
      :alt: reel board Debug Adapter
 
@@ -387,8 +383,7 @@ The expansion connector has the same dimensions and similar pinout
 as the BBC MicroBit edge connector. The expansion components that are
 designed especially for the reel board are called link boards.
 
-.. figure:: img/reel_board_excon.png
-     :width: 442px
+.. figure:: img/reel_board_excon.jpg
      :align: center
      :alt: reel board Expansion Connector
 
@@ -402,8 +397,7 @@ third party shields in Arduino UNO R3 format to be connected to the reel board.
 In addition, it includes a NOTM.2 connector and more powerful DCDC converter
 then reel board.
 
-.. figure:: img/rb_lb_shield.png
-     :width: 442px
+.. figure:: img/rb_lb_shield.jpg
      :align: center
      :alt: reel board and link board BASE
 
@@ -429,8 +423,7 @@ third party shields in two ways:
         power provided by the reel board is not enough,
         or for prototypes in the field.
 
-.. figure:: img/link_board_base.png
-     :width: 442px
+.. figure:: img/link_board_base.jpg
      :align: center
      :alt: link board BASE
 
@@ -469,8 +462,7 @@ Meaning of the Power Source Switch positions:
         X9 or X5.
 
     USB
-        link board BASE is powered from from USB connector
-        (via DCDC converter).
+        link board BASE is powered from USB connector (via DCDC converter).
 
     RB
         link board BASE is powered from reel board. The available power is
@@ -551,8 +543,8 @@ Testing the LEDs and buttons
 There are 2 samples that allow you to test that the buttons (switches) and
 LEDs on the board are working properly with Zephyr:
 
-* :ref:`blinky-sample`
-* :ref:`button-sample`
+* :zephyr:code-sample:`blinky`
+* :zephyr:code-sample:`button`
 
 You can build and flash the examples to make sure Zephyr is running correctly on
 your board.

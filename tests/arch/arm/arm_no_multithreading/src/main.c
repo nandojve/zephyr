@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <sys/printk.h>
-#include <sys/__assert.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/__assert.h>
+#include <cmsis_core.h>
+#include <zephyr/sys/barrier.h>
 
 #if !defined(CONFIG_CPU_CORTEX_M)
   #error test can only run on Cortex-M MCUs
@@ -23,7 +24,7 @@
 #define FPSCR_MASK		(0xffffffffU)
 #endif
 
-extern K_THREAD_STACK_DEFINE(z_main_stack, CONFIG_MAIN_STACK_SIZE);
+K_THREAD_STACK_DECLARE(z_main_stack, CONFIG_MAIN_STACK_SIZE);
 
 static volatile int test_flag;
 static unsigned int expected_reason;
@@ -89,8 +90,8 @@ void test_main(void)
 	/* Verify activating the PendSV IRQ triggers a K_ERR_SPURIOUS_IRQ */
 	expected_reason = K_ERR_CPU_EXCEPTION;
 	SCB->ICSR |= SCB_ICSR_PENDSVSET_Msk;
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Determine an NVIC IRQ line that is not currently in use. */
 	int i, flag = test_flag;
@@ -142,8 +143,8 @@ void test_main(void)
 
 		NVIC_EnableIRQ(i);
 
-		__DSB();
-		__ISB();
+		barrier_dsync_fence_full();
+		barrier_isync_fence_full();
 
 		flag = test_flag;
 

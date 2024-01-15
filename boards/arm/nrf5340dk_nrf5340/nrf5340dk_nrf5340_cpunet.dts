@@ -6,6 +6,8 @@
 
 /dts-v1/;
 #include <nordic/nrf5340_cpunet_qkaa.dtsi>
+#include "nrf5340dk_nrf5340_cpunet-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "Nordic NRF5340 DK NRF5340 Network";
@@ -17,9 +19,12 @@
 		zephyr,uart-mcumgr = &uart0;
 		zephyr,bt-mon-uart = &uart0;
 		zephyr,bt-c2h-uart = &uart0;
+		zephyr,bt-hci-ipc = &ipc0;
+		nordic,802154-spinel-ipc = &ipc0;
 		zephyr,sram = &sram1;
 		zephyr,flash = &flash1;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,ieee802154 = &ieee802154;
 	};
 
 	leds {
@@ -47,18 +52,22 @@
 		button0: button_0 {
 			gpios = <&gpio0 23 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 1";
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		button1: button_1 {
 			gpios = <&gpio0 24 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 2";
+			zephyr,code = <INPUT_KEY_1>;
 		};
 		button2: button_2 {
 			gpios = <&gpio0 8 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 3";
+			zephyr,code = <INPUT_KEY_2>;
 		};
 		button3: button_3 {
 			gpios = <&gpio0 9 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 4";
+			zephyr,code = <INPUT_KEY_3>;
 		};
 	};
 
@@ -102,6 +111,9 @@
 		sw2 = &button2;
 		sw3 = &button3;
 		bootloader-led0 = &led0;
+		mcuboot-button0 = &button0;
+		mcuboot-led0 = &led0;
+		watchdog0 = &wdt0;
 	};
 };
 
@@ -120,12 +132,9 @@
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;
-	tx-pin = <33>;
-	rx-pin = <32>;
-	rx-pull-up;
-	rts-pin = <11>;
-	cts-pin = <10>;
-	cts-pull-up;
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-1 = <&uart0_sleep>;
+	pinctrl-names = "default", "sleep";
 };
 
 arduino_serial: &uart0{};
@@ -134,30 +143,19 @@ arduino_i2c: &i2c0 {
 	compatible = "nordic,nrf-twim";
 	/* Cannot be used together with uart0. */
 	/* status = "okay"; */
-	sda-pin = <34>;
-	scl-pin = <35>;
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-1 = <&i2c0_sleep>;
+	pinctrl-names = "default", "sleep";
 };
 
 arduino_spi: &spi0 {
 	compatible = "nordic,nrf-spim";
 	/* Cannot be used together with uart0. */
 	/* status = "okay"; */
-	sck-pin = <47>;
-	miso-pin = <46>;
-	mosi-pin = <45>;
 	cs-gpios = <&arduino_header 16 GPIO_ACTIVE_LOW>; /* D10 */
-};
-
-&timer0 {
-	status = "okay";
-};
-
-&timer1 {
-	status = "okay";
-};
-
-&timer2 {
-	status = "okay";
+	pinctrl-0 = <&spi0_default>;
+	pinctrl-1 = <&spi0_sleep>;
+	pinctrl-names = "default", "sleep";
 };
 
 &flash1 {
@@ -173,15 +171,11 @@ arduino_spi: &spi0 {
 		};
 		slot0_partition: partition@c000 {
 			label = "image-0";
-			reg = <0x0000C000 0x12000>;
+			reg = <0x0000C000 0x17000>;
 		};
-		slot1_partition: partition@1e000 {
+		slot1_partition: partition@23000 {
 			label = "image-1";
-			reg = <0x0001E000 0x12000>;
-		};
-		scratch_partition: partition@30000 {
-			label = "image-scratch";
-			reg = <0x00030000 0xa000>;
+			reg = <0x00023000 0x17000>;
 		};
 		storage_partition: partition@3a000 {
 			label = "storage";
@@ -190,5 +184,9 @@ arduino_spi: &spi0 {
 	};
 };
 
+&ieee802154 {
+	status = "okay";
+};
+
 /* Include shared RAM configuration file */
-#include "nrf5340_shared_sram_planning_conf.dts"
+#include "nrf5340_shared_sram_planning_conf.dtsi"

@@ -5,29 +5,24 @@ description: SiFive PWM
 
 compatible: "sifive,pwm0"
 
-include: [pwm-controller.yaml, base.yaml]
+include: [pwm-controller.yaml, pinctrl-device.yaml, base.yaml]
 
 properties:
-    clock-frequency:
-      type: int
-      required: false
-      description: Clock frequency information for PWM operation
+  reg:
+    required: true
 
-    reg:
-      required: true
+  interrupts:
+    required: true
 
-    interrupts:
-      required: true
+  sifive,compare-width:
+    type: int
+    required: true
+    description: Width of the PWM comparator in bits
 
-    sifive,compare-width:
-      type: int
-      required: true
-      description: Width of the PWM comparator in bits
-
-    "#pwm-cells":
-      const: 2
+  "#pwm-cells":
+    const: 2
 
 pwm-cells:
   - channel
-# period in terms of nanoseconds
+  # period in terms of nanoseconds
   - period

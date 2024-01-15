@@ -4,8 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef ZEPHYR_DRIVERS_EDAC_IBECC_H_
+#define ZEPHYR_DRIVERS_EDAC_IBECC_H_
+
 /* TODO: Add to include/sys/util.h */
 #define BITFIELD(val, h, l)	(((val) & GENMASK(h, l)) >> l)
+
+#define BITFIELD64(val, h, l)	(((val) & GENMASK64(h, l)) >> l)
 
 #define PCI_VENDOR_ID_INTEL	0x8086
 
@@ -18,6 +23,9 @@
 #define PCI_DEVICE_ID_SKU10	0x452e
 #define PCI_DEVICE_ID_SKU11	0x4532
 #define PCI_DEVICE_ID_SKU12	0x4518
+#define PCI_DEVICE_ID_SKU13	0x451a
+#define PCI_DEVICE_ID_SKU14	0x4534
+#define PCI_DEVICE_ID_SKU15	0x4536
 
 /* TODO: Move to correct place NMI registers */
 
@@ -51,7 +59,7 @@
 
 /* Top of Upper Usable DRAM, offset 0xa8, 64 bit */
 #define TOUUD_REG		0x2a
-#define	TOUUD_MASK		GENMASK(38, 20)
+#define	TOUUD_MASK		GENMASK64(38, 20)
 
 /* Top of Low Usable DRAM, offset 0xbc, 32 bit */
 #define TOLUD_REG		0x2f
@@ -59,14 +67,14 @@
 
 /* Total amount of physical memory, offset 0xa0, 64 bit */
 #define TOM_REG			0x28
-#define TOM_MASK		GENMASK(38, 20)
+#define TOM_MASK		GENMASK64(38, 20)
 
 /* Base address for the Host Memory Mapped Configuration space,
  * offset 0x48, 64 bit
  */
 #define MCHBAR_REG		0x12
-#define MCHBAR_MASK		GENMASK(38, 16)
-#define MCHBAR_ENABLE		BIT(0)
+#define MCHBAR_MASK		GENMASK64(38, 16)
+#define MCHBAR_ENABLE		BIT64(0)
 /* Size of Host Memory Mapped Configuration space (64K) */
 #define MCH_SIZE		0x10000
 
@@ -98,10 +106,10 @@
 /* ECC Injection Registers */
 
 #define IBECC_INJ_ADDR_BASE	0xdd88
-#define INJ_ADDR_BASE_MASK	GENMASK(38, 6)
+#define INJ_ADDR_BASE_MASK	GENMASK64(38, 6)
 
 #define IBECC_INJ_ADDR_MASK	0xdd80
-#define INJ_ADDR_BASE_MASK_MASK	GENMASK(38, 6)
+#define INJ_ADDR_BASE_MASK_MASK	GENMASK64(38, 6)
 
 #define IBECC_INJ_ADDR_CTRL	0xdd98
 #define INJ_CTRL_COR		0x1
@@ -115,11 +123,11 @@
 #define ECC_ERROR_MERRSTS	BIT64(63)
 /* Correctable Error Status (CERRSTS) */
 #define ECC_ERROR_CERRSTS	BIT64(62)
-#define ECC_ERROR_ERRTYPE(val)	BITFIELD(val, 63, 62)
+#define ECC_ERROR_ERRTYPE(val)	BITFIELD64(val, 63, 62)
 /* CMI address of the address block of main memory where error happened */
-#define ECC_ERROR_ERRADD(val)	((val) & GENMASK(38, 5))
+#define ECC_ERROR_ERRADD(val)	((val) & GENMASK64(38, 5))
 /* ECC Error Syndrome (ERRSYND) */
-#define ECC_ERROR_ERRSYND(val)	BITFIELD(val, 61, 46)
+#define ECC_ERROR_ERRSYND(val)	BITFIELD64(val, 61, 46)
 
 /* Parity Error Log (PARITY_ERR_LOG) */
 #define IBECC_PARITY_ERROR_LOG	0xdd78
@@ -169,3 +177,7 @@ struct ibecc_error {
 	uint64_t address;
 	uint16_t syndrome;
 };
+
+#define PCI_HOST_BRIDGE PCIE_BDF(0, 0, 0)
+
+#endif /* ZEPHYR_DRIVERS_EDAC_IBECC_H_ */

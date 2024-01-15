@@ -1,5 +1,9 @@
+common:
+  filter: not (CONFIG_NATIVE_BUILD and CONFIG_EXTERNAL_LIBC)
+  tags:
+    - posix
+    - eventfd
+  integration_platforms:
+    - qemu_x86
 tests:
-  portability.posix.eventfd:
-    arch_exclude: posix
-    min_ram: 32
-    tags: posix pthread eventfd
+  portability.posix.eventfd: {}

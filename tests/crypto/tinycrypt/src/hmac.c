@@ -39,10 +39,10 @@
 
 #include <tinycrypt/hmac.h>
 #include <tinycrypt/constants.h>
-#include <test_utils.h>
-#include <ztest.h>
+#include <zephyr/test_utils.h>
+#include <zephyr/ztest.h>
 
-uint32_t do_hmac_test(TCHmacState_t h, uint32_t testnum, const uint8_t *data,
+static uint32_t do_hmac_test(TCHmacState_t h, uint32_t testnum, const uint8_t *data,
 		      size_t datalen, const uint8_t *expected,
 		      size_t expectedlen)
 {
@@ -60,11 +60,10 @@ uint32_t do_hmac_test(TCHmacState_t h, uint32_t testnum, const uint8_t *data,
 /*
  * NIST test vectors for encryption.
  */
-void test_hmac_1(void)
+ZTEST(tinycrypt, test_hmac_1)
 {
 	uint32_t result = TC_PASS;
 
-	TC_START("Performing HMAC tests (RFC4231 test vectors):");
 
 	TC_PRINT("HMAC %s:\n", __func__);
 
@@ -94,7 +93,7 @@ void test_hmac_1(void)
 	zassert_false(result, "HMAC test #7 failed");
 }
 
-void test_hmac_2(void)
+ZTEST(tinycrypt, test_hmac_2)
 {
 	uint32_t result = TC_PASS;
 
@@ -128,7 +127,7 @@ void test_hmac_2(void)
 	zassert_false(result, "HMAC test #7 failed");
 }
 
-void test_hmac_3(void)
+ZTEST(tinycrypt, test_hmac_3)
 {
 	uint32_t result = TC_PASS;
 
@@ -168,7 +167,7 @@ void test_hmac_3(void)
 	zassert_false(result, "HMAC test #3 failed");
 }
 
-void test_hmac_4(void)
+ZTEST(tinycrypt, test_hmac_4)
 {
 	uint32_t result = TC_PASS;
 
@@ -210,7 +209,7 @@ void test_hmac_4(void)
 	zassert_false(result, "HMAC test #4 failed");
 }
 
-void test_hmac_5(void)
+ZTEST(tinycrypt, test_hmac_5)
 {
 	uint32_t result = TC_PASS;
 
@@ -244,7 +243,7 @@ void test_hmac_5(void)
 	zassert_false(result, "HMAC test #5 failed");
 }
 
-void test_hmac_6(void)
+ZTEST(tinycrypt, test_hmac_6)
 {
 	uint32_t result = TC_PASS;
 
@@ -302,7 +301,7 @@ void test_hmac_6(void)
 	zassert_false(result, "HMAC test #6 failed");
 }
 
-void test_hmac_7(void)
+ZTEST(tinycrypt, test_hmac_7)
 {
 	uint32_t result = TC_PASS;
 

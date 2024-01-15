@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <ztest.h>
-#include <sys/crc.h>
+#include <zephyr/kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/sys/crc.h>
 #include <dns_pack.h>
 #include <dns_internal.h>
 
@@ -14,8 +14,8 @@
 /* RFC 1035, 4.1.1. Header section format */
 #define DNS_HEADER_SIZE	12
 
-static uint8_t buf[MAX_BUF_SIZE];
-static uint16_t buf_len;
+static uint8_t dns_buf[MAX_BUF_SIZE];
+static uint16_t dns_buf_len;
 
 static uint8_t qname[MAX_BUF_SIZE];
 static uint16_t qname_len;
@@ -61,90 +61,90 @@ static int eval_query(const char *dname, uint16_t tid, enum dns_rr_type type,
 		goto lb_exit;
 	}
 
-	rc = dns_msg_pack_query(buf, &buf_len, MAX_BUF_SIZE, qname, qname_len,
+	rc = dns_msg_pack_query(dns_buf, &dns_buf_len, MAX_BUF_SIZE, qname, qname_len,
 				tid, type);
 	if (rc != 0) {
 		goto lb_exit;
 	}
 
-	if (dns_unpack_header_id(buf) != tid) {
+	if (dns_unpack_header_id(dns_buf) != tid) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* This is a query */
-	if (dns_header_qr(buf) != DNS_QUERY) {
+	if (dns_header_qr(dns_buf) != DNS_QUERY) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* This is a query (standard query) */
-	if (dns_header_opcode(buf) != DNS_QUERY) {
+	if (dns_header_opcode(dns_buf) != DNS_QUERY) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Authoritative Answer must be 0 for a Query */
-	if (dns_header_aa(buf) != 0) {
+	if (dns_header_aa(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* TrunCation is always 0 */
-	if (dns_header_tc(buf) != 0) {
+	if (dns_header_tc(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Recursion Desired is always 1 */
-	if (dns_header_rd(buf) != 1) {
+	if (dns_header_rd(dns_buf) != 1) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Recursion Available is always 0 */
-	if (dns_header_ra(buf) != 0) {
+	if (dns_header_ra(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Z is always 0 */
-	if (dns_header_z(buf) != 0) {
+	if (dns_header_z(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Response code must be 0 (no error) */
-	if (dns_header_rcode(buf) != DNS_HEADER_NOERROR) {
+	if (dns_header_rcode(dns_buf) != DNS_HEADER_NOERROR) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Question counter must be 1 */
-	if (dns_header_qdcount(buf) != 1) {
+	if (dns_header_qdcount(dns_buf) != 1) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Answer counter must be 0 */
-	if (dns_header_ancount(buf) != 0) {
+	if (dns_header_ancount(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Name server resource records counter must be 0 */
-	if (dns_header_nscount(buf) != 0) {
+	if (dns_header_nscount(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
 	/* Additional records counter must be 0 */
-	if (dns_header_arcount(buf) != 0) {
+	if (dns_header_arcount(dns_buf) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
-	question = buf + DNS_HEADER_SIZE;
+	question = dns_buf + DNS_HEADER_SIZE;
 
 	/* QClass */
 	if (dns_unpack_query_qclass(question + qname_len) != DNS_CLASS_IN) {
@@ -159,12 +159,12 @@ static int eval_query(const char *dname, uint16_t tid, enum dns_rr_type type,
 	}
 
 	/* compare with the expected result */
-	if (buf_len != expected_len) {
+	if (dns_buf_len != expected_len) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
 
-	if (memcmp(expected, buf, buf_len) != 0) {
+	if (memcmp(expected, dns_buf, dns_buf_len) != 0) {
 		rc = -EINVAL;
 		goto lb_exit;
 	}
@@ -414,7 +414,7 @@ lb_exit:
 }
 
 
-void test_dns_query(void)
+ZTEST(dns_packet, test_dns_query)
 {
 	int rc;
 
@@ -454,7 +454,7 @@ static uint8_t resp_ipv4[] = { 0xb0, 0x41, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01,
 
 static const uint8_t resp_ipv4_addr[] = {140, 211, 169, 8};
 
-void test_dns_response(void)
+ZTEST(dns_packet, test_dns_response)
 {
 	struct dns_response_test test = {
 		.dname = DNAME1,
@@ -505,7 +505,7 @@ char answer_ipv4[] = {
 
 static const uint8_t answer_ipv4_addr[] = { 174, 137, 42, 65 };
 
-void test_dns_response2(void)
+ZTEST(dns_packet, test_dns_response2)
 {
 	struct dns_response_test test1 = {
 		.dname = DNAME2,
@@ -529,7 +529,7 @@ void test_dns_response2(void)
 		      " at line %d", -rc);
 }
 
-void test_mdns_query(void)
+ZTEST(dns_packet, test_mdns_query)
 {
 	int rc;
 
@@ -564,7 +564,7 @@ static const uint8_t resp_ipv6_addr[] = {
 	0x02, 0x00, 0x5e, 0xff, 0xfe, 0x00, 0x53, 0x37
 };
 
-void test_mdns_response(void)
+ZTEST(dns_packet, test_mdns_response)
 {
 	struct dns_response_test test1 = {
 		.dname = ZEPHYR_LOCAL,
@@ -1200,7 +1200,13 @@ static void test_dns_malformed_responses(void)
 	RUN_MALFORMED_TEST(resp_truncated_response_ipv4_5);
 }
 
-static void test_dns_id_len(void)
+ZTEST(dns_packet, test_dns_malformed_and_valid_responses)
+{
+	test_dns_malformed_responses();
+	test_dns_valid_responses();
+}
+
+ZTEST(dns_packet, test_dns_id_len)
 {
 	struct dns_msg_t dns_msg = { 0 };
 	uint8_t buf[1];
@@ -1218,7 +1224,7 @@ static void test_dns_id_len(void)
 		      "DNS message length check failed (%d)", ret);
 }
 
-static void test_dns_flags_len(void)
+ZTEST(dns_packet, test_dns_flags_len)
 {
 	struct dns_msg_t dns_msg = { 0 };
 	uint8_t buf[3];
@@ -1236,26 +1242,10 @@ static void test_dns_flags_len(void)
 		      "DNS message length check failed (%d)", ret);
 }
 
-void test_main(void)
-{
-	ztest_test_suite(dns_tests,
-			 ztest_unit_test(test_dns_query),
-			 ztest_unit_test(test_dns_response),
-			 ztest_unit_test(test_dns_response2),
-			 ztest_unit_test(test_mdns_query),
-			 ztest_unit_test(test_mdns_response),
-			 ztest_unit_test(test_dns_id_len),
-			 ztest_unit_test(test_dns_flags_len),
-			 ztest_unit_test(test_dns_malformed_responses),
-			 ztest_unit_test(test_dns_valid_responses)
-		);
-
-	ztest_run_test_suite(dns_tests);
-
-	/* TODO:
-	 *	1) add malformed DNS data (mostly done)
-	 *	2) add validations against buffer overflows
-	 *	3) add debug info to detect the exit point (or split the tests)
-	 *	4) add test data with CNAME and more RR
-	 */
-}
+ZTEST_SUITE(dns_packet, NULL, NULL, NULL, NULL, NULL);
+/* TODO:
+ *	1) add malformed DNS data (mostly done)
+ *	2) add validations against buffer overflows
+ *	3) add debug info to detect the exit point (or split the tests)
+ *	4) add test data with CNAME and more RR
+ */

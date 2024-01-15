@@ -2,6 +2,7 @@
 
 #
 # Copyright (c) 2020 Intel Corporation
+# Copyright (c) 2022 Nordic Semiconductor ASA
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -18,48 +19,51 @@ menuconfig BT_AUDIO
 
 if BT_AUDIO
 
+config BT_AUDIO_RX
+	bool
+	help
+	  This hidden option is enabled when any of the profiles/services
+	  enables support for receiving of audio data.
+
+config BT_AUDIO_TX
+	bool
+	help
+	  This hidden option is enabled when any of the profiles/services
+	  enables support for transmitting of audio data.
+
+config BT_AUDIO_NOTIFY_RETRY_DELAY
+	int "Delay for notification sending retried attempt in 1.25 ms units"
+	range 6 3200
+	default 20
+	help
+	  This option sets the time in 1.25 ms units before the stack will
+	  retry to send notification that failed due to lack of TX buffers
+	  available.
+
 config BT_CCID
 	bool
 	help
 	  This hidden option is enabled when any of the content control
 	  features are enabled.
 
-if BT_CONN
-
-config BT_AUDIO_UNICAST
-	bool "Bluetooth Unicast Audio Support"
-	select BT_SMP
-	select BT_L2CAP_DYNAMIC_CHANNEL
-	select BT_ISO_UNICAST
-	select BT_GATT_DYNAMIC_DB
-	select BT_GATT_CACHING
-	select BT_L2CAP_ECRED
-	select BT_EATT
-	help
-	  This option enables support for Bluetooth Unicast Audio using
-	  Isochronous channels.
-
-# TODO: Make BT_AUDIO_BROADCAST not depend on BT_CONN
-config BT_AUDIO_BROADCAST
-	bool "Bluetooth Broadcast Audio Support"
-	select BT_ISO_BROADCASTER
-	select BT_ISO_SYNC_RECEIVER
-	help
-	  This option enables support for Bluetooth Broadcast Audio using
-	  Isochronous channels.
-
-endif # BT_CONN
-
-config BT_AUDIO_DEBUG
-	bool "Enable debug logs"
-	depends on BT_DEBUG
-	help
-	  Use this option to enable debug logs for the Bluetooth
-	  Audio functionality.
-
+rsource "Kconfig.bap"
 rsource "Kconfig.vocs"
 rsource "Kconfig.aics"
-rsource "Kconfig.vcs"
-rsource "Kconfig.mics"
+rsource "Kconfig.vcp"
+rsource "Kconfig.micp"
+rsource "Kconfig.csip"
+rsource "Kconfig.tbs"
+rsource "Kconfig.mcs"
+rsource "Kconfig.bass"
+rsource "Kconfig.has"
+rsource "Kconfig.mpl"
+rsource "Kconfig.mctl"
+rsource "Kconfig.cap"
+rsource "Kconfig.tmap"
+rsource "Kconfig.gmap"
+
+module = BT_AUDIO
+module-str = "Bluetooth Audio"
+source "subsys/logging/Kconfig.template.log_config"
 
 endif # BT_AUDIO

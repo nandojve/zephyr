@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019 Intel Corporation
+ * Copyright (c) 2019 - 2023 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,11 +7,17 @@
 #ifndef MIPI_SYST_PLATFORM_INCLUDED
 #define MIPI_SYST_PLATFORM_INCLUDED
 
-#include <logging/log_output.h>
+#include <zephyr/logging/log_output.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#if defined(CONFIG_LOG_MIPI_SYST_DISABLE_TIMESTAMP)
+#undef MIPI_SYST_PCFG_ENABLE_TIMESTAMP
+#endif
+
+#define MIPI_SYST_PCFG_PRINTF_ARGBUF_SIZE CONFIG_LOG_MIPI_SYST_ARGS_BUFFER_SIZE
 
 #if defined(CONFIG_MIPI_SYST_STP)
 /*

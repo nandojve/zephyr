@@ -7,13 +7,15 @@
 
 #include <string.h>
 
-#include <zephyr.h>
-#include <sys/byteorder.h>
-#include <bluetooth/crypto.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/bluetooth/crypto.h>
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_CORE)
-#define LOG_MODULE_NAME bt_aes_ccm
-#include "common/log.h"
+#include "common/bt_str.h"
+
+#define LOG_LEVEL CONFIG_BT_HCI_CORE_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_aes_ccm);
 
 static inline void xor16(uint8_t *dst, const uint8_t *a, const uint8_t *b)
 {
@@ -35,9 +37,9 @@ static inline void xor16(uint8_t *dst, const uint8_t *a, const uint8_t *b)
 	dst[15] = a[15] ^ b[15];
 }
 
-/* pmsg is assumed to have the nonce already present in bytes 1-13 */
+/* b field is assumed to have the nonce already present in bytes 1-13 */
 static int ccm_calculate_X0(const uint8_t key[16], const uint8_t *aad, uint8_t aad_len,
-			    size_t mic_size, uint8_t msg_len, uint8_t b[16],
+			    size_t mic_size, uint16_t msg_len, uint8_t b[16],
 			    uint8_t X0[16])
 {
 	int i, j, err;
@@ -95,7 +97,7 @@ static int ccm_calculate_X0(const uint8_t key[16], const uint8_t *aad, uint8_t a
 }
 
 static int ccm_auth(const uint8_t key[16], uint8_t nonce[13],
-		    const uint8_t *cleartext_msg, size_t msg_len, const uint8_t *aad,
+		    const uint8_t *cleartext_msg, uint16_t msg_len, const uint8_t *aad,
 		    size_t aad_len, uint8_t *mic, size_t mic_size)
 {
 	uint8_t b[16], Xn[16], s0[16];
@@ -148,7 +150,7 @@ static int ccm_auth(const uint8_t key[16], uint8_t nonce[13],
 }
 
 static int ccm_crypt(const uint8_t key[16], const uint8_t nonce[13],
-		     const uint8_t *in_msg, uint8_t *out_msg, size_t msg_len)
+		     const uint8_t *in_msg, uint8_t *out_msg, uint16_t msg_len)
 {
 	uint8_t a_i[16], s_i[16];
 	uint16_t last_blk, blk_cnt;
@@ -192,7 +194,7 @@ int bt_ccm_decrypt(const uint8_t key[16], uint8_t nonce[13],
 {
 	uint8_t mic[16];
 
-	if (aad_len >= 0xff00 || mic_size > sizeof(mic)) {
+	if (aad_len >= 0xff00 || mic_size > sizeof(mic) || len > UINT16_MAX) {
 		return -EINVAL;
 	}
 
@@ -213,17 +215,17 @@ int bt_ccm_encrypt(const uint8_t key[16], uint8_t nonce[13],
 {
 	uint8_t *mic = enc_data + len;
 
-	BT_DBG("key %s", bt_hex(key, 16));
-	BT_DBG("nonce %s", bt_hex(nonce, 13));
-	BT_DBG("msg (len %zu) %s", len, bt_hex(plaintext, len));
-	BT_DBG("aad_len %zu mic_size %zu", aad_len, mic_size);
+	LOG_DBG("key %s", bt_hex(key, 16));
+	LOG_DBG("nonce %s", bt_hex(nonce, 13));
+	LOG_DBG("msg (len %zu) %s", len, bt_hex(plaintext, len));
+	LOG_DBG("aad_len %zu mic_size %zu", aad_len, mic_size);
 
 	/* Unsupported AAD size */
-	if (aad_len >= 0xff00 || mic_size > 16) {
+	if (aad_len >= 0xff00 || mic_size > 16 || len > UINT16_MAX) {
 		return -EINVAL;
 	}
 
-	ccm_auth(key, nonce, enc_data, len, aad, aad_len, mic, mic_size);
+	ccm_auth(key, nonce, plaintext, len, aad, aad_len, mic, mic_size);
 
 	ccm_crypt(key, nonce, plaintext, enc_data, len);
 

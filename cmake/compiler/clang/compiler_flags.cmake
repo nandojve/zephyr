@@ -4,30 +4,45 @@ include(${ZEPHYR_BASE}/cmake/compiler/gcc/compiler_flags.cmake)
 # Now, let's overwrite the flags that are different in clang.
 
 # No property flag, clang doesn't understand fortify at all
-set_compiler_property(PROPERTY security_fortify)
+set_compiler_property(PROPERTY security_fortify_compile_time)
+set_compiler_property(PROPERTY security_fortify_run_time)
+
+# No printf-return-value optimizations in clang
+set_compiler_property(PROPERTY no_printf_return_value)
 
 # No property flag, this is used by the native_posix, clang has problems
 # compiling the native_posix with -fno-freestanding.
 check_set_compiler_property(PROPERTY hosted)
 
 # clang flags for coverage generation
-set_property(TARGET compiler PROPERTY coverage --coverage -fno-inline)
+if (CONFIG_COVERAGE_NATIVE_SOURCE)
+  set_compiler_property(PROPERTY coverage -fprofile-instr-generate -fcoverage-mapping)
+else()
+  set_compiler_property(PROPERTY coverage --coverage -fno-inline)
+endif()
 
 # clang flag for colourful diagnostic messages
 set_compiler_property(PROPERTY diagnostic -fcolor-diagnostics)
+
+# clang flag to save temporary object files
+set_compiler_property(PROPERTY save_temps -save-temps)
+
+# clang doesn't handle the -T flag
+set_compiler_property(PROPERTY linker_script -Wl,-T)
 
 #######################################################
 # This section covers flags related to warning levels #
 #######################################################
 
 # clang option standard warning base in Zephyr
-set_compiler_property(PROPERTY warning_base
-                      -Wall
-                      -Wformat
-                      -Wformat-security
-                      -Wno-format-zero-length
-                      -Wno-main
-                      -Wno-typedef-redefinition
+check_set_compiler_property(PROPERTY warning_base
+                            -Wall
+                            -Wformat
+                            -Wformat-security
+                            -Wno-format-zero-length
+                            -Wno-unused-but-set-variable
+                            -Wno-typedef-redefinition
+                            -Wno-deprecated-non-prototype
 )
 
 check_set_compiler_property(APPEND PROPERTY warning_base -Wno-pointer-sign)
@@ -105,3 +120,5 @@ set_compiler_property(PROPERTY warning_error_coding_guideline
                       -Wconversion
                       -Woverride-init
 )
+
+set_compiler_property(PROPERTY no_global_merge "-mno-global-merge")

@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
-#include <net/net_core.h>
-#include <net/net_ip.h>
-#include <net/socket.h>
-#include <net/tls_credentials.h>
-#include <posix/unistd.h>
-#include <sys/util.h>
-#include <ztest.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/tls_credentials.h>
+#include <zephyr/posix/unistd.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/ztest.h>
 
 LOG_MODULE_REGISTER(tls_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
@@ -32,6 +32,8 @@ LOG_MODULE_REGISTER(tls_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 /** @brief Stack size for the server thread */
 #define STACK_SIZE 8192
 
+#define MY_IPV4_ADDR "127.0.0.1"
+
 /** @brief TCP port for the server thread */
 #define PORT 4242
 
@@ -42,7 +44,7 @@ LOG_MODULE_REGISTER(tls_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
  * @brief Application-dependent TLS credential identifiers
  *
  * Since both the server and client exist in the same test
- * application in this case, both the server and client credendtials
+ * application in this case, both the server and client credentials
  * are loaded together.
  *
  * The server would normally need
@@ -172,7 +174,7 @@ static void server_thread_fn(void *arg0, void *arg1, void *arg2)
 	zassert_not_equal(addrstrp, NULL, "inet_ntop() failed (%d)", errno);
 
 	NET_DBG("accepted connection from [%s]:%d as fd %d",
-		log_strdup(addrstr), ntohs(sa.sin_port), client_fd);
+		addrstr, ntohs(sa.sin_port), client_fd);
 
 	NET_DBG("calling recv()");
 	r = recv(client_fd, addrstr, sizeof(addrstr), 0);
@@ -286,7 +288,7 @@ static void test_common(int peer_verify)
 	zassert_not_equal(addrstrp, NULL, "inet_ntop() failed (%d)", errno);
 
 	NET_DBG("listening on [%s]:%d as fd %d",
-		log_strdup(addrstr), ntohs(sa.sin_port), server_fd);
+		addrstr, ntohs(sa.sin_port), server_fd);
 
 	NET_DBG("Creating server thread");
 	server_thread_id = k_thread_create(&server_thread, server_stack,
@@ -349,10 +351,10 @@ static void test_common(int peer_verify)
 		zassert_not_equal(r, -1, "failed to set TLS_HOSTNAME (%d)", errno);
 	}
 
-	r = inet_pton(AF_INET, CONFIG_NET_CONFIG_MY_IPV4_ADDR, &sa.sin_addr.s_addr);
+	r = inet_pton(AF_INET, MY_IPV4_ADDR, &sa.sin_addr.s_addr);
 	zassert_not_equal(-1, r, "inet_pton() failed (%d)", errno);
-	zassert_not_equal(0, r, "%s is not a valid IPv4 address", CONFIG_NET_CONFIG_MY_IPV4_ADDR);
-	zassert_equal(1, r, "inet_pton() failed to convert %s", CONFIG_NET_CONFIG_MY_IPV4_ADDR);
+	zassert_not_equal(0, r, "%s is not a valid IPv4 address", MY_IPV4_ADDR);
+	zassert_equal(1, r, "inet_pton() failed to convert %s", MY_IPV4_ADDR);
 
 	memset(addrstr, '\0', sizeof(addrstr));
 	addrstrp = (char *)inet_ntop(AF_INET, &sa.sin_addr,
@@ -360,7 +362,7 @@ static void test_common(int peer_verify)
 	zassert_not_equal(addrstrp, NULL, "inet_ntop() failed (%d)", errno);
 
 	NET_DBG("connecting to [%s]:%d with fd %d",
-		log_strdup(addrstr), ntohs(sa.sin_port), client_fd);
+		addrstr, ntohs(sa.sin_port), client_fd);
 
 	r = connect(client_fd, (struct sockaddr *)&sa, sizeof(sa));
 	zassert_not_equal(r, -1, "failed to connect (%d)", errno);
@@ -399,22 +401,22 @@ static void test_common(int peer_verify)
 	zassert_equal(0, r, "k_thread_join() failed (%d)", r);
 }
 
-static void test_tls_peer_verify_none(void)
+ZTEST(net_socket_tls_api_extension, test_tls_peer_verify_none)
 {
 	test_common(TLS_PEER_VERIFY_NONE);
 }
 
-static void test_tls_peer_verify_optional(void)
+ZTEST(net_socket_tls_api_extension, test_tls_peer_verify_optional)
 {
 	test_common(TLS_PEER_VERIFY_OPTIONAL);
 }
 
-static void test_tls_peer_verify_required(void)
+ZTEST(net_socket_tls_api_extension, test_tls_peer_verify_required)
 {
 	test_common(TLS_PEER_VERIFY_REQUIRED);
 }
 
-void test_main(void)
+static void *setup(void)
 {
 	int r;
 
@@ -464,13 +466,7 @@ void test_main(void)
 				       client_privkey, sizeof(client_privkey));
 		zassert_equal(r, 0, "failed to add Client Private Key (%d)", r);
 	}
-
-	ztest_test_suite(
-		tls_socket_api_extension,
-		ztest_unit_test(test_tls_peer_verify_none),
-		ztest_unit_test(test_tls_peer_verify_optional),
-		ztest_unit_test(test_tls_peer_verify_required)
-		);
-
-	ztest_run_test_suite(tls_socket_api_extension);
+	return NULL;
 }
+
+ZTEST_SUITE(net_socket_tls_api_extension, NULL, setup, NULL, NULL, NULL);

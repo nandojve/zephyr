@@ -8,10 +8,12 @@
 /**
  * @brief UART driver for Bouffalo Lab MCU family.
  */
-#include <drivers/uart.h>
-#include <drivers/pinctrl.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/pinctrl.h>
 #include <bflb_uart.h>
 #include <bflb_glb.h>
+#include <soc.h>
 
 #define UART_CTS_FLOWCONTROL_ENABLE	(0)
 #define UART_RTS_FLOWCONTROL_ENABLE	(0)
@@ -95,7 +97,7 @@ static const struct uart_driver_api uart_bl_driver_api = {
 };
 
 #define BL_UART_INIT(n)								\
-	PINCTRL_DT_INST_DEFINE(n)						\
+	PINCTRL_DT_INST_DEFINE(n);						\
 	static const struct bl_config bl_uart##n##_config = {			\
 		.pinctrl_cfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),		\
 		.periph_id = DT_INST_PROP(n, peripheral_id),			\

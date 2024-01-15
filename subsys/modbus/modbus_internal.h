@@ -23,9 +23,9 @@
 #ifndef ZEPHYR_INCLUDE_MODBUS_INTERNAL_H_
 #define ZEPHYR_INCLUDE_MODBUS_INTERNAL_H_
 
-#include <zephyr.h>
-#include <drivers/gpio.h>
-#include <modbus/modbus.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/modbus/modbus.h>
 
 #ifdef CONFIG_MODBUS_FP_EXTENSIONS
 #define MODBUS_FP_EXTENSIONS_ADDR		5000
@@ -55,18 +55,6 @@
 #define MODBUS_FC08_SUBF_SERVER_MSG_CTR		14
 #define MODBUS_FC08_SUBF_SERVER_NO_RESP_CTR	15
 
-/* Modbus exception codes */
-#define MODBUS_EXC_NONE				0
-#define MODBUS_EXC_ILLEGAL_FC			1
-#define MODBUS_EXC_ILLEGAL_DATA_ADDR		2
-#define MODBUS_EXC_ILLEGAL_DATA_VAL		3
-#define MODBUS_EXC_SERVER_DEVICE_FAILURE	4
-#define MODBUS_EXC_ACK				5
-#define MODBUS_EXC_SERVER_DEVICE_BUSY		6
-#define MODBUS_EXC_MEM_PARITY_ERROR		8
-#define MODBUS_EXC_GW_PATH_UNAVAILABLE		10
-#define MODBUS_EXC_GW_TARGET_FAILED_TO_RESP	11
-
 /* Modbus RTU (ASCII) constants */
 #define MODBUS_COIL_OFF_CODE			0x0000
 #define MODBUS_COIL_ON_CODE			0xFF00
@@ -81,8 +69,6 @@
 #define MODBUS_ADU_PROTO_ID			0x0000
 
 struct modbus_serial_config {
-	/* UART device name */
-	const char *dev_name;
 	/* UART device */
 	const struct device *dev;
 	/* RTU timeout (maximum inter-frame delay) */
@@ -110,7 +96,7 @@ struct modbus_context {
 		/* Serial line configuration */
 		struct modbus_serial_config *cfg;
 		/* RAW TX callback */
-		modbus_raw_cb_t raw_tx_cb;
+		struct modbus_raw_cb rawcb;
 	};
 	/* MODBUS mode */
 	enum modbus_mode mode;
@@ -144,6 +130,8 @@ struct modbus_context {
 	uint16_t mbs_server_msg_ctr;
 	uint16_t mbs_noresp_ctr;
 #endif
+	/* A linked list of function code, handler pairs */
+	sys_slist_t user_defined_cbs;
 	/* Unit ID */
 	uint8_t unit_id;
 

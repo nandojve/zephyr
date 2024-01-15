@@ -17,7 +17,7 @@
  * CONFIG_MULTITHREADING=n to ensure proper linking.
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
 int __weak z_impl_k_mutex_init(struct k_mutex *mutex)
 {
@@ -49,7 +49,7 @@ int __weak z_impl_k_sem_take(struct k_sem *sem, k_timeout_t timeout)
 	return 0;
 }
 
-k_tid_t __weak z_impl_z_current_get(void)
+k_tid_t __weak z_impl_k_sched_current_thread_query(void)
 {
 	return 0;
 }

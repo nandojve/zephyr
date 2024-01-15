@@ -4,19 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdlib.h>
 
-void main(void)
+int main(void)
 {
 	printk("Hello DPS310\n");
-	const struct device *dev = device_get_binding(DT_LABEL(DT_INST(0, infineon_dps310)));
+	const struct device *const dev = DEVICE_DT_GET_ONE(infineon_dps310);
 
-	if (dev == NULL) {
-		printk("Could not get DPS310 device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("Device %s is not ready\n", dev->name);
+		return 0;
 	}
 
 	printk("dev %p name %s\n", dev, dev->name);
@@ -33,4 +33,5 @@ void main(void)
 
 		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

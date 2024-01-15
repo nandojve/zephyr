@@ -12,7 +12,15 @@ supported:
   - arduino_i2c
   - arduino_spi
   - hts221
+  - dma
   - usb_device
   - spi
   - dac
+  - adc
   - watchdog
+  - nvs
+  - backup_sram
+  - pwm
+  - counter
+  - i2c
+vendor: st

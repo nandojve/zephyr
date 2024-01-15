@@ -4,22 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "task_wdt/task_wdt.h"
+#include <zephyr/task_wdt/task_wdt.h>
 
-#include <drivers/watchdog.h>
-#include <sys/reboot.h>
-#include <device.h>
+#include <zephyr/drivers/watchdog.h>
+#include <zephyr/sys/reboot.h>
+#include <zephyr/device.h>
 #include <errno.h>
 
 #define LOG_LEVEL CONFIG_WDT_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(task_wdt);
 
 /*
  * This dummy channel is used to continue feeding the hardware watchdog if the
  * task watchdog timeouts are too long for regular updates
  */
-#define TASK_WDT_BACKGROUND_CHANNEL (-1)
+#define TASK_WDT_BACKGROUND_CHANNEL UINTPTR_MAX
 
 /*
  * Task watchdog channel data
@@ -39,6 +39,7 @@ struct task_wdt_channel {
 
 /* array of all task watchdog channels */
 static struct task_wdt_channel channels[CONFIG_TASK_WDT_CHANNELS];
+static struct k_spinlock channels_lock;
 
 /* timer used for watchdog handling */
 static struct k_timer timer;
@@ -50,10 +51,10 @@ static int hw_wdt_channel;
 static bool hw_wdt_started;
 #endif
 
-static void schedule_next_timeout(uint32_t current_ticks)
+static void schedule_next_timeout(int64_t current_ticks)
 {
-	int next_channel_id;	/* channel which will time out next */
-	int64_t next_timeout;   /* timeout in absolute ticks of this channel */
+	uintptr_t next_channel_id;	/* channel which will time out next */
+	int64_t next_timeout;		/* timeout in absolute ticks of this channel */
 
 #ifdef CONFIG_TASK_WDT_HW_FALLBACK
 	next_channel_id = TASK_WDT_BACKGROUND_CHANNEL;
@@ -100,7 +101,7 @@ static void schedule_next_timeout(uint32_t current_ticks)
  */
 static void task_wdt_trigger(struct k_timer *timer_id)
 {
-	int channel_id = (int)k_timer_user_data_get(timer_id);
+	uintptr_t channel_id = (uintptr_t)k_timer_user_data_get(timer_id);
 	bool bg_channel = IS_ENABLED(CONFIG_TASK_WDT_HW_FALLBACK) &&
 			  (channel_id == TASK_WDT_BACKGROUND_CHANNEL);
 
@@ -146,6 +147,7 @@ int task_wdt_init(const struct device *hw_wdt)
 	}
 
 	k_timer_init(&timer, task_wdt_trigger, NULL);
+	schedule_next_timeout(sys_clock_tick_get());
 
 	return 0;
 }
@@ -153,9 +155,17 @@ int task_wdt_init(const struct device *hw_wdt)
 int task_wdt_add(uint32_t reload_period, task_wdt_callback_t callback,
 		 void *user_data)
 {
+	k_spinlock_key_t key;
+
 	if (reload_period == 0) {
 		return -EINVAL;
 	}
+
+	/*
+	 * k_spin_lock instead of k_sched_lock required here to avoid being interrupted by a
+	 * triggering other task watchdog channel (executed in ISR context).
+	 */
+	key = k_spin_lock(&channels_lock);
 
 	/* look for unused channel (reload_period set to 0) */
 	for (int id = 0; id < ARRAY_SIZE(channels); id++) {
@@ -176,20 +186,30 @@ int task_wdt_add(uint32_t reload_period, task_wdt_callback_t callback,
 			/* must be called after hw wdt has been started */
 			task_wdt_feed(id);
 
+			k_spin_unlock(&channels_lock, key);
+
 			return id;
 		}
 	}
+
+	k_spin_unlock(&channels_lock, key);
 
 	return -ENOMEM;
 }
 
 int task_wdt_delete(int channel_id)
 {
+	k_spinlock_key_t key;
+
 	if (channel_id < 0 || channel_id >= ARRAY_SIZE(channels)) {
 		return -EINVAL;
 	}
 
+	key = k_spin_lock(&channels_lock);
+
 	channels[channel_id].reload_period = 0;
+
+	k_spin_unlock(&channels_lock, key);
 
 	return 0;
 }

@@ -10,10 +10,10 @@
 
 #define DT_DRV_COMPAT st_ism330dhcx
 
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 
 #include "ism330dhcx.h"
 
@@ -127,9 +127,15 @@ int ism330dhcx_trigger_set(const struct device *dev,
 			   sensor_trigger_handler_t handler)
 {
 	struct ism330dhcx_data *ism330dhcx = dev->data;
+	const struct ism330dhcx_config *cfg = dev->config;
+
+	if (!cfg->drdy_gpio.port) {
+		return -ENOTSUP;
+	}
 
 	if (trig->chan == SENSOR_CHAN_ACCEL_XYZ) {
 		ism330dhcx->handler_drdy_acc = handler;
+		ism330dhcx->trig_drdy_acc = trig;
 		if (handler) {
 			return ism330dhcx_enable_xl_int(dev, ISM330DHCX_EN_BIT);
 		} else {
@@ -137,6 +143,7 @@ int ism330dhcx_trigger_set(const struct device *dev,
 		}
 	} else if (trig->chan == SENSOR_CHAN_GYRO_XYZ) {
 		ism330dhcx->handler_drdy_gyr = handler;
+		ism330dhcx->trig_drdy_gyr = trig;
 		if (handler) {
 			return ism330dhcx_enable_g_int(dev, ISM330DHCX_EN_BIT);
 		} else {
@@ -146,6 +153,7 @@ int ism330dhcx_trigger_set(const struct device *dev,
 #if defined(CONFIG_ISM330DHCX_ENABLE_TEMP)
 	else if (trig->chan == SENSOR_CHAN_DIE_TEMP) {
 		ism330dhcx->handler_drdy_temp = handler;
+		ism330dhcx->trig_drdy_temp = trig;
 		if (handler) {
 			return ism330dhcx_enable_t_int(dev, ISM330DHCX_EN_BIT);
 		} else {
@@ -164,9 +172,6 @@ int ism330dhcx_trigger_set(const struct device *dev,
 static void ism330dhcx_handle_interrupt(const struct device *dev)
 {
 	struct ism330dhcx_data *ism330dhcx = dev->data;
-	struct sensor_trigger drdy_trigger = {
-		.type = SENSOR_TRIG_DATA_READY,
-	};
 	const struct ism330dhcx_config *cfg = dev->config;
 	ism330dhcx_status_reg_t status;
 
@@ -185,22 +190,21 @@ static void ism330dhcx_handle_interrupt(const struct device *dev)
 		}
 
 		if ((status.xlda) && (ism330dhcx->handler_drdy_acc != NULL)) {
-			ism330dhcx->handler_drdy_acc(dev, &drdy_trigger);
+			ism330dhcx->handler_drdy_acc(dev, ism330dhcx->trig_drdy_acc);
 		}
 
 		if ((status.gda) && (ism330dhcx->handler_drdy_gyr != NULL)) {
-			ism330dhcx->handler_drdy_gyr(dev, &drdy_trigger);
+			ism330dhcx->handler_drdy_gyr(dev, ism330dhcx->trig_drdy_gyr);
 		}
 
 #if defined(CONFIG_ISM330DHCX_ENABLE_TEMP)
 		if ((status.tda) && (ism330dhcx->handler_drdy_temp != NULL)) {
-			ism330dhcx->handler_drdy_temp(dev, &drdy_trigger);
+			ism330dhcx->handler_drdy_temp(dev, ism330dhcx->trig_drdy_temp);
 		}
 #endif
 	}
 
-	gpio_pin_interrupt_configure(ism330dhcx->gpio, cfg->int_gpio_pin,
-				     GPIO_INT_EDGE_TO_ACTIVE);
+	gpio_pin_interrupt_configure_dt(&cfg->drdy_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 }
 
 static void ism330dhcx_gpio_callback(const struct device *dev,
@@ -212,8 +216,7 @@ static void ism330dhcx_gpio_callback(const struct device *dev,
 
 	ARG_UNUSED(pins);
 
-	gpio_pin_interrupt_configure(ism330dhcx->gpio, cfg->int_gpio_pin,
-				     GPIO_INT_DISABLE);
+	gpio_pin_interrupt_configure_dt(&cfg->drdy_gpio, GPIO_INT_DISABLE);
 
 #if defined(CONFIG_ISM330DHCX_TRIGGER_OWN_THREAD)
 	k_sem_give(&ism330dhcx->gpio_sem);
@@ -223,8 +226,13 @@ static void ism330dhcx_gpio_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_ISM330DHCX_TRIGGER_OWN_THREAD
-static void ism330dhcx_thread(struct ism330dhcx_data *ism330dhcx)
+static void ism330dhcx_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct ism330dhcx_data *ism330dhcx = p1;
+
 	while (1) {
 		k_sem_take(&ism330dhcx->gpio_sem, K_FOREVER);
 		ism330dhcx_handle_interrupt(ism330dhcx->dev);
@@ -248,11 +256,9 @@ int ism330dhcx_init_interrupt(const struct device *dev)
 	const struct ism330dhcx_config *cfg = dev->config;
 	int ret;
 
-	/* setup data ready gpio interrupt (INT1 or INT2) */
-	ism330dhcx->gpio = device_get_binding(cfg->int_gpio_port);
-	if (ism330dhcx->gpio == NULL) {
-		LOG_ERR("Cannot get pointer to %s device", cfg->int_gpio_port);
-		return -EINVAL;
+	if (!gpio_is_ready_dt(&cfg->drdy_gpio)) {
+		LOG_ERR("GPIO device not ready");
+		return -ENODEV;
 	}
 
 #if defined(CONFIG_ISM330DHCX_TRIGGER_OWN_THREAD)
@@ -260,7 +266,7 @@ int ism330dhcx_init_interrupt(const struct device *dev)
 
 	k_thread_create(&ism330dhcx->thread, ism330dhcx->thread_stack,
 			CONFIG_ISM330DHCX_THREAD_STACK_SIZE,
-			(k_thread_entry_t)ism330dhcx_thread,
+			ism330dhcx_thread,
 			ism330dhcx, NULL, NULL,
 			K_PRIO_COOP(CONFIG_ISM330DHCX_THREAD_PRIORITY),
 			0, K_NO_WAIT);
@@ -268,29 +274,25 @@ int ism330dhcx_init_interrupt(const struct device *dev)
 	ism330dhcx->work.handler = ism330dhcx_work_cb;
 #endif /* CONFIG_ISM330DHCX_TRIGGER_OWN_THREAD */
 
-	ret = gpio_pin_configure(ism330dhcx->gpio, cfg->int_gpio_pin,
-				 GPIO_INPUT | cfg->int_gpio_flags);
+	ret = gpio_pin_configure_dt(&cfg->drdy_gpio, GPIO_INPUT);
 	if (ret < 0) {
 		LOG_ERR("Could not configure gpio");
 		return ret;
 	}
 
-	gpio_init_callback(&ism330dhcx->gpio_cb,
-			   ism330dhcx_gpio_callback,
-			   BIT(cfg->int_gpio_pin));
+	gpio_init_callback(&ism330dhcx->gpio_cb, ism330dhcx_gpio_callback, BIT(cfg->drdy_gpio.pin));
 
-	if (gpio_add_callback(ism330dhcx->gpio, &ism330dhcx->gpio_cb) < 0) {
+	if (gpio_add_callback(cfg->drdy_gpio.port, &ism330dhcx->gpio_cb) < 0) {
 		LOG_ERR("Could not set gpio callback");
 		return -EIO;
 	}
 
 	/* enable interrupt on int1/int2 in pulse mode */
-	if (ism330dhcx_int_notification_set(ism330dhcx->ctx,
-					    ISM330DHCX_ALL_INT_PULSED) < 0) {
+	if (ism330dhcx_data_ready_mode_set(ism330dhcx->ctx,
+					   ISM330DHCX_DRDY_PULSED) < 0) {
 		LOG_ERR("Could not set pulse mode");
 		return -EIO;
 	}
 
-	return gpio_pin_interrupt_configure(ism330dhcx->gpio, cfg->int_gpio_pin,
-					    GPIO_INT_EDGE_TO_ACTIVE);
+	return gpio_pin_interrupt_configure_dt(&cfg->drdy_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 }

@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
 #include <stdio.h>
-#include <ztest_assert.h>
-#include <sys_clock.h>
-#include <net/net_ip.h>
-#include <net/socket.h>
-#include <net/socket_net_mgmt.h>
-#include <net/net_event.h>
-#include <net/ethernet_mgmt.h>
+#include <zephyr/ztest_assert.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/socket_net_mgmt.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/ethernet_mgmt.h>
 
 #define MAX_BUF_LEN 64
 #define STACK_SIZE 1024
@@ -26,7 +26,7 @@ static ZTEST_BMEM int fd;
 static ZTEST_BMEM struct in6_addr addr_v6;
 static ZTEST_DMEM struct in_addr addr_v4 = { { { 192, 0, 2, 3 } } };
 
-#if IS_ENABLED(CONFIG_NET_SOCKETS_LOG_LEVEL_DBG)
+#if defined(CONFIG_NET_SOCKETS_LOG_LEVEL_DBG)
 #define DBG(fmt, ...) printk(fmt, ##__VA_ARGS__)
 #else
 #define DBG(fmt, ...)
@@ -447,17 +447,45 @@ static void test_net_mgmt_catch_events(void)
 	}
 }
 
-static void test_net_mgmt_catch_kernel(void)
+ZTEST(net_socket_net_mgmt, test_net_mgmt_catch_kernel)
 {
 	test_net_mgmt_catch_events();
 }
 
-static void test_net_mgmt_catch_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_net_mgmt_catch_user)
 {
 	test_net_mgmt_catch_events();
 }
 
-static void test_net_mgmt_cleanup(void)
+static void test_net_mgmt_catch_events_failure(void)
+{
+#define SMALL_BUF_LEN 16
+	struct sockaddr_nm event_addr;
+	socklen_t event_addr_len;
+	uint8_t buf[SMALL_BUF_LEN];
+	int ret;
+
+	memset(buf, 0, sizeof(buf));
+	event_addr_len = sizeof(event_addr);
+
+	ret = recvfrom(fd, buf, sizeof(buf), 0,
+		       (struct sockaddr *)&event_addr,
+		       &event_addr_len);
+	zassert_equal(ret, -1, "Msg check failed, %d", errno);
+	zassert_equal(errno, EMSGSIZE, "Msg check failed, errno %d", errno);
+}
+
+ZTEST(net_socket_net_mgmt, test_net_mgmt_catch_failure_kernel)
+{
+	test_net_mgmt_catch_events_failure();
+}
+
+ZTEST_USER(net_socket_net_mgmt, test_net_mgmt_catch_failure_user)
+{
+	test_net_mgmt_catch_events_failure();
+}
+
+ZTEST(net_socket_net_mgmt, test_net_mgmt_cleanup)
 {
 	k_thread_abort(trigger_events_thread_id);
 }
@@ -479,12 +507,12 @@ static void test_ethernet_set_qav(void)
 	zassert_equal(ret, 0, "Cannot set Qav parameters");
 }
 
-static void test_ethernet_set_qav_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_set_qav_kernel)
 {
 	test_ethernet_set_qav();
 }
 
-static void test_ethernet_set_qav_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_set_qav_user)
 {
 	test_ethernet_set_qav();
 }
@@ -509,12 +537,12 @@ static void test_ethernet_get_qav(void)
 	zassert_true(params.qav_param.enabled, "Qav not enabled");
 }
 
-static void test_ethernet_get_qav_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_get_qav_kernel)
 {
 	test_ethernet_get_qav();
 }
 
-static void test_ethernet_get_qav_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_get_qav_user)
 {
 	test_ethernet_get_qav();
 }
@@ -534,12 +562,12 @@ static void test_ethernet_get_unknown_option(void)
 	zassert_equal(errno, EINVAL, "prio queue get parameters");
 }
 
-static void test_ethernet_get_unknown_opt_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_get_unknown_opt_kernel)
 {
 	test_ethernet_get_unknown_option();
 }
 
-static void test_ethernet_get_unknown_opt_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_get_unknown_opt_user)
 {
 	test_ethernet_get_unknown_option();
 }
@@ -559,35 +587,21 @@ static void test_ethernet_set_unknown_option(void)
 	zassert_equal(errno, EINVAL, "promisc_mode set parameters");
 }
 
-static void test_ethernet_set_unknown_opt_kernel(void)
+ZTEST(net_socket_net_mgmt, test_ethernet_set_unknown_opt_kernel)
 {
 	test_ethernet_set_unknown_option();
 }
 
-static void test_ethernet_set_unknown_opt_user(void)
+ZTEST_USER(net_socket_net_mgmt, test_ethernet_set_unknown_opt_user)
 {
 	test_ethernet_set_unknown_option();
 }
 
-void test_main(void)
+static void *setup(void)
 {
 	k_thread_system_pool_assign(k_current_get());
-
-	ztest_test_suite(socket_net_mgmt,
-			 ztest_unit_test(test_net_mgmt_setup),
-			 ztest_unit_test(test_net_mgmt_catch_kernel),
-			 ztest_user_unit_test(test_net_mgmt_catch_user),
-			 ztest_unit_test(test_net_mgmt_cleanup),
-			 ztest_unit_test(test_ethernet_set_qav_kernel),
-			 ztest_user_unit_test(test_ethernet_set_qav_user),
-			 ztest_unit_test(test_ethernet_get_qav_kernel),
-			 ztest_user_unit_test(test_ethernet_get_qav_user),
-			 ztest_unit_test(test_ethernet_get_unknown_opt_kernel),
-			 ztest_user_unit_test(
-				 test_ethernet_get_unknown_opt_user),
-			 ztest_unit_test(test_ethernet_set_unknown_opt_kernel),
-			 ztest_user_unit_test(
-				 test_ethernet_set_unknown_opt_user));
-
-	ztest_run_test_suite(socket_net_mgmt);
+	test_net_mgmt_setup();
+	return NULL;
 }
+
+ZTEST_SUITE(net_socket_net_mgmt, NULL, setup, NULL, NULL, NULL);

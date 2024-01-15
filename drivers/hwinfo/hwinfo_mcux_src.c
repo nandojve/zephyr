@@ -7,9 +7,9 @@
 #define DT_DRV_COMPAT nxp_imx_src
 
 #include <soc.h>
-#include <drivers/hwinfo.h>
+#include <zephyr/drivers/hwinfo.h>
 #include <string.h>
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 
 #include <fsl_src.h>
 
@@ -35,6 +35,12 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause)
 #if (defined(FSL_FEATURE_SRC_HAS_SRSR_LOCKUP) && FSL_FEATURE_SRC_HAS_SRSR_LOCKUP)
 	if (reason & kSRC_CoreLockupResetFlag) {
 		flags |= RESET_CPU_LOCKUP;
+	}
+#endif
+#if (defined(FSL_FEATURE_SRC_HAS_SRSR_LOCKUP_SYSRESETREQ) && \
+	FSL_FEATURE_SRC_HAS_SRSR_LOCKUP_SYSRESETREQ)
+	if (reason & kSRC_LockupSysResetFlag) {
+		flags |= RESET_CPU_LOCKUP | RESET_SOFTWARE;
 	}
 #endif
 #if (defined(FSL_FEATURE_SRC_HAS_SRSR_CSU_RESET_B) && FSL_FEATURE_SRC_HAS_SRSR_CSU_RESET_B)
@@ -114,6 +120,10 @@ int z_impl_hwinfo_get_supported_reset_cause(uint32_t *supported)
 #endif
 #if (defined(FSL_FEATURE_SRC_HAS_SCR_LOCKUP_RST) && FSL_FEATURE_SRC_HAS_SCR_LOCKUP_RST)
 		      | RESET_CPU_LOCKUP
+#endif
+#if (defined(FSL_FEATURE_SRC_HAS_SRSR_LOCKUP_SYSRESETREQ) && \
+		      FSL_FEATURE_SRC_HAS_SRSR_LOCKUP_SYSRESETREQ)
+		      | RESET_CPU_LOCKUP | RESET_SOFTWARE
 #endif
 #if (defined(FSL_FEATURE_SRC_HAS_SRSR_CSU_RESET_B) && FSL_FEATURE_SRC_HAS_SRSR_CSU_RESET_B)
 		      | RESET_SECURITY

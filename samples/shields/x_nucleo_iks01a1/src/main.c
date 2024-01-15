@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifdef CONFIG_LIS3MDL_TRIGGER
 static int lis3mdl_trig_cnt;
@@ -21,34 +21,34 @@ static void lis3mdl_trigger_handler(const struct device *dev,
 }
 #endif
 
-void main(void)
+int main(void)
 {
 	struct sensor_value temp, hum, press;
 	struct sensor_value magn_xyz[3], accel_xyz[3];
-	const struct device *hts221 = device_get_binding(DT_LABEL(DT_INST(0, st_hts221)));
-	const struct device *lis3mdl = device_get_binding(DT_LABEL(DT_INST(0, st_lis3mdl_magn)));
-	const struct device *lsm6ds0 = device_get_binding(DT_LABEL(DT_INST(0, st_lsm6ds0)));
-	const struct device *lps25hb = device_get_binding(DT_LABEL(DT_INST(0, st_lps25hb_press)));
+	const struct device *const hts221 = DEVICE_DT_GET_ONE(st_hts221);
+	const struct device *const lis3mdl = DEVICE_DT_GET_ONE(st_lis3mdl_magn);
+	const struct device *const lsm6ds0 = DEVICE_DT_GET_ONE(st_lsm6ds0);
+	const struct device *const lps25hb = DEVICE_DT_GET_ONE(st_lps25hb_press);
 #if defined(CONFIG_LIS3MDL_TRIGGER)
 	struct sensor_trigger trig;
 	int cnt = 1;
 #endif
 
-	if (hts221 == NULL) {
-		printf("Could not get HTS221 device\n");
-		return;
+	if (!device_is_ready(hts221)) {
+		printk("%s: device not ready.\n", hts221->name);
+		return 0;
 	}
-	if (lis3mdl == NULL) {
-		printf("Could not get LIS3MDL device\n");
-		return;
+	if (!device_is_ready(lis3mdl)) {
+		printk("%s: device not ready.\n", lis3mdl->name);
+		return 0;
 	}
-	if (lsm6ds0 == NULL) {
-		printf("Could not get LSM6DS0 device\n");
-		return;
+	if (!device_is_ready(lsm6ds0)) {
+		printk("%s: device not ready.\n", lsm6ds0->name);
+		return 0;
 	}
-	if (lps25hb == NULL) {
-		printf("Could not get LPS25HB device\n");
-		return;
+	if (!device_is_ready(lps25hb)) {
+		printk("%s: device not ready.\n", lps25hb->name);
+		return 0;
 	}
 
 #ifdef CONFIG_LIS3MDL_TRIGGER
@@ -63,21 +63,21 @@ void main(void)
 
 		if (sensor_sample_fetch(hts221) < 0) {
 			printf("HTS221 Sensor sample update error\n");
-			return;
+			return 0;
 		}
 		if (sensor_sample_fetch(lps25hb) < 0) {
 			printf("LPS25HB Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #ifndef CONFIG_LIS3MDL_TRIGGER
 		if (sensor_sample_fetch(lis3mdl) < 0) {
 			printf("LIS3MDL Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 		if (sensor_sample_fetch(lsm6ds0) < 0) {
 			printf("LSM6DS0 Sensor sample update error\n");
-			return;
+			return 0;
 		}
 
 		/* Get sensor data */

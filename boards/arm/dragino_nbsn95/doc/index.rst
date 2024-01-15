@@ -22,10 +22,8 @@ This kit provides:
 - GPIOs exposed via screw terminals on the carrier board
 - Housing
 
-.. image:: img/dragino_nbsn95.png
-     :width: 531px
+.. image:: img/dragino_nbsn95.jpg
      :align: center
-     :height: 354px
      :alt: Dragino NBSN95
 
 More information about the board can be found at the `Dragino NBSN95 website`_.
@@ -86,7 +84,7 @@ More information about STM32L072CZ can be found here:
 Supported Features
 ==================
 
-The Zephyr Dragino NBSN95 Board board configuration supports the following hardware features:
+The Zephyr Dragino NBSN95 board configuration supports the following hardware features:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -189,7 +187,7 @@ You can debug an application in the usual way.  Here is an example for the
    https://www.dragino.com/products/nb-iot/item/163-nbsn95.html
 
 .. _STM32L072CZ on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32l072cz.html
+   https://www.st.com/en/microcontrollers/stm32l072cz.html
 
 .. _STM32L0x2 reference manual:
-   http://www.st.com/resource/en/reference_manual/DM00108281.pdf
+   https://www.st.com/resource/en/reference_manual/DM00108281.pdf

@@ -49,7 +49,6 @@ description: |
          dma-generators = <4>;
          dma-requests= <36>;
          status = "disabled";
-         label = "DMAMUX_1";
         };
     for client SPI of stm32wb55x
      spi1: spi@40013000 {
@@ -64,14 +63,14 @@ compatible: "st,stm32-dmamux"
 include: dmamux-controller.yaml
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    interrupts:
-      required: true
+  interrupts:
+    required: true
 
-    "#dma-cells":
-      const: 3
+  "#dma-cells":
+    const: 3
 
 # Parameter syntax of stm32 follows the dma client dts syntax
 # in the Linux kernel declared in

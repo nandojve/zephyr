@@ -4,14 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/ {
-	adc_emulator_test_dev {
-		compatible = "zephyr,adc-emul";
-		nchannels = <2>;
-		ref-internal-mv = <3300>;
-		ref-external1-mv = <5000>;
-		#io-channel-cells = <1>;
-		label = "ADC_0";
-		status = "okay";
-	};
+&adc0 {
+	ref-internal-mv = <3300>;
+	ref-external1-mv = <5000>;
 };

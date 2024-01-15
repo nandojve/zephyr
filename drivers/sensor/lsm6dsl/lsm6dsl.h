@@ -11,17 +11,18 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_LSM6DSL_LSM6DSL_H_
 #define ZEPHYR_DRIVERS_SENSOR_LSM6DSL_LSM6DSL_H_
 
-#include <drivers/sensor.h>
+#include <zephyr/drivers/sensor.h>
 #include <zephyr/types.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-#include <drivers/spi.h>
+#include <zephyr/drivers/spi.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
-#include <drivers/i2c.h>
+#include <zephyr/drivers/i2c.h>
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
 
 #define LSM6DSL_REG_FUNC_CFG_ACCESS			0x01
@@ -183,7 +184,7 @@
 #define LSM6DSL_SHIFT_CTRL4_C_LPF1_SEL_G		1
 
 #define LSM6DSL_REG_CTRL5_C				0x14
-#define LSM6DSL_MASK_CTRL5_C_ROUNDING			(BIT(7) | BIT(6) \
+#define LSM6DSL_MASK_CTRL5_C_ROUNDING			(BIT(7) | BIT(6) | \
 							 BIT(5))
 #define LSM6DSL_SHIFT_CTRL5_C_ROUNDING			5
 #define LSM6DSL_MASK_CTRL5_C_DEN_LH			BIT(4)
@@ -373,10 +374,10 @@
 #define LSM6DSL_SHIFT_FIFO_STATUS2_DIFF_FIFO		0
 
 #define LSM6DSL_REG_FIFO_STATUS3			0x3C
-#define LSM6DSL_MASK_FIFO_STATUS3_FIFO_PATTERN		0x0F
+#define LSM6DSL_MASK_FIFO_STATUS3_FIFO_PATTERN		0xFF
 #define LSM6DSL_SHIFT_FIFO_STATUS3_FIFO_PATTERN		0
 
-#define LSM6DSL_REG_FIFO_STATUS4			0x3C
+#define LSM6DSL_REG_FIFO_STATUS4			0x3D
 #define LSM6DSL_MASK_FIFO_STATUS4_FIFO_PATTERN		(BIT(1) | BIT(0))
 #define LSM6DSL_SHIFT_FIFO_STATUS4_FIFO_PATTERN		0
 
@@ -527,7 +528,7 @@
 #define LSM6DSL_MASK_MD2_CFG_INT2_SINGLE_TAP		BIT(6)
 #define LSM6DSL_SHIFT_MD2_CFG_INT2_SINGLE_TAP		6
 #define LSM6DSL_MASK_MD2_CFG_INT2_WU			BIT(5)
-#define LSM6DSL_SHIFT_MD2_CFG_INT1_WU			5
+#define LSM6DSL_SHIFT_MD2_CFG_INT2_WU			5
 #define LSM6DSL_MASK_MD2_CFG_INT2_FF			BIT(4)
 #define LSM6DSL_SHIFT_MD2_CFG_INT2_FF			4
 #define LSM6DSL_MASK_MD2_CFG_INT2_DOUBLE_TAP		BIT(3)
@@ -592,7 +593,7 @@
 #elif CONFIG_LSM6DSL_GYRO_FS == 125
 	#define LSM6DSL_DEFAULT_GYRO_FULLSCALE		4
 	#define LSM6DSL_DEFAULT_GYRO_SENSITIVITY	SENSI_GRAIN_G
-#elif CONFIG_LSM6DSL_GYRO_FS == 245
+#elif CONFIG_LSM6DSL_GYRO_FS == 250
 	#define LSM6DSL_DEFAULT_GYRO_FULLSCALE		0
 	#define LSM6DSL_DEFAULT_GYRO_SENSITIVITY	(2.0 * SENSI_GRAIN_G)
 #elif CONFIG_LSM6DSL_GYRO_FS == 500
@@ -625,9 +626,7 @@ struct lsm6dsl_config {
 	int (*bus_init)(const struct device *dev);
 	const union lsm6dsl_bus_cfg bus_cfg;
 #ifdef CONFIG_LSM6DSL_TRIGGER
-	char *irq_dev_name;
-	uint32_t irq_pin;
-	int irq_flags;
+	struct gpio_dt_spec int_gpio;
 #endif
 };
 
@@ -656,7 +655,7 @@ struct lsm6dsl_data {
 #if defined(CONFIG_LSM6DSL_ENABLE_TEMP)
 	int temp_sample;
 #endif
-#if defined(CONFIG_LSM6DSL_EXT0_LIS2MDL)
+#if defined(CONFIG_LSM6DSL_EXT0_LIS2MDL) || defined(CONFIG_LSM6DSL_EXT0_LIS3MDL)
 	int magn_sample_x;
 	int magn_sample_y;
 	int magn_sample_z;
@@ -668,16 +667,13 @@ struct lsm6dsl_data {
 #endif
 	const struct lsm6dsl_transfer_function *hw_tf;
 	uint16_t accel_freq;
-	uint8_t accel_fs;
 	uint16_t gyro_freq;
-	uint8_t gyro_fs;
 
 #ifdef CONFIG_LSM6DSL_TRIGGER
 	const struct device *dev;
-	const struct device *gpio;
 	struct gpio_callback gpio_cb;
 
-	struct sensor_trigger data_ready_trigger;
+	const struct sensor_trigger *data_ready_trigger;
 	sensor_trigger_handler_t data_ready_handler;
 
 #if defined(CONFIG_LSM6DSL_TRIGGER_OWN_THREAD)

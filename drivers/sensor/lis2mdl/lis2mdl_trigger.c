@@ -10,10 +10,10 @@
 
 #define DT_DRV_COMPAT st_lis2mdl
 
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 #include "lis2mdl.h"
 
 LOG_MODULE_DECLARE(LIS2MDL, CONFIG_SENSOR_LOG_LEVEL);
@@ -45,6 +45,7 @@ int lis2mdl_trigger_set(const struct device *dev,
 
 	if (trig->chan == SENSOR_CHAN_MAGN_XYZ) {
 		lis2mdl->handler_drdy = handler;
+		lis2mdl->trig_drdy = trig;
 		if (handler) {
 			/* fetch raw data sample: re-trigger lost interrupt */
 			lis2mdl_magnetic_raw_get(ctx, raw);
@@ -63,12 +64,9 @@ static void lis2mdl_handle_interrupt(const struct device *dev)
 {
 	struct lis2mdl_data *lis2mdl = dev->data;
 	const struct lis2mdl_config *const cfg = dev->config;
-	struct sensor_trigger drdy_trigger = {
-		.type = SENSOR_TRIG_DATA_READY,
-	};
 
 	if (lis2mdl->handler_drdy != NULL) {
-		lis2mdl->handler_drdy(dev, &drdy_trigger);
+		lis2mdl->handler_drdy(dev, lis2mdl->trig_drdy);
 	}
 
 	if (cfg->single_mode) {
@@ -98,8 +96,13 @@ static void lis2mdl_gpio_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_LIS2MDL_TRIGGER_OWN_THREAD
-static void lis2mdl_thread(struct lis2mdl_data *lis2mdl)
+static void lis2mdl_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct lis2mdl_data *lis2mdl = p1;
+
 	while (1) {
 		k_sem_take(&lis2mdl->gpio_sem, K_FOREVER);
 		lis2mdl_handle_interrupt(lis2mdl->dev);
@@ -124,7 +127,7 @@ int lis2mdl_init_interrupt(const struct device *dev)
 	int ret;
 
 	/* setup data ready gpio interrupt */
-	if (!device_is_ready(cfg->gpio_drdy.port)) {
+	if (!gpio_is_ready_dt(&cfg->gpio_drdy)) {
 		LOG_ERR("Cannot get pointer to drdy_gpio device");
 		return -EINVAL;
 	}
@@ -133,7 +136,7 @@ int lis2mdl_init_interrupt(const struct device *dev)
 	k_sem_init(&lis2mdl->gpio_sem, 0, K_SEM_MAX_LIMIT);
 	k_thread_create(&lis2mdl->thread, lis2mdl->thread_stack,
 			CONFIG_LIS2MDL_THREAD_STACK_SIZE,
-			(k_thread_entry_t)lis2mdl_thread, lis2mdl,
+			lis2mdl_thread, lis2mdl,
 			NULL, NULL, K_PRIO_COOP(CONFIG_LIS2MDL_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_LIS2MDL_TRIGGER_GLOBAL_THREAD)

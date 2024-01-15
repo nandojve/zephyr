@@ -10,12 +10,13 @@
 
 #define DT_DRV_COMPAT st_lis2mdl
 
-#include <init.h>
-#include <sys/__assert.h>
-#include <sys/byteorder.h>
-#include <drivers/sensor.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/pm/device.h>
 #include <string.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 #include "lis2mdl.h"
 
 /* Based on the data sheet, the maximum turn-on time is ("9.4 ms + 1/ODR") when
@@ -237,7 +238,7 @@ static int lis2mdl_sample_fetch_mag(const struct device *dev)
 			 * cancellation is enabled in the single mode. Then the
 			 * average of the first measurement done above and this
 			 * one would be the final value. This process is not
-			 * needed in continuous mode since it has beed taken
+			 * needed in continuous mode since it has been taken
 			 * care by lis2mdl itself automatically. Please refer
 			 * to the application note for more details.
 			 */
@@ -397,7 +398,7 @@ static int lis2mdl_init(const struct device *dev)
 		rc = lis2mdl_set_rst_sensor_single_set(ctx,
 							PROPERTY_ENABLE);
 		if (rc) {
-			LOG_ERR("Set offset cancelaltion failed");
+			LOG_ERR("Set offset cancellation failed");
 			return rc;
 		}
 	}
@@ -424,7 +425,7 @@ static int lis2mdl_init(const struct device *dev)
 		rc = lis2mdl_operating_mode_set(ctx,
 						LIS2MDL_CONTINUOUS_MODE);
 		if (rc) {
-			LOG_ERR("set continuos mode failed");
+			LOG_ERR("set continuous mode failed");
 			return rc;
 		}
 	}
@@ -488,9 +489,11 @@ static int lis2mdl_pm_action(const struct device *dev,
  */
 
 #define LIS2MDL_DEVICE_INIT(inst)					\
-	DEVICE_DT_INST_DEFINE(inst,					\
+	PM_DEVICE_DT_INST_DEFINE(inst, lis2mdl_pm_action);		\
+									\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst,				\
 			    lis2mdl_init,				\
-			    lis2mdl_pm_action,				\
+			    PM_DEVICE_DT_INST_GET(inst),		\
 			    &lis2mdl_data_##inst,			\
 			    &lis2mdl_config_##inst,			\
 			    POST_KERNEL,				\
@@ -509,32 +512,27 @@ static int lis2mdl_pm_action(const struct device *dev,
 #define LIS2MDL_CFG_IRQ(inst)
 #endif /* CONFIG_LIS2MDL_TRIGGER */
 
+#define LIS2MDL_CONFIG_COMMON(inst)					\
+	.cancel_offset = DT_INST_PROP(inst, cancel_offset),		\
+	.single_mode = DT_INST_PROP(inst, single_mode),			\
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),		\
+			(LIS2MDL_CFG_IRQ(inst)), ())
+
 #define LIS2MDL_SPI_OPERATION (SPI_WORD_SET(8) |			\
 				SPI_OP_MODE_MASTER |			\
-				SPI_LINES_SINGLE |			\
 				SPI_MODE_CPOL |				\
 				SPI_MODE_CPHA)				\
 
 #define LIS2MDL_CONFIG_SPI(inst)					\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_spi_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_spi_write,	\
-			.handle =					\
-			   (void *)&lis2mdl_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_SPI(&lis2mdl_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
 					   LIS2MDL_SPI_OPERATION,	\
 					   0),				\
 		},							\
-		.cancel_offset = DT_INST_PROP(inst, cancel_offset),	\
-		.single_mode = DT_INST_PROP(inst, single_mode),		\
 		.spi_4wires = DT_INST_PROP(inst, spi_full_duplex),	\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),	\
-			(LIS2MDL_CFG_IRQ(inst)), ())			\
+		LIS2MDL_CONFIG_COMMON(inst)				\
 	}
 
 /*
@@ -543,21 +541,11 @@ static int lis2mdl_pm_action(const struct device *dev,
 
 #define LIS2MDL_CONFIG_I2C(inst)					\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_i2c_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_i2c_write,	\
-			.handle =					\
-			   (void *)&lis2mdl_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_I2C(&lis2mdl_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.i2c = I2C_DT_SPEC_INST_GET(inst),		\
 		},							\
-		.cancel_offset = DT_INST_PROP(inst, cancel_offset),	\
-		.single_mode = DT_INST_PROP(inst, single_mode),		\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),	\
-			(LIS2MDL_CFG_IRQ(inst)), ())			\
+		LIS2MDL_CONFIG_COMMON(inst)				\
 	}
 
 /*

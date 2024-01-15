@@ -5,9 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <soc.h>
-#include <bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -18,9 +18,12 @@
 #include "util/mem.h"
 #include "util/memq.h"
 #include "util/mayfly.h"
+#include "util/dbuf.h"
 
 #include "ticker/ticker.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -33,20 +36,20 @@
 #include "lll_conn.h"
 #include "lll_filter.h"
 
+#include "ll_sw/ull_tx_queue.h"
+
 #include "ull_adv_types.h"
-#include "ull_scan_types.h"
 #include "ull_filter.h"
 
+#include "ull_conn_types.h"
 #include "ull_internal.h"
 #include "ull_adv_internal.h"
+#include "ull_scan_types.h"
 #include "ull_scan_internal.h"
 #include "ull_sched_internal.h"
 
 #include "ll.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_scan
-#include "common/log.h"
 #include "hal/debug.h"
 
 static int init_reset(void);
@@ -56,6 +59,8 @@ static void ticker_cb(uint32_t ticks_at_expire, uint32_t ticks_drift,
 static uint8_t disable(uint8_t handle);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
+#define IS_PHY_ENABLED(scan_ctx, scan_phy) ((scan_ctx)->lll.phy & (scan_phy))
+
 static uint8_t is_scan_update(uint8_t handle, uint16_t duration,
 			      uint16_t period, struct ll_scan_set **scan,
 			      struct node_rx_pdu **node_rx_scan_term);
@@ -70,6 +75,10 @@ static void ext_disabled_cb(void *param);
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 
 static struct ll_scan_set ll_scan[BT_CTLR_SCAN_SET];
+
+#if defined(CONFIG_BT_TICKER_EXT)
+static struct ticker_ext ll_scan_ticker_ext[BT_CTLR_SCAN_SET];
+#endif /* CONFIG_BT_TICKER_EXT */
 
 uint8_t ll_scan_params_set(uint8_t type, uint16_t interval, uint16_t window,
 			uint8_t own_addr_type, uint8_t filter_policy)
@@ -113,6 +122,9 @@ uint8_t ll_scan_params_set(uint8_t type, uint16_t interval, uint16_t window,
 		return 0;
 	}
 
+	/* If phy assigned is PHY_1M or PHY_CODED, then scanning on that
+	 * PHY is enabled.
+	 */
 	lll->phy = phy;
 
 #else /* !CONFIG_BT_CTLR_ADV_EXT */
@@ -121,7 +133,8 @@ uint8_t ll_scan_params_set(uint8_t type, uint16_t interval, uint16_t window,
 
 	scan->own_addr_type = own_addr_type;
 
-	ull_scan_params_set(lll, type, interval, window, filter_policy);
+	scan->ticks_window = ull_scan_params_set(lll, type, interval, window,
+						 filter_policy);
 
 	return 0;
 }
@@ -195,7 +208,7 @@ uint8_t ll_scan_enable(uint8_t enable)
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
-	if (!is_coded_phy || (scan->lll.phy & PHY_1M))
+	if (!is_coded_phy || IS_PHY_ENABLED(scan, PHY_1M))
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 	{
 		err = duration_period_setup(scan, duration, period,
@@ -243,7 +256,7 @@ uint8_t ll_scan_enable(uint8_t enable)
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
-	if (!is_coded_phy || (scan->lll.phy & PHY_1M))
+	if (!is_coded_phy || IS_PHY_ENABLED(scan, PHY_1M))
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 	{
 		err = duration_period_update(scan, is_update_1m);
@@ -265,7 +278,7 @@ uint8_t ll_scan_enable(uint8_t enable)
 	}
 
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
-	if (!is_coded_phy || (scan->lll.phy & PHY_1M))
+	if (!is_coded_phy || IS_PHY_ENABLED(scan, PHY_1M))
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 	{
@@ -313,6 +326,14 @@ int ull_scan_reset(void)
 
 	for (handle = 0U; handle < BT_CTLR_SCAN_SET; handle++) {
 		(void)disable(handle);
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+		/* Initialize PHY value to 0 to not start scanning on the scan
+		 * instance if an explicit ll_scan_params_set() has not been
+		 * invoked from HCI to enable scanning on that PHY.
+		 */
+		ll_scan[handle].lll.phy = 0U;
+#endif /* CONFIG_BT_CTLR_ADV_EXT */
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_ADV_EXT)) {
@@ -330,8 +351,9 @@ int ull_scan_reset(void)
 	return 0;
 }
 
-void ull_scan_params_set(struct lll_scan *lll, uint8_t type, uint16_t interval,
-			 uint16_t window, uint8_t filter_policy)
+uint32_t ull_scan_params_set(struct lll_scan *lll, uint8_t type,
+			     uint16_t interval, uint16_t window,
+			     uint8_t filter_policy)
 {
 	/* type value:
 	 * 0000b - legacy 1M passive
@@ -350,17 +372,28 @@ void ull_scan_params_set(struct lll_scan *lll, uint8_t type, uint16_t interval,
 	lll->interval = interval;
 	lll->ticks_window = HAL_TICKER_US_TO_TICKS((uint64_t)window *
 						   SCAN_INT_UNIT_US);
+
+	return lll->ticks_window;
 }
 
 uint8_t ull_scan_enable(struct ll_scan_set *scan)
 {
-	struct lll_scan *lll = &scan->lll;
 	uint32_t ticks_slot_overhead;
 	uint32_t volatile ret_cb;
 	uint32_t ticks_interval;
 	uint32_t ticks_anchor;
+	uint32_t ticks_offset;
+	struct lll_scan *lll;
+	uint8_t handle;
 	uint32_t ret;
 
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+	/* Initialize extend scan stop request */
+	scan->is_stop = 0U;
+#endif /* CONFIG_BT_CTLR_ADV_EXT */
+
+	/* Initialize LLL scan context */
+	lll = &scan->lll;
 	lll->init_addr_type = scan->own_addr_type;
 	(void)ll_addr_read(lll->init_addr_type, lll->init_addr);
 	lll->chan = 0U;
@@ -378,23 +411,6 @@ uint8_t ull_scan_enable(struct ll_scan_set *scan)
 		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
 	scan->ull.ticks_preempt_to_start =
 		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_PREEMPT_MIN_US);
-	if ((lll->ticks_window +
-	     HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US)) <
-	    (ticks_interval -
-	     HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US))) {
-		scan->ull.ticks_slot =
-			(lll->ticks_window +
-			 HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US));
-	} else {
-		if (IS_ENABLED(CONFIG_BT_CTLR_SCAN_UNRESERVED)) {
-			scan->ull.ticks_slot = 0U;
-		} else {
-			scan->ull.ticks_slot = ticks_interval -
-				HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
-		}
-
-		lll->ticks_window = 0U;
-	}
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_LOW_LAT)) {
 		ticks_slot_overhead = MAX(scan->ull.ticks_active_to_start,
@@ -403,41 +419,209 @@ uint8_t ull_scan_enable(struct ll_scan_set *scan)
 		ticks_slot_overhead = 0U;
 	}
 
+	handle = ull_scan_handle_get(scan);
+
+	lll->ticks_window = scan->ticks_window;
+	if ((lll->ticks_window +
+	     HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US)) <
+	    (ticks_interval - ticks_slot_overhead)) {
+		scan->ull.ticks_slot =
+			(lll->ticks_window +
+			 HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US));
+
+#if defined(CONFIG_BT_TICKER_EXT)
+		ll_scan_ticker_ext[handle].ticks_slot_window =
+			scan->ull.ticks_slot + ticks_slot_overhead;
+#endif /* CONFIG_BT_TICKER_EXT */
+
+	} else {
+		if (IS_ENABLED(CONFIG_BT_CTLR_SCAN_UNRESERVED)) {
+			scan->ull.ticks_slot = 0U;
+		} else {
+			scan->ull.ticks_slot = ticks_interval -
+					       ticks_slot_overhead;
+		}
+
+		lll->ticks_window = 0U;
+
+#if defined(CONFIG_BT_TICKER_EXT)
+		ll_scan_ticker_ext[handle].ticks_slot_window = ticks_interval;
+#endif /* CONFIG_BT_TICKER_EXT */
+	}
+
+	if (false) {
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_CTLR_PHY_CODED)
+	} else if (handle == SCAN_HANDLE_1M) {
+		const struct ll_scan_set *scan_coded;
+
+		scan_coded = ull_scan_set_get(SCAN_HANDLE_PHY_CODED);
+		if (IS_PHY_ENABLED(scan_coded, PHY_CODED) &&
+		    (lll->ticks_window != 0U)) {
+			const struct lll_scan *lll_coded;
+			uint32_t ticks_interval_coded;
+			uint32_t ticks_window_sum_min;
+			uint32_t ticks_window_sum_max;
+
+			lll_coded = &scan_coded->lll;
+			ticks_interval_coded = HAL_TICKER_US_TO_TICKS(
+						(uint64_t)lll_coded->interval *
+						SCAN_INT_UNIT_US);
+			ticks_window_sum_min = lll->ticks_window +
+					       lll_coded->ticks_window;
+			ticks_window_sum_max = ticks_window_sum_min +
+				HAL_TICKER_US_TO_TICKS(EVENT_TICKER_RES_MARGIN_US << 1);
+			/* Check if 1M and Coded PHY scanning use same interval
+			 * and the sum of the scan window duration equals their
+			 * interval then use continuous scanning and avoid time
+			 * reservation from overlapping.
+			 */
+			if ((ticks_interval == ticks_interval_coded) &&
+			    IN_RANGE(ticks_interval, ticks_window_sum_min,
+				     ticks_window_sum_max)) {
+				if (IS_ENABLED(CONFIG_BT_CTLR_SCAN_UNRESERVED)) {
+					scan->ull.ticks_slot = 0U;
+				} else {
+					scan->ull.ticks_slot =
+						lll->ticks_window -
+						ticks_slot_overhead -
+						HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US) -
+						HAL_TICKER_US_TO_TICKS(EVENT_TICKER_RES_MARGIN_US);
+				}
+
+				/* Continuous scanning, no scan window stop
+				 * ticker to be started but we will zero the
+				 * ticks_window value when coded PHY scan is
+				 * enabled (the next following else clause).
+				 * Due to this the first scan window will have
+				 * the stop ticker started but consecutive
+				 * scan window will not have the stop ticker
+				 * started once coded PHY scan window has been
+				 * enabled.
+				 */
+			}
+
+#if defined(CONFIG_BT_TICKER_EXT)
+			ll_scan_ticker_ext[handle].ticks_slot_window = 0U;
+#endif /* CONFIG_BT_TICKER_EXT */
+		}
+
+		/* 1M scan window starts without any offset */
+		ticks_offset = 0U;
+
+	} else if (handle == SCAN_HANDLE_PHY_CODED) {
+		struct ll_scan_set *scan_1m;
+
+		scan_1m = ull_scan_set_get(SCAN_HANDLE_1M);
+		if (IS_PHY_ENABLED(scan_1m, PHY_1M) &&
+		    (lll->ticks_window != 0U)) {
+			uint32_t ticks_window_sum_min;
+			uint32_t ticks_window_sum_max;
+			uint32_t ticks_interval_1m;
+			struct lll_scan *lll_1m;
+
+			lll_1m = &scan_1m->lll;
+			ticks_interval_1m = HAL_TICKER_US_TO_TICKS(
+						(uint64_t)lll_1m->interval *
+						SCAN_INT_UNIT_US);
+			ticks_window_sum_min = lll->ticks_window +
+					       lll_1m->ticks_window;
+			ticks_window_sum_max = ticks_window_sum_min +
+				HAL_TICKER_US_TO_TICKS(EVENT_TICKER_RES_MARGIN_US << 1);
+			/* Check if 1M and Coded PHY scanning use same interval
+			 * and the sum of the scan window duration equals their
+			 * interval then use continuous scanning and avoid time
+			 * reservation from overlapping.
+			 */
+			if ((ticks_interval == ticks_interval_1m) &&
+			    IN_RANGE(ticks_interval, ticks_window_sum_min,
+				     ticks_window_sum_max)) {
+				if (IS_ENABLED(CONFIG_BT_CTLR_SCAN_UNRESERVED)) {
+					scan->ull.ticks_slot = 0U;
+				} else {
+					scan->ull.ticks_slot =
+						lll->ticks_window -
+						ticks_slot_overhead -
+						HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US) -
+						HAL_TICKER_US_TO_TICKS(EVENT_TICKER_RES_MARGIN_US);
+				}
+				/* Offset the coded PHY scan window, place
+				 * after 1M scan window.
+				 * Have some margin for jitter due to ticker
+				 * resolution.
+				 */
+				ticks_offset = lll_1m->ticks_window;
+				ticks_offset += HAL_TICKER_US_TO_TICKS(
+					EVENT_TICKER_RES_MARGIN_US << 1);
+
+				/* Continuous scanning, no scan window stop
+				 * ticker started for both 1M and coded PHY.
+				 */
+				lll->ticks_window = 0U;
+				lll_1m->ticks_window = 0U;
+
+			} else {
+				ticks_offset = 0U;
+			}
+
+#if defined(CONFIG_BT_TICKER_EXT)
+			ll_scan_ticker_ext[handle].ticks_slot_window = 0U;
+#endif /* CONFIG_BT_TICKER_EXT */
+		} else {
+			ticks_offset = 0U;
+		}
+#endif /* CONFIG_BT_CTLR_ADV_EXT && CONFIG_BT_CTLR_PHY_CODED */
+
+	} else {
+		ticks_offset = 0U;
+	}
+
 	ticks_anchor = ticker_ticks_now_get();
+	ticks_anchor += HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_START_US);
 
 #if defined(CONFIG_BT_CENTRAL) && defined(CONFIG_BT_CTLR_SCHED_ADVANCED)
 	if (!lll->conn) {
 		uint32_t ticks_ref = 0U;
 		uint32_t offset_us = 0U;
+		int err;
 
-		ull_sched_after_mstr_slot_get(TICKER_USER_ID_THREAD,
-					      (scan->ull.ticks_slot +
-					       ticks_slot_overhead),
-					      &ticks_ref, &offset_us);
+		err = ull_sched_after_cen_slot_get(TICKER_USER_ID_THREAD,
+						   (scan->ull.ticks_slot +
+						    ticks_slot_overhead),
+						   &ticks_ref, &offset_us);
 
 		/* Use the ticks_ref as scanner's anchor if a free time space
 		 * after any central role is available (indicated by a non-zero
 		 * offset_us value).
 		 */
-		if (offset_us) {
+		if (!err) {
 			ticks_anchor = ticks_ref +
 				       HAL_TICKER_US_TO_TICKS(offset_us);
 		}
 	}
 #endif /* CONFIG_BT_CENTRAL && CONFIG_BT_CTLR_SCHED_ADVANCED */
 
-	uint8_t handle = ull_scan_handle_get(scan);
-
 	ret_cb = TICKER_STATUS_BUSY;
-	ret = ticker_start(TICKER_INSTANCE_ID_CTLR,
+
+#if defined(CONFIG_BT_TICKER_EXT)
+	ret = ticker_start_ext(
+#else
+	ret = ticker_start(
+#endif /* CONFIG_BT_TICKER_EXT */
+			   TICKER_INSTANCE_ID_CTLR,
 			   TICKER_USER_ID_THREAD, TICKER_ID_SCAN_BASE + handle,
-			   ticks_anchor, 0, ticks_interval,
+			   (ticks_anchor + ticks_offset), 0, ticks_interval,
 			   HAL_TICKER_REMAINDER((uint64_t)lll->interval *
 						SCAN_INT_UNIT_US),
 			   TICKER_NULL_LAZY,
 			   (scan->ull.ticks_slot + ticks_slot_overhead),
 			   ticker_cb, scan,
-			   ull_ticker_status_give, (void *)&ret_cb);
+			   ull_ticker_status_give, (void *)&ret_cb
+#if defined(CONFIG_BT_TICKER_EXT)
+			   ,
+			   &ll_scan_ticker_ext[handle]
+#endif /* CONFIG_BT_TICKER_EXT */
+			   );
 	ret = ull_ticker_status_take(ret, &ret_cb);
 	if (ret != TICKER_STATUS_SUCCESS) {
 		return BT_HCI_ERR_CMD_DISALLOWED;
@@ -461,12 +645,53 @@ uint8_t ull_scan_disable(uint8_t handle, struct ll_scan_set *scan)
 {
 	int err;
 
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+	/* Request Extended Scan stop */
+	scan->is_stop = 1U;
+	cpu_dmb();
+#endif /* CONFIG_BT_CTLR_ADV_EXT */
+
 	err = ull_ticker_stop_with_mark(TICKER_ID_SCAN_BASE + handle,
 					scan, &scan->lll);
 	LL_ASSERT(err == 0 || err == -EALREADY);
 	if (err) {
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT)
+	/* Find and stop associated auxiliary scan contexts */
+	for (uint8_t aux_handle = 0; aux_handle < CONFIG_BT_CTLR_SCAN_AUX_SET;
+	     aux_handle++) {
+		struct lll_scan_aux *aux_scan_lll;
+		struct ll_scan_set *aux_scan;
+		struct ll_scan_aux_set *aux;
+
+		aux = ull_scan_aux_set_get(aux_handle);
+		aux_scan_lll = aux->parent;
+		if (!aux_scan_lll) {
+			continue;
+		}
+
+		aux_scan = HDR_LLL2ULL(aux_scan_lll);
+		if (aux_scan == scan) {
+			void *parent;
+
+			err = ull_scan_aux_stop(aux);
+			if (err && (err != -EALREADY)) {
+				return BT_HCI_ERR_CMD_DISALLOWED;
+			}
+
+			/* Use a local variable to assert on auxiliary context's
+			 * release.
+			 * Under race condition a released aux context can be
+			 * allocated for reception of chain PDU of a periodic
+			 * sync role.
+			 */
+			parent = aux->parent;
+			LL_ASSERT(!parent || (parent != aux_scan_lll));
+		}
+	}
+#endif /* CONFIG_BT_CTLR_ADV_EXT */
 
 	return 0;
 }
@@ -535,7 +760,7 @@ void ull_scan_term_dequeue(uint8_t handle)
 		struct ll_scan_set *scan_coded;
 
 		scan_coded = ull_scan_set_get(SCAN_HANDLE_PHY_CODED);
-		if (scan_coded->lll.phy & PHY_CODED) {
+		if (IS_PHY_ENABLED(scan_coded, PHY_CODED)) {
 			uint8_t err;
 
 			err = disable(SCAN_HANDLE_PHY_CODED);
@@ -545,7 +770,7 @@ void ull_scan_term_dequeue(uint8_t handle)
 		struct ll_scan_set *scan_1m;
 
 		scan_1m = ull_scan_set_get(SCAN_HANDLE_1M);
-		if (scan_1m->lll.phy & PHY_1M) {
+		if (IS_PHY_ENABLED(scan_1m, PHY_1M)) {
 			uint8_t err;
 
 			err = disable(SCAN_HANDLE_1M);
@@ -587,6 +812,19 @@ struct ll_scan_set *ull_scan_is_valid_get(struct ll_scan_set *scan)
 	return scan;
 }
 
+struct lll_scan *ull_scan_lll_is_valid_get(struct lll_scan *lll)
+{
+	struct ll_scan_set *scan;
+
+	scan = HDR_LLL2ULL(lll);
+	scan = ull_scan_is_valid_get(scan);
+	if (scan) {
+		return &scan->lll;
+	}
+
+	return NULL;
+}
+
 struct ll_scan_set *ull_scan_is_enabled_get(uint8_t handle)
 {
 	struct ll_scan_set *scan;
@@ -620,7 +858,7 @@ uint32_t ull_scan_is_enabled(uint8_t handle)
 #if defined(CONFIG_BT_CTLR_SYNC_PERIODIC)
 		scan = ull_scan_set_get(handle);
 
-		return scan->per_scan.sync ? ULL_SCAN_IS_SYNC : 0U;
+		return scan->periodic.sync ? ULL_SCAN_IS_SYNC : 0U;
 #else
 		return 0U;
 #endif
@@ -631,7 +869,7 @@ uint32_t ull_scan_is_enabled(uint8_t handle)
 		(scan->lll.conn ? ULL_SCAN_IS_INITIATOR : 0U) |
 #endif
 #if defined(CONFIG_BT_CTLR_SYNC_PERIODIC)
-		(scan->per_scan.sync ? ULL_SCAN_IS_SYNC : 0U) |
+		(scan->periodic.sync ? ULL_SCAN_IS_SYNC : 0U) |
 #endif
 		0U);
 }
@@ -913,8 +1151,7 @@ static void ext_disabled_cb(void *param)
 	/* NOTE: parameters are already populated on disable,
 	 * just enqueue here
 	 */
-	ll_rx_put(rx_hdr->link, rx_hdr);
-	ll_rx_sched();
+	ll_rx_put_sched(rx_hdr->link, rx_hdr);
 }
 #endif /* CONFIG_BT_CTLR_ADV_EXT */
 

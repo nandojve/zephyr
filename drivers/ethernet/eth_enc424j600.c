@@ -9,15 +9,15 @@
 
 #define DT_DRV_COMPAT microchip_enc424j600
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <string.h>
 #include <errno.h>
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/ethernet.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/ethernet.h>
 #include <ethernet/eth_stats.h>
 
 #include "eth_enc424j600_priv.h"
@@ -442,8 +442,12 @@ done:
 	return 0;
 }
 
-static void enc424j600_rx_thread(struct enc424j600_runtime *context)
+static void enc424j600_rx_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct enc424j600_runtime *context = p1;
 	uint16_t eir;
 	uint16_t estat;
 	uint8_t counter;
@@ -563,7 +567,7 @@ static void enc424j600_iface_init(struct net_if *iface)
 	context->iface = iface;
 	ethernet_init(iface);
 
-	net_if_flag_set(iface, NET_IF_NO_AUTO_START);
+	net_if_carrier_off(iface);
 	context->iface_initialized = true;
 }
 
@@ -656,13 +660,13 @@ static int enc424j600_init(const struct device *dev)
 	context->dev = dev;
 
 	/* SPI config */
-	if (!spi_is_ready(&config->spi)) {
+	if (!spi_is_ready_dt(&config->spi)) {
 		LOG_ERR("SPI master port %s not ready", config->spi.bus->name);
 		return -EINVAL;
 	}
 
 	/* Initialize GPIO */
-	if (!device_is_ready(config->interrupt.port)) {
+	if (!gpio_is_ready_dt(&config->interrupt)) {
 		LOG_ERR("GPIO port %s not ready", config->interrupt.port->name);
 		return -EINVAL;
 	}
@@ -767,7 +771,7 @@ static int enc424j600_init(const struct device *dev)
 	/* Start interruption-poll thread */
 	k_thread_create(&context->thread, context->thread_stack,
 			CONFIG_ETH_ENC424J600_RX_THREAD_STACK_SIZE,
-			(k_thread_entry_t)enc424j600_rx_thread,
+			enc424j600_rx_thread,
 			context, NULL, NULL,
 			K_PRIO_COOP(CONFIG_ETH_ENC424J600_RX_THREAD_PRIO),
 			0, K_NO_WAIT);

@@ -29,8 +29,7 @@ Hardware
 On the front of the board are RGB-LED, LED and LIPO circuitry.
 The RGB-LED is controlled by the nRF52840 via GPIO pins.
 
-.. figure:: img/particle_boron.png
-     :width: 150px
+.. figure:: img/particle_boron.jpg
      :align: center
      :alt: Particle Boron
 
@@ -71,7 +70,7 @@ hardware features:
 | RADIO     | on-chip    | Bluetooth            |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Connections and IOs
 ===================
@@ -157,8 +156,8 @@ Testing the LEDs and buttons
 There are 2 samples that allow you to test that the buttons (switches) and
 LEDs on the board are working properly with Zephyr:
 
-* :ref:`blinky-sample`
-* :ref:`button-sample`
+* :zephyr:code-sample:`blinky`
+* :zephyr:code-sample:`button`
 
 You can build and flash the examples to make sure Zephyr is running correctly on
 your board.

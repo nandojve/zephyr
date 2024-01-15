@@ -24,14 +24,12 @@ This USB adapter has the following features:
 * :abbr:`RTC (nRF RTC System Clock)`
 
 .. figure:: img/bl654_usb.jpg
-     :width: 500px
      :align: center
      :alt: BL654 USB adapter
 
      BL654 USB Adapter
 
 .. figure:: img/bl654_usb_pcb.jpg
-     :width: 500px
      :align: center
      :alt: 451-00004 Box Contents
 
@@ -75,7 +73,7 @@ hardware features:
 | WDT       | on-chip    | watchdog             |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 See `BL654 website`_
 for a complete list of BL654 USB adapter hardware features.
 
@@ -121,19 +119,18 @@ bootloader and flash them to the device. Make sure ``nrfutil`` is installed
 before proceeding. These instructions were tested with version 6.1.0.
 
 #. With the adapter plugged in, reset the board into the bootloader by pressing
-the RESET button.
+   the RESET button.
 
    The push button is in a pin-hole on the logo side of the USB adapter.
 
    .. image:: img/bl654_usb_reset.jpg
-      :width: 500px
       :align: center
       :alt: Location of RESET button
 
    The blue LED should start a fade pattern, signalling the bootloader is
    running.
 
-#. Compile a Zephyr application; we'll use :ref:`blinky <blinky-sample>`.
+#. Compile a Zephyr application; we'll use :zephyr:code-sample:`blinky`.
 
    .. zephyr-app-commands::
       :app: zephyr/samples/basic/blinky
@@ -174,7 +171,7 @@ Testing the LED on the BL654 USB
 There is a sample that allows you to test that the LED on
 the board is working properly with Zephyr:
 
-* :ref:`blinky-sample`
+* :zephyr:code-sample:`blinky`
 
 You can build and flash the example to make sure Zephyr is running correctly on
 your board. The LED definitions can be found in

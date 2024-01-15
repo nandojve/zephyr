@@ -10,9 +10,9 @@
 
 #include "led_svc.h"
 
-#include <zephyr.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(led_svc);
 
@@ -35,7 +35,7 @@ int led_init(void)
 {
 	int ret;
 
-	led_ok = device_is_ready(led.port);
+	led_ok = gpio_is_ready_dt(&led);
 	if (!led_ok) {
 		LOG_ERR("Error: LED on GPIO %s pin %d is not ready",
 			led.port->name, led.pin);

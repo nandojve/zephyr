@@ -43,9 +43,7 @@ some highlights of the STM32L476G Discovery board:
     - CR2032 battery (not provided)
 
 .. image:: img/stm32l476g_disco.jpg
-     :width: 450px
      :align: center
-     :height: 394px
      :alt: STM32L476G Discovery
 
 More information about the board can be found at the `STM32L476G Discovery website`_.
@@ -208,13 +206,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _STM32L476G Discovery website:
-   http://www.st.com/en/evaluation-tools/32l476gdiscovery.html
+   https://www.st.com/en/evaluation-tools/32l476gdiscovery.html
 
 .. _STM32L476G Discovery board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00172179.pdf
+   https://www.st.com/resource/en/user_manual/dm00172179.pdf
 
 .. _STM32L476VG on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32l476vg.html
+   https://www.st.com/en/microcontrollers/stm32l476vg.html
 
 .. _STM32L476 reference manual:
-   http://www.st.com/resource/en/reference_manual/DM00083560.pdf
+   https://www.st.com/resource/en/reference_manual/DM00083560.pdf

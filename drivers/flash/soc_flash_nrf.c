@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2018 Nordic Semiconductor ASA
+ * Copyright (c) 2017-2023 Nordic Semiconductor ASA
  * Copyright (c) 2016 Linaro Limited
  * Copyright (c) 2016 Intel Corporation
  *
@@ -8,11 +8,11 @@
 
 #include <errno.h>
 
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <drivers/flash.h>
+#include <zephyr/drivers/flash.h>
 #include <string.h>
 #include <nrfx_nvmc.h>
 #include <nrf_erratas.h>
@@ -20,7 +20,7 @@
 #include "soc_flash_nrf.h"
 
 #define LOG_LEVEL CONFIG_FLASH_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(flash_nrf);
 
 #if DT_NODE_HAS_STATUS(DT_INST(0, nordic_nrf51_flash_controller), okay)
@@ -54,7 +54,7 @@ static int erase_synchronously(uint32_t addr, uint32_t size);
 #endif /* !CONFIG_SOC_FLASH_NRF_RADIO_SYNC_NONE */
 
 static const struct flash_parameters flash_nrf_parameters = {
-#if IS_ENABLED(CONFIG_SOC_FLASH_NRF_EMULATE_ONE_BYTE_WRITE_ACCESS)
+#if defined(CONFIG_SOC_FLASH_NRF_EMULATE_ONE_BYTE_WRITE_ACCESS)
 	.write_block_size = 1,
 #else
 	.write_block_size = 4,
@@ -94,36 +94,47 @@ static inline bool is_aligned_32(uint32_t data)
 	return (data & 0x3) ? false : true;
 }
 
-static inline bool is_regular_addr_valid(off_t addr, size_t len)
+static inline bool is_within_bounds(off_t addr, size_t len, off_t boundary_start,
+				    size_t boundary_size)
 {
-	size_t flash_size = nrfx_nvmc_flash_size_get();
-
-	if (addr >= flash_size ||
-	    addr < 0 ||
-	    len > flash_size ||
-	    (addr) + len > flash_size) {
-		return false;
-	}
-
-	return true;
+	return (addr >= boundary_start &&
+			(addr < (boundary_start + boundary_size)) &&
+			(len <= (boundary_start + boundary_size - addr)));
 }
 
+static inline bool is_regular_addr_valid(off_t addr, size_t len)
+{
+	return is_within_bounds(addr, len, 0, nrfx_nvmc_flash_size_get());
+}
 
 static inline bool is_uicr_addr_valid(off_t addr, size_t len)
 {
 #ifdef CONFIG_SOC_FLASH_NRF_UICR
-	if (addr >= (off_t)NRF_UICR + sizeof(*NRF_UICR) ||
-	    addr < (off_t)NRF_UICR ||
-	    len > sizeof(*NRF_UICR) ||
-	    addr + len > (off_t)NRF_UICR + sizeof(*NRF_UICR)) {
-		return false;
-	}
-
-	return true;
+	return is_within_bounds(addr, len, (off_t)NRF_UICR, sizeof(*NRF_UICR));
 #else
 	return false;
 #endif /* CONFIG_SOC_FLASH_NRF_UICR */
 }
+
+#if CONFIG_SOC_FLASH_NRF_UICR && IS_ENABLED(NRF91_ERRATA_7_ENABLE_WORKAROUND)
+static inline void nrf91_errata_7_enter(void)
+{
+	__disable_irq();
+}
+
+static inline void nrf91_errata_7_exit(void)
+{
+	__DSB();
+	__enable_irq();
+}
+
+static void nrf_buffer_read_91_uicr(void *data, off_t addr, size_t len)
+{
+	nrf91_errata_7_enter();
+	nrf_nvmc_buffer_read(data, (uint32_t)addr, len);
+	nrf91_errata_7_exit();
+}
+#endif
 
 static void nvmc_wait_ready(void)
 {
@@ -134,9 +145,11 @@ static void nvmc_wait_ready(void)
 static int flash_nrf_read(const struct device *dev, off_t addr,
 			    void *data, size_t len)
 {
+	const bool within_uicr = is_uicr_addr_valid(addr, len);
+
 	if (is_regular_addr_valid(addr, len)) {
 		addr += DT_REG_ADDR(SOC_NV_FLASH_NODE);
-	} else if (!is_uicr_addr_valid(addr, len)) {
+	} else if (!within_uicr) {
 		LOG_ERR("invalid address: 0x%08lx:%zu",
 				(unsigned long)addr, len);
 		return -EINVAL;
@@ -146,7 +159,14 @@ static int flash_nrf_read(const struct device *dev, off_t addr,
 		return 0;
 	}
 
-	memcpy(data, (void *)addr, len);
+#if CONFIG_SOC_FLASH_NRF_UICR && IS_ENABLED(NRF91_ERRATA_7_ENABLE_WORKAROUND)
+	if (within_uicr) {
+		nrf_buffer_read_91_uicr(data, (uint32_t)addr, len);
+		return 0;
+	}
+#endif
+
+	nrf_nvmc_buffer_read(data, (uint32_t)addr, len);
 
 	return 0;
 }
@@ -289,7 +309,7 @@ static int nrf_flash_init(const struct device *dev)
 
 DEVICE_DT_INST_DEFINE(0, nrf_flash_init, NULL,
 		 NULL, NULL,
-		 POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,
+		 POST_KERNEL, CONFIG_FLASH_INIT_PRIORITY,
 		 &flash_nrf_api);
 
 #ifndef CONFIG_SOC_FLASH_NRF_RADIO_SYNC_NONE
@@ -417,7 +437,7 @@ static int write_op(void *context)
 		nrf_flash_sync_get_timestamp_begin();
 	}
 #endif /* !CONFIG_SOC_FLASH_NRF_RADIO_SYNC_NONE */
-#if IS_ENABLED(CONFIG_SOC_FLASH_NRF_EMULATE_ONE_BYTE_WRITE_ACCESS)
+#if defined(CONFIG_SOC_FLASH_NRF_EMULATE_ONE_BYTE_WRITE_ACCESS)
 	/* If not aligned, write unaligned beginning */
 	if (!is_aligned_32(w_ctx->flash_addr)) {
 		uint32_t count = sizeof(uint32_t) - (w_ctx->flash_addr & 0x3);
@@ -469,7 +489,7 @@ static int write_op(void *context)
 		}
 #endif /* !CONFIG_SOC_FLASH_NRF_RADIO_SYNC_NONE */
 	}
-#if IS_ENABLED(CONFIG_SOC_FLASH_NRF_EMULATE_ONE_BYTE_WRITE_ACCESS)
+#if defined(CONFIG_SOC_FLASH_NRF_EMULATE_ONE_BYTE_WRITE_ACCESS)
 	/* Write remaining unaligned data */
 	if (w_ctx->len) {
 		if (SUSPEND_POFWARN()) {

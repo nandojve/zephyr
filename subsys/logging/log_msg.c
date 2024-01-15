@@ -1,500 +1,334 @@
 /*
- * Copyright (c) 2018 Nordic Semiconductor ASA
+ * Copyright (c) 2020 Nordic Semiconductor
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <kernel.h>
-#include <logging/log.h>
-#include <logging/log_msg.h>
-#include <logging/log_ctrl.h>
-#include <logging/log_internal.h>
-#include <sys/__assert.h>
-#include <string.h>
+#include <zephyr/kernel.h>
+#include <zephyr/internal/syscall_handler.h>
+#include <zephyr/logging/log_internal.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/logging/log_frontend.h>
+#include <zephyr/logging/log_backend.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/llext/symbol.h>
+LOG_MODULE_DECLARE(log);
 
-BUILD_ASSERT((sizeof(struct log_msg_ids) == sizeof(uint16_t)),
-	     "Structure must fit in 2 bytes");
+BUILD_ASSERT(sizeof(struct log_msg_desc) == sizeof(uint32_t),
+	     "Descriptor must fit in 32 bits");
 
-BUILD_ASSERT((sizeof(struct log_msg_generic_hdr) == sizeof(uint16_t)),
-	     "Structure must fit in 2 bytes");
+/* Returns true if any backend is in use. */
+#define BACKENDS_IN_USE() \
+	!(IS_ENABLED(CONFIG_LOG_FRONTEND) && \
+	 (IS_ENABLED(CONFIG_LOG_FRONTEND_ONLY) || log_backend_count_get() == 0))
 
-BUILD_ASSERT((sizeof(struct log_msg_std_hdr) == sizeof(uint16_t)),
-	     "Structure must fit in 2 bytes");
+#define CBPRINTF_DESC_SIZE32 (sizeof(struct cbprintf_package_desc) / sizeof(uint32_t))
 
-BUILD_ASSERT((sizeof(struct log_msg_hexdump_hdr) == sizeof(uint16_t)),
-	     "Structure must fit in 2 bytes");
+/* For simplified message handling cprintf package must have only 1 word. */
+BUILD_ASSERT(!IS_ENABLED(CONFIG_LOG_SIMPLE_MSG_OPTIMIZE) ||
+	     (IS_ENABLED(CONFIG_LOG_SIMPLE_MSG_OPTIMIZE) && (CBPRINTF_DESC_SIZE32 == 1)));
 
-BUILD_ASSERT((sizeof(union log_msg_head_data) ==
-	      sizeof(struct log_msg_ext_head_data)),
-	     "Structure must be same size");
 
-#ifndef CONFIG_LOG_BUFFER_SIZE
-#define CONFIG_LOG_BUFFER_SIZE 0
-#endif
-
-/* Define needed when CONFIG_LOG_BLOCK_IN_THREAD is disabled to satisfy
- * compiler. */
-#ifndef CONFIG_LOG_BLOCK_IN_THREAD_TIMEOUT_MS
-#define CONFIG_LOG_BLOCK_IN_THREAD_TIMEOUT_MS 0
-#endif
-
-#define MSG_SIZE sizeof(union log_msg_chunk)
-#define NUM_OF_MSGS (CONFIG_LOG_BUFFER_SIZE / MSG_SIZE)
-
-struct k_mem_slab log_msg_pool;
-static uint8_t __noinit __aligned(sizeof(void *))
-		log_msg_pool_buf[CONFIG_LOG_BUFFER_SIZE];
-
-void log_msg_pool_init(void)
+void z_log_msg_finalize(struct log_msg *msg, const void *source,
+			 const struct log_msg_desc desc, const void *data)
 {
-	k_mem_slab_init(&log_msg_pool, log_msg_pool_buf, MSG_SIZE, NUM_OF_MSGS);
-}
+	if (!msg) {
+		z_log_dropped(false);
 
-/* Return true if interrupts were unlocked in the context of this call. */
-static bool is_irq_unlocked(void)
-{
-	unsigned int key = arch_irq_lock();
-	bool ret = arch_irq_unlocked(key);
-
-	arch_irq_unlock(key);
-	return ret;
-}
-
-/* Check if context can be blocked and pend on available memory slab. Context
- * can be blocked if in a thread and interrupts are not locked.
- */
-static bool block_on_alloc(void)
-{
-	if (!IS_ENABLED(CONFIG_LOG_BLOCK_IN_THREAD)) {
-		return false;
-	}
-
-	return (!k_is_in_isr() && is_irq_unlocked());
-}
-
-union log_msg_chunk *log_msg_chunk_alloc(void)
-{
-	union log_msg_chunk *msg = NULL;
-	int err = k_mem_slab_alloc(&log_msg_pool, (void **)&msg,
-		   block_on_alloc()
-		   ? K_MSEC(CONFIG_LOG_BLOCK_IN_THREAD_TIMEOUT_MS)
-		   : K_NO_WAIT);
-
-	if (err != 0) {
-		msg = log_msg_no_space_handle();
-	}
-
-	return msg;
-}
-
-void log_msg_get(struct log_msg *msg)
-{
-	atomic_inc(&msg->hdr.ref_cnt);
-}
-
-static void cont_free(struct log_msg_cont *cont)
-{
-	struct log_msg_cont *next;
-
-	while (cont != NULL) {
-		next = cont->next;
-		k_mem_slab_free(&log_msg_pool, (void **)&cont);
-		cont = next;
-	}
-}
-
-static void msg_free(struct log_msg *msg)
-{
-	uint32_t nargs = log_msg_nargs_get(msg);
-
-	/* Free any transient string found in arguments. */
-	if (log_msg_is_std(msg) && nargs) {
-		uint32_t i;
-		uint32_t smask = 0U;
-
-		for (i = 0U; i < nargs; i++) {
-			void *buf = (void *)log_msg_arg_get(msg, i);
-
-			if (log_is_strdup(buf)) {
-				if (smask == 0U) {
-					/* Do string arguments scan only when
-					 * string duplication candidate detected
-					 * since it is time consuming and free
-					 * can be called from any context when
-					 * log message is being dropped.
-					 */
-					smask = z_log_get_s_mask(
-							log_msg_str_get(msg),
-							nargs);
-					if (smask == 0U) {
-						/* if no string argument is
-						 * detected then stop searching
-						 * for candidates.
-						 */
-						break;
-					}
-				}
-				if (smask & BIT(i)) {
-					z_log_free(buf);
-				}
-			}
-		}
-	} else if (IS_ENABLED(CONFIG_USERSPACE) &&
-		   (log_msg_level_get(msg) != LOG_LEVEL_INTERNAL_RAW_STRING)) {
-		/*
-		 * When userspace support is enabled, the hex message metadata
-		 * might be located in log_strdup() memory pool.
-		 */
-		const char *str = log_msg_str_get(msg);
-
-		if (log_is_strdup(str)) {
-			z_log_free((void *)(str));
-		}
-	} else {
-		/* Message does not contain any arguments that might be a transient
-		 * string. No action required.
-		 */
-		;
-	}
-
-	if (msg->hdr.params.generic.ext == 1) {
-		cont_free(msg->payload.ext.next);
-	}
-
-	k_mem_slab_free(&log_msg_pool, (void **)&msg);
-}
-
-union log_msg_chunk *log_msg_no_space_handle(void)
-{
-	union log_msg_chunk *msg = NULL;
-	bool more;
-	int err;
-
-	if (IS_ENABLED(CONFIG_LOG_MODE_OVERFLOW)) {
-		do {
-			more = log_process(true);
-			z_log_dropped();
-			err = k_mem_slab_alloc(&log_msg_pool,
-					       (void **)&msg,
-					       K_NO_WAIT);
-		} while ((err != 0) && more);
-	} else {
-		z_log_dropped();
-	}
-	return msg;
-
-}
-void log_msg_put(struct log_msg *msg)
-{
-	atomic_dec(&msg->hdr.ref_cnt);
-
-	if (msg->hdr.ref_cnt == 0) {
-		msg_free(msg);
-	}
-}
-
-uint32_t log_msg_nargs_get(struct log_msg *msg)
-{
-	return msg->hdr.params.std.nargs;
-}
-
-static log_arg_t cont_arg_get(struct log_msg *msg, uint32_t arg_idx)
-{
-	struct log_msg_cont *cont;
-
-	if (arg_idx < LOG_MSG_NARGS_HEAD_CHUNK) {
-		return msg->payload.ext.data.args[arg_idx];
-	}
-
-
-	cont = msg->payload.ext.next;
-	arg_idx -= LOG_MSG_NARGS_HEAD_CHUNK;
-
-	while (arg_idx >= ARGS_CONT_MSG) {
-		arg_idx -= ARGS_CONT_MSG;
-		cont = cont->next;
-	}
-
-	return cont->payload.args[arg_idx];
-}
-
-log_arg_t log_msg_arg_get(struct log_msg *msg, uint32_t arg_idx)
-{
-	log_arg_t arg;
-
-	/* Return early if requested argument not present in the message. */
-	if (arg_idx >= msg->hdr.params.std.nargs) {
-		return 0;
-	}
-
-	if (msg->hdr.params.std.nargs <= LOG_MSG_NARGS_SINGLE_CHUNK) {
-		arg = msg->payload.single.args[arg_idx];
-	} else {
-		arg = cont_arg_get(msg, arg_idx);
-	}
-
-	return arg;
-}
-
-const char *log_msg_str_get(struct log_msg *msg)
-{
-	return msg->str;
-}
-
-/** @brief Allocate chunk for extended standard log message.
- *
- *  @details Extended standard log message is used when number of arguments
- *           exceeds capacity of one chunk. Extended message consists of two
- *           chunks. Such approach is taken to optimize memory usage and
- *           performance assuming that log messages with more arguments
- *           (@ref LOG_MSG_NARGS_SINGLE_CHUNK) are less common.
- *
- *  @return Allocated chunk of NULL.
- */
-static struct log_msg *msg_alloc(uint32_t nargs)
-{
-	struct log_msg_cont *cont;
-	struct log_msg_cont **next;
-	struct  log_msg *msg = z_log_msg_std_alloc();
-	int n = (int)nargs;
-
-	if ((msg == NULL) || nargs <= LOG_MSG_NARGS_SINGLE_CHUNK) {
-		return msg;
-	}
-
-	msg->hdr.params.std.nargs = 0U;
-	msg->hdr.params.generic.ext = 1;
-	n -= LOG_MSG_NARGS_HEAD_CHUNK;
-	next = &msg->payload.ext.next;
-	*next = NULL;
-
-	while (n > 0) {
-		cont = (struct log_msg_cont *)log_msg_chunk_alloc();
-
-		if (cont == NULL) {
-			msg_free(msg);
-			return NULL;
-		}
-
-		*next = cont;
-		cont->next = NULL;
-		next = &cont->next;
-		n -= ARGS_CONT_MSG;
-	}
-
-	return msg;
-}
-
-static void copy_args_to_msg(struct  log_msg *msg, log_arg_t *args, uint32_t nargs)
-{
-	struct log_msg_cont *cont = msg->payload.ext.next;
-
-	if (nargs > LOG_MSG_NARGS_SINGLE_CHUNK) {
-		(void)memcpy(msg->payload.ext.data.args, args,
-		       LOG_MSG_NARGS_HEAD_CHUNK * sizeof(log_arg_t));
-		nargs -= LOG_MSG_NARGS_HEAD_CHUNK;
-		args += LOG_MSG_NARGS_HEAD_CHUNK;
-	} else {
-		(void)memcpy(msg->payload.single.args, args,
-			     nargs * sizeof(log_arg_t));
-		nargs  = 0U;
-	}
-
-	while (nargs != 0U) {
-		uint32_t cpy_args = MIN(nargs, ARGS_CONT_MSG);
-
-		(void)memcpy(cont->payload.args, args,
-			     cpy_args * sizeof(log_arg_t));
-		nargs -= cpy_args;
-		args += cpy_args;
-		cont = cont->next;
-	}
-}
-
-struct log_msg *log_msg_create_n(const char *str, log_arg_t *args, uint32_t nargs)
-{
-	__ASSERT_NO_MSG(nargs < LOG_MAX_NARGS);
-
-	struct  log_msg *msg = NULL;
-
-	msg = msg_alloc(nargs);
-
-	if (msg != NULL) {
-		msg->str = str;
-		msg->hdr.params.std.nargs = nargs;
-		copy_args_to_msg(msg, args, nargs);
-	}
-
-	return msg;
-}
-
-struct log_msg *log_msg_hexdump_create(const char *str,
-				       const uint8_t *data,
-				       uint32_t length)
-{
-	struct log_msg_cont **prev_cont;
-	struct log_msg_cont *cont;
-	struct log_msg *msg;
-	uint32_t chunk_length;
-
-	/* Saturate length. */
-	length = (length > LOG_MSG_HEXDUMP_MAX_LENGTH) ?
-		 LOG_MSG_HEXDUMP_MAX_LENGTH : length;
-
-	msg = (struct log_msg *)log_msg_chunk_alloc();
-	if (msg == NULL) {
-		return NULL;
-	}
-
-	/* all fields reset to 0, reference counter to 1 */
-	msg->hdr.ref_cnt = 1;
-	msg->hdr.params.hexdump.type = LOG_MSG_TYPE_HEXDUMP;
-	msg->hdr.params.hexdump.length = length;
-	msg->str = str;
-
-
-	if (length > LOG_MSG_HEXDUMP_BYTES_SINGLE_CHUNK) {
-		(void)memcpy(msg->payload.ext.data.bytes,
-		       data,
-		       LOG_MSG_HEXDUMP_BYTES_HEAD_CHUNK);
-		msg->payload.ext.next = NULL;
-		msg->hdr.params.generic.ext = 1;
-
-		data += LOG_MSG_HEXDUMP_BYTES_HEAD_CHUNK;
-		length -= LOG_MSG_HEXDUMP_BYTES_HEAD_CHUNK;
-	} else {
-		(void)memcpy(msg->payload.single.bytes, data, length);
-		msg->hdr.params.generic.ext = 0;
-		length = 0U;
-	}
-
-	prev_cont = &msg->payload.ext.next;
-
-	while (length > 0) {
-		cont = (struct log_msg_cont *)log_msg_chunk_alloc();
-		if (cont == NULL) {
-			msg_free(msg);
-			return NULL;
-		}
-
-		*prev_cont = cont;
-		cont->next = NULL;
-		prev_cont = &cont->next;
-
-		chunk_length = (length > HEXDUMP_BYTES_CONT_MSG) ?
-			       HEXDUMP_BYTES_CONT_MSG : length;
-
-		(void)memcpy(cont->payload.bytes, data, chunk_length);
-		data += chunk_length;
-		length -= chunk_length;
-	}
-
-	return msg;
-}
-
-static void log_msg_hexdump_data_op(struct log_msg *msg,
-				    uint8_t *data,
-				    size_t *length,
-				    size_t offset,
-				    bool put_op)
-{
-	uint32_t available_len = msg->hdr.params.hexdump.length;
-	struct log_msg_cont *cont = NULL;
-	uint8_t *head_data;
-	uint32_t chunk_len;
-	uint32_t req_len;
-	uint32_t cpy_len;
-
-	if (offset >= available_len) {
-		*length = 0;
 		return;
 	}
 
-	if ((offset + *length) > available_len) {
-		*length = available_len - offset;
+	if (data) {
+		uint8_t *d = msg->data + desc.package_len;
+
+		memcpy(d, data, desc.data_len);
 	}
 
-	req_len = *length;
+	msg->hdr.desc = desc;
+	msg->hdr.source = source;
+#if CONFIG_LOG_THREAD_ID_PREFIX
+	msg->hdr.tid = k_is_in_isr() ? NULL : k_current_get();
+#endif
+	z_log_msg_commit(msg);
+}
 
-	if (available_len > LOG_MSG_HEXDUMP_BYTES_SINGLE_CHUNK) {
-		chunk_len = LOG_MSG_HEXDUMP_BYTES_HEAD_CHUNK;
-		head_data = msg->payload.ext.data.bytes;
-		cont = msg->payload.ext.next;
-	} else {
-		head_data = msg->payload.single.bytes;
-		chunk_len = available_len;
+/** @brief Create a log message using simplified method.
+ *
+ * Simple log message has 0-2 32 bit word arguments so creating cbprintf package
+ * is straightforward as there is no padding or alignment to concern about.
+ * This function takes input data which is fmt pointer + 0-2 arguments, creates
+ * package header which is very simple as it only contain non-zero length field.
+ * Then space is allocated and message is committed. Such simple approach can
+ * be applied because it is known that input string does not have any arguments
+ * which complicate things (string pointers, floating numbers). Simple method is
+ * also limited to 32 bit arch.
+ *
+ * @param source Source.
+ * @param level  Severity level.
+ * @param data   Package content (without header).
+ * @param len    Package content length in words.
+ */
+static void z_log_msg_simple_create(const void *source, uint32_t level, uint32_t *data, size_t len)
+{
+	/* Package length (in words) is increased by the header. */
+	size_t plen32 = len + CBPRINTF_DESC_SIZE32;
+	/* Package length in bytes. */
+	size_t plen8 = sizeof(uint32_t) * plen32;
+	struct log_msg *msg = z_log_msg_alloc(Z_LOG_MSG_ALIGNED_WLEN(plen8, 0));
+	union cbprintf_package_hdr package_hdr = {
+		.desc = {
+			.len = plen32
+		}
+	};
 
+	if (msg) {
+		uint32_t *package = (uint32_t *)msg->data;
+
+		*package++ = (uint32_t)(uintptr_t)package_hdr.raw;
+		for (size_t i = 0; i < len; i++) {
+			*package++ = data[i];
+		}
 	}
 
-	if (offset < chunk_len) {
-		cpy_len = req_len > chunk_len ? chunk_len : req_len;
+	struct log_msg_desc desc = {
+		.level = level,
+		.package_len = plen8,
+		.data_len = 0,
+	};
 
-		if (put_op) {
-			(void)memcpy(&head_data[offset], data, cpy_len);
+	z_log_msg_finalize(msg, source, desc, NULL);
+
+}
+
+void z_impl_z_log_msg_simple_create_0(const void *source, uint32_t level, const char *fmt)
+{
+
+	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
+		if (IS_ENABLED(CONFIG_LOG_FRONTEND_OPT_API)) {
+			log_frontend_simple_0(source, level, fmt);
 		} else {
-			(void)memcpy(data, &head_data[offset], cpy_len);
-		}
+			/* If frontend does not support optimized API prepare data for
+			 * the generic call.
+			 */
+			uint32_t plen32 = CBPRINTF_DESC_SIZE32 + 1;
+			union cbprintf_package_hdr hdr = {
+				.desc = {
+					.len = plen32
+				}
+			};
+			uint32_t package[] = {
+				(uint32_t)(uintptr_t)hdr.raw,
+				(uint32_t)(uintptr_t)fmt,
+			};
+			struct log_msg_desc desc = {
+				.level = level,
+				.package_len = plen32 * sizeof(uint32_t),
+				.data_len = 0,
+			};
 
-		req_len -= cpy_len;
-		data += cpy_len;
-	} else {
-		offset -= chunk_len;
-		chunk_len = HEXDUMP_BYTES_CONT_MSG;
-		if (cont == NULL) {
-			cont = msg->payload.ext.next;
-		}
-
-		while (offset >= chunk_len) {
-			cont = cont->next;
-			offset -= chunk_len;
+			log_frontend_msg(source, desc, (uint8_t *)package, NULL);
 		}
 	}
 
-	while ((req_len > 0) && (cont != NULL)) {
-		chunk_len = HEXDUMP_BYTES_CONT_MSG - offset;
-		cpy_len = req_len > chunk_len ? chunk_len : req_len;
+	if (!BACKENDS_IN_USE()) {
+		return;
+	}
 
-		if (put_op) {
-			(void)memcpy(&cont->payload.bytes[offset],
-				     data, cpy_len);
+	uint32_t data[] = {(uint32_t)(uintptr_t)fmt};
+
+	z_log_msg_simple_create(source, level, data, ARRAY_SIZE(data));
+}
+
+void z_impl_z_log_msg_simple_create_1(const void *source, uint32_t level,
+				      const char *fmt, uint32_t arg)
+{
+	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
+		if (IS_ENABLED(CONFIG_LOG_FRONTEND_OPT_API)) {
+			log_frontend_simple_1(source, level, fmt, arg);
 		} else {
-			(void)memcpy(data, &cont->payload.bytes[offset],
-				     cpy_len);
+			/* If frontend does not support optimized API prepare data for
+			 * the generic call.
+			 */
+			uint32_t plen32 = CBPRINTF_DESC_SIZE32 + 2;
+			union cbprintf_package_hdr hdr = {
+				.desc = {
+					.len = plen32
+				}
+			};
+			uint32_t package[] = {
+				(uint32_t)(uintptr_t)hdr.raw,
+				(uint32_t)(uintptr_t)fmt,
+				arg
+			};
+			struct log_msg_desc desc = {
+				.level = level,
+				.package_len = plen32 * sizeof(uint32_t),
+				.data_len = 0,
+			};
+
+			log_frontend_msg(source, desc, (uint8_t *)package, NULL);
 		}
-
-		offset = 0;
-		cont = cont->next;
-		req_len -= cpy_len;
-		data += cpy_len;
 	}
+
+	if (!BACKENDS_IN_USE()) {
+		return;
+	}
+
+	uint32_t data[] = {(uint32_t)(uintptr_t)fmt, arg};
+
+	z_log_msg_simple_create(source, level, data, ARRAY_SIZE(data));
 }
 
-void log_msg_hexdump_data_put(struct log_msg *msg,
-			      uint8_t *data,
-			      size_t *length,
-			      size_t offset)
+void z_impl_z_log_msg_simple_create_2(const void *source, uint32_t level,
+				      const char *fmt, uint32_t arg0, uint32_t arg1)
 {
-	log_msg_hexdump_data_op(msg, data, length, offset, true);
+	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
+		if (IS_ENABLED(CONFIG_LOG_FRONTEND_OPT_API)) {
+			log_frontend_simple_2(source, level, fmt, arg0, arg1);
+		} else {
+			/* If frontend does not support optimized API prepare data for
+			 * the generic call.
+			 */
+			uint32_t plen32 = CBPRINTF_DESC_SIZE32 + 3;
+			union cbprintf_package_hdr hdr = {
+				.desc = {
+					.len = plen32
+				}
+			};
+			uint32_t package[] = {
+				[0](uint32_t)(uintptr_t)hdr.raw,
+				(uint32_t)(uintptr_t)fmt,
+				arg0,
+				arg1
+			};
+			struct log_msg_desc desc = {
+				.level = level,
+				.package_len = plen32 * sizeof(uint32_t),
+				.data_len = 0,
+			};
+
+			log_frontend_msg(source, desc, (uint8_t *)package, NULL);
+		}
+	}
+
+	if (!BACKENDS_IN_USE()) {
+		return;
+	}
+
+	uint32_t data[] = {(uint32_t)(uintptr_t)fmt, arg0, arg1};
+
+	z_log_msg_simple_create(source, level, data, ARRAY_SIZE(data));
 }
 
-void log_msg_hexdump_data_get(struct log_msg *msg,
-			      uint8_t *data,
-			      size_t *length,
-			      size_t offset)
+void z_impl_z_log_msg_static_create(const void *source,
+			      const struct log_msg_desc desc,
+			      uint8_t *package, const void *data)
 {
-	log_msg_hexdump_data_op(msg, data, length, offset, false);
-}
+	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
+		log_frontend_msg(source, desc, package, data);
+	}
 
-uint32_t log_msg_mem_get_free(void)
-{
-	return k_mem_slab_num_free_get(&log_msg_pool);
-}
+	if (!BACKENDS_IN_USE()) {
+		return;
+	}
 
-uint32_t log_msg_mem_get_used(void)
-{
-	return k_mem_slab_num_used_get(&log_msg_pool);
-}
+	struct log_msg_desc out_desc = desc;
+	int inlen = desc.package_len;
+	struct log_msg *msg;
 
-uint32_t log_msg_mem_get_max_used(void)
+	if (inlen > 0) {
+		uint32_t flags = CBPRINTF_PACKAGE_CONVERT_RW_STR |
+				 (IS_ENABLED(CONFIG_LOG_FMT_SECTION_STRIP) ?
+				 0 : CBPRINTF_PACKAGE_CONVERT_PTR_CHECK);
+		uint16_t strl[4];
+		int len;
+
+		len = cbprintf_package_copy(package, inlen,
+					    NULL, 0, flags,
+					    strl, ARRAY_SIZE(strl));
+
+		if (len > Z_LOG_MSG_MAX_PACKAGE) {
+			struct cbprintf_package_hdr_ext *pkg =
+				(struct cbprintf_package_hdr_ext *)package;
+
+			LOG_WRN("Message (\"%s\") dropped because it exceeds size limitation (%u)",
+				pkg->fmt, (uint32_t)Z_LOG_MSG_MAX_PACKAGE);
+			return;
+		}
+		/* Update package length with calculated value (which may be extended
+		 * when strings are copied into the package.
+		 */
+		out_desc.package_len = len;
+		msg = z_log_msg_alloc(log_msg_get_total_wlen(out_desc));
+		if (msg) {
+			len = cbprintf_package_copy(package, inlen,
+						    msg->data, out_desc.package_len,
+						    flags, strl, ARRAY_SIZE(strl));
+			__ASSERT_NO_MSG(len >= 0);
+		}
+	} else {
+		msg = z_log_msg_alloc(log_msg_get_total_wlen(out_desc));
+	}
+
+	z_log_msg_finalize(msg, source, out_desc, data);
+}
+EXPORT_SYSCALL(z_log_msg_static_create);
+
+#ifdef CONFIG_USERSPACE
+static inline void z_vrfy_z_log_msg_static_create(const void *source,
+			      const struct log_msg_desc desc,
+			      uint8_t *package, const void *data)
 {
-	return k_mem_slab_max_used_get(&log_msg_pool);
+	return z_impl_z_log_msg_static_create(source, desc, package, data);
+}
+#include <syscalls/z_log_msg_static_create_mrsh.c>
+#endif
+
+void z_log_msg_runtime_vcreate(uint8_t domain_id, const void *source,
+				uint8_t level, const void *data, size_t dlen,
+				uint32_t package_flags, const char *fmt, va_list ap)
+{
+	int plen;
+
+	if (fmt) {
+		va_list ap2;
+
+		va_copy(ap2, ap);
+		plen = cbvprintf_package(NULL, Z_LOG_MSG_ALIGN_OFFSET,
+					 package_flags, fmt, ap2);
+		__ASSERT_NO_MSG(plen >= 0);
+		va_end(ap2);
+	} else {
+		plen = 0;
+	}
+
+	size_t msg_wlen = Z_LOG_MSG_ALIGNED_WLEN(plen, dlen);
+	struct log_msg *msg;
+	uint8_t *pkg;
+	struct log_msg_desc desc =
+		Z_LOG_MSG_DESC_INITIALIZER(domain_id, level, plen, dlen);
+
+	if (IS_ENABLED(CONFIG_LOG_MODE_DEFERRED) && BACKENDS_IN_USE()) {
+		msg = z_log_msg_alloc(msg_wlen);
+		if (IS_ENABLED(CONFIG_LOG_FRONTEND) && msg == NULL) {
+			pkg = alloca(plen);
+		} else {
+			pkg = msg ? msg->data : NULL;
+		}
+	} else {
+		msg = alloca(msg_wlen * sizeof(int));
+		pkg = msg->data;
+	}
+
+	if (pkg && fmt) {
+		plen = cbvprintf_package(pkg, (size_t)plen, package_flags, fmt, ap);
+		__ASSERT_NO_MSG(plen >= 0);
+	}
+
+	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
+		log_frontend_msg(source, desc, pkg, data);
+	}
+
+	if (BACKENDS_IN_USE()) {
+		z_log_msg_finalize(msg, source, desc, data);
+	}
 }

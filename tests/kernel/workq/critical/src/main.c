@@ -24,14 +24,14 @@
  * @{
  * @}
  */
-#include <zephyr.h>
-#include <linker/sections.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/ztest.h>
 
 #define NUM_MILLISECONDS        50
 #define TEST_TIMEOUT            200
 
-#ifdef CONFIG_COVERAGE
+#ifdef CONFIG_COVERAGE_GCOV
 #define OFFLOAD_WORKQUEUE_STACK_SIZE 4096
 #else
 #define OFFLOAD_WORKQUEUE_STACK_SIZE 1024
@@ -45,7 +45,7 @@ static struct k_work_q offload_work_q;
 static K_THREAD_STACK_DEFINE(offload_work_q_stack,
 			     OFFLOAD_WORKQUEUE_STACK_SIZE);
 
-#define STACK_SIZE (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (1024 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
 static K_THREAD_STACK_DEFINE(stack1, STACK_SIZE);
 static K_THREAD_STACK_DEFINE(stack2, STACK_SIZE);
@@ -100,14 +100,7 @@ uint32_t critical_loop(const char *tag, uint32_t count)
 		k_work_init(&work_item, critical_rtn);
 		k_work_submit_to_queue(&offload_work_q, &work_item);
 		count++;
-#if defined(CONFIG_ARCH_POSIX)
-		k_busy_wait(50);
-		/*
-		 * For the POSIX arch this loop and critical_rtn would otherwise
-		 * run in 0 time and therefore would never finish.
-		 * => We purposely waste 50us per loop
-		 */
-#endif
+		Z_SPIN_DELAY(50);
 	}
 	TC_PRINT("End %s at %u\n", tag, (uint32_t)now);
 
@@ -191,7 +184,7 @@ void regression_thread(void *arg1, void *arg2, void *arg3)
  *
  * @ingroup kernel_workqueue_tests
  */
-void test_offload_workqueue(void)
+ZTEST(kernel_offload_wq, test_offload_workqueue)
 {
 	critical_var = 0U;
 	alt_thread_iterations = 0U;
@@ -213,10 +206,5 @@ void test_offload_workqueue(void)
 		     "Timed out waiting for TEST_SEM");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(kernel_offload_wq,
-			 ztest_1cpu_unit_test(test_offload_workqueue)
-			 );
-	ztest_run_test_suite(kernel_offload_wq);
-}
+ZTEST_SUITE(kernel_offload_wq, NULL, NULL, ztest_simple_1cpu_before,
+		 ztest_simple_1cpu_after, NULL);

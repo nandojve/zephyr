@@ -4,29 +4,24 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <ztest.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/ztest.h>
 
-#include <drivers/edac.h>
+#include <zephyr/drivers/edac.h>
 
 /**
  * EDAC dummy is used for coverage tests for -ENOSYS returns
  */
 
-int edac_dummy_init(const struct device *dev)
-{
-	return 0;
-}
-
 static const struct edac_driver_api edac_dummy_api = { 0 };
 
-DEVICE_DEFINE(dummy_edac, "dummy_edac", edac_dummy_init, NULL,
+DEVICE_DEFINE(dummy_edac, "dummy_edac", NULL, NULL,
 	      NULL, NULL,
 	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 	      &edac_dummy_api);
 
-void test_edac_dummy_api(void)
+ZTEST(ibecc, test_edac_dummy_api)
 {
 	const struct device *dev = device_get_binding("dummy_edac");
 	uint64_t value;

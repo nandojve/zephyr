@@ -6,10 +6,12 @@
 
 #define DT_DRV_COMPAT nxp_imx_gpt
 
-#include <drivers/counter.h>
-#include <drivers/clock_control.h>
+#include <zephyr/drivers/counter.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/irq.h>
 #include <fsl_gpt.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/barrier.h>
 
 LOG_MODULE_REGISTER(mcux_gpt, CONFIG_COUNTER_LOG_LEVEL);
 
@@ -113,7 +115,7 @@ void mcux_gpt_isr(const struct device *dev)
 	status =  GPT_GetStatusFlags(config->base, kGPT_OutputCompare1Flag |
 				     kGPT_RollOverFlag);
 	GPT_ClearStatusFlags(config->base, status);
-	__DSB();
+	barrier_dsync_fence_full();
 
 	if ((status & kGPT_OutputCompare1Flag) && data->alarm_callback) {
 		GPT_DisableInterrupts(config->base,
@@ -167,6 +169,11 @@ static int mcux_gpt_init(const struct device *dev)
 	const struct mcux_gpt_config *config = dev->config;
 	gpt_config_t gptConfig;
 	uint32_t clock_freq;
+
+	if (!device_is_ready(config->clock_dev)) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
+	}
 
 	if (clock_control_get_rate(config->clock_dev, config->clock_subsys,
 				   &clock_freq)) {

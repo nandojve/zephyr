@@ -13,11 +13,12 @@
  * exception) stubs are implemented in this module.  The stubs are invoked when
  * entering and exiting a C interrupt handler.
  */
+#define LOAPIC_BASE_ADDRESS DT_REG_ADDR(DT_NODELABEL(intc_loapic))
 
-#include <arch/x86/ia32/asm.h>
+#include <zephyr/arch/x86/ia32/asm.h>
 #include <offsets_short.h>
-#include <arch/cpu.h>
-#include <drivers/interrupt_controller/sysapic.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/drivers/interrupt_controller/sysapic.h>
 
 	/* exports (internal APIs) */
 
@@ -55,8 +56,6 @@
  * Host-based tools and the target-based GDB agent depend on the stack frame
  * created by this routine to determine the locations of volatile registers.
  * These tools must be updated to reflect any changes to the stack frame.
- *
- * @return N/A
  *
  * C function prototype:
  *
@@ -182,6 +181,16 @@ alreadyOnIntStack:
 	popl	%eax
 #endif
 
+#if defined(CONFIG_X86_RUNTIME_IRQ_STATS)
+	/*
+	 *  The runtime_irq_stats() function should be implemented
+	 *  by platform with this config.
+	 */
+	pushl	%eax
+	call	runtime_irq_stats
+	popl	%eax
+#endif
+
 	xorl	%eax, %eax
 #if defined(CONFIG_X2APIC)
 	xorl	%edx, %edx
@@ -189,10 +198,10 @@ alreadyOnIntStack:
 	wrmsr
 #else /* xAPIC */
 #ifdef DEVICE_MMIO_IS_IN_RAM
-	movl	z_loapic_regs, %edx
+	movl	Z_TOPLEVEL_RAM_NAME(LOAPIC_REGS_STR), %edx
 	movl	%eax, LOAPIC_EOI(%edx)
 #else
-	movl	%eax, (CONFIG_LOAPIC_BASE_ADDRESS + LOAPIC_EOI)
+	movl	%eax, (LOAPIC_BASE_ADDRESS + LOAPIC_EOI)
 #endif /* DEVICE_MMIO_IS_IN_RAM */
 #endif /* CONFIG_X2APIC */
 
@@ -301,8 +310,6 @@ nestedInterrupt:
 handle_idle:
 	pushl	%eax
 	pushl	%edx
-	/* Populate 'ticks' argument to z_pm_save_idle_exit */
-	push	_kernel_offset_to_idle(%ecx)
 	/* Zero out _kernel.idle */
 	movl	$0, _kernel_offset_to_idle(%ecx)
 
@@ -314,8 +321,6 @@ handle_idle:
 	 */
 
 	call	z_pm_save_idle_exit
-	/* discard 'ticks' argument passed on the stack */
-	add	$0x4, %esp
 	popl	%edx
 	popl	%eax
 	jmp	alreadyOnIntStack

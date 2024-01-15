@@ -6,23 +6,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/gpio.h>
-#include <board.h>
+#include <zephyr/drivers/gpio.h>
 #include <soc.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 #include <ctype.h>
-#include <drivers/gpio.h>
-#include <drivers/pwm.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/pwm.h>
 
-#include <display/mb_display.h>
+#include <zephyr/display/mb_display.h>
 
-#include <bluetooth/mesh.h>
+#include <zephyr/bluetooth/mesh.h>
 
 #include "board.h"
 
 #define SCROLL_SPEED   300
 
-#define BUZZER_PIN     EXT_P0_GPIO_PIN
+#define BUZZER_PWM_CHANNEL 0
 #define BEEP_DURATION  K_MSEC(60)
 
 #define SEQ_PER_BIT  976
@@ -33,9 +32,10 @@ static const struct gpio_dt_spec button_a =
 	GPIO_DT_SPEC_GET(DT_NODELABEL(buttona), gpios);
 static const struct gpio_dt_spec button_b =
 	GPIO_DT_SPEC_GET(DT_NODELABEL(buttonb), gpios);
-static const struct device *nvm =
+static const struct device *const nvm =
 	DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
-static const struct device *pwm = DEVICE_DT_GET_ANY(nordic_nrf_sw_pwm);
+static const struct device *const pwm =
+	DEVICE_DT_GET_ANY(nordic_nrf_sw_pwm);
 
 static struct k_work button_work;
 
@@ -107,11 +107,11 @@ void board_play_tune(const char *str)
 	while (*str) {
 		uint32_t period, duration = 0U;
 
-		while (*str && !isdigit((unsigned char)*str)) {
+		while (*str && isdigit((unsigned char)*str) == 0) {
 			str++;
 		}
 
-		while (isdigit((unsigned char)*str)) {
+		while (isdigit((unsigned char)*str) != 0) {
 			duration *= 10U;
 			duration += *str - '0';
 			str++;
@@ -130,14 +130,14 @@ void board_play_tune(const char *str)
 		}
 
 		if (period) {
-			pwm_pin_set_usec(pwm, BUZZER_PIN, period, period / 2U,
-					 0);
+			pwm_set(pwm, BUZZER_PWM_CHANNEL, PWM_USEC(period),
+				PWM_USEC(period) / 2U, 0);
 		}
 
 		k_sleep(K_MSEC(duration));
 
 		/* Disable the PWM */
-		pwm_pin_set_usec(pwm, BUZZER_PIN, 0, 0, 0);
+		pwm_set(pwm, BUZZER_PWM_CHANNEL, 0, 0, 0);
 	}
 }
 
@@ -269,8 +269,8 @@ int board_init(uint16_t *addr)
 	struct mb_display *disp = mb_display_get();
 
 	if (!(device_is_ready(nvm) && device_is_ready(pwm) &&
-	      device_is_ready(button_a.port) &&
-	      device_is_ready(button_b.port))) {
+	      gpio_is_ready_dt(&button_a) &&
+	      gpio_is_ready_dt(&button_b))) {
 		printk("One or more devices are not ready\n");
 		return -ENODEV;
 	}

@@ -3,9 +3,11 @@
 
 menuconfig SPI_FLASH_AT45
 	bool "AT45 family flash driver"
+	default y
+	depends on DT_HAS_ATMEL_AT45_ENABLED
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_HAS_PAGE_LAYOUT
-	depends on SPI
+	select SPI
 	help
 	  This driver can handle several instances of AT45 family chips that
 	  are enabled by specifying devicetree nodes with the "compatible"

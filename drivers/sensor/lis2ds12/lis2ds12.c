@@ -10,14 +10,15 @@
 
 #define DT_DRV_COMPAT st_lis2ds12
 
-#include <drivers/sensor.h>
-#include <kernel.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <string.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/dt-bindings/sensor/lis2ds12.h>
 
 #include "lis2ds12.h"
 
@@ -40,8 +41,9 @@ static int lis2ds12_set_odr(const struct device *dev, uint8_t odr)
 	 * 12,5Hz <= odr <= 800Hz are available in LP and HR mode only
 	 * odr == 1Hz is available in LP mode only
 	 */
-	if ((odr >= 9 && cfg->pm != 3) || (odr < 9 && cfg->pm == 3) ||
-	    (odr == 1 && cfg->pm != 1)) {
+	if ((odr >= LIS2DS12_DT_ODR_1600Hz && cfg->pm != LIS2DS12_DT_HIGH_FREQUENCY) ||
+	    (odr < LIS2DS12_DT_ODR_1600Hz && cfg->pm == LIS2DS12_DT_HIGH_FREQUENCY) ||
+	    (odr == LIS2DS12_DT_ODR_1Hz_LP && cfg->pm != LIS2DS12_DT_LOW_POWER)) {
 		LOG_ERR("%s: bad odr and pm combination", dev->name);
 		return -ENOTSUP;
 	}
@@ -332,7 +334,7 @@ static int lis2ds12_init(const struct device *dev)
  */
 
 #define LIS2DS12_DEVICE_INIT(inst)					\
-	DEVICE_DT_INST_DEFINE(inst,					\
+	SENSOR_DEVICE_DT_INST_DEFINE(inst,				\
 			    lis2ds12_init,				\
 			    NULL,					\
 			    &lis2ds12_data_##inst,			\
@@ -352,6 +354,13 @@ static int lis2ds12_init(const struct device *dev)
 #define LIS2DS12_CFG_IRQ(inst)
 #endif /* CONFIG_LIS2DS12_TRIGGER */
 
+#define LIS2DS12_CONFIG_COMMON(inst)					\
+	.range = DT_INST_PROP(inst, range),				\
+	.pm = DT_INST_PROP(inst, power_mode),				\
+	.odr = DT_INST_PROP(inst, odr),					\
+	COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),		\
+			(LIS2DS12_CFG_IRQ(inst)), ())
+
 #define LIS2DS12_SPI_OPERATION (SPI_WORD_SET(8) |			\
 				SPI_OP_MODE_MASTER |			\
 				SPI_MODE_CPOL |				\
@@ -359,24 +368,13 @@ static int lis2ds12_init(const struct device *dev)
 
 #define LIS2DS12_CONFIG_SPI(inst)					\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_spi_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_spi_write,	\
-			.handle =					\
-			   (void *)&lis2ds12_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_SPI(&lis2ds12_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
 					   LIS2DS12_SPI_OPERATION,	\
 					   0),				\
 		},							\
-		.range = DT_INST_PROP(inst, range),			\
-		.pm = DT_INST_PROP(inst, power_mode),			\
-		.odr = DT_INST_PROP(inst, odr),				\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),	\
-			(LIS2DS12_CFG_IRQ(inst)), ())			\
+		LIS2DS12_CONFIG_COMMON(inst)				\
 	}
 
 /*
@@ -385,22 +383,11 @@ static int lis2ds12_init(const struct device *dev)
 
 #define LIS2DS12_CONFIG_I2C(inst)					\
 	{								\
-		.ctx = {						\
-			.read_reg =					\
-			   (stmdev_read_ptr) stmemsc_i2c_read,		\
-			.write_reg =					\
-			   (stmdev_write_ptr) stmemsc_i2c_write,	\
-			.handle =					\
-			   (void *)&lis2ds12_config_##inst.stmemsc_cfg,	\
-		},							\
+		STMEMSC_CTX_I2C(&lis2ds12_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.i2c = I2C_DT_SPEC_INST_GET(inst),		\
 		},							\
-		.range = DT_INST_PROP(inst, range),			\
-		.pm = DT_INST_PROP(inst, power_mode),			\
-		.odr = DT_INST_PROP(inst, odr),				\
-		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, irq_gpios),	\
-			(LIS2DS12_CFG_IRQ(inst)), ())			\
+		LIS2DS12_CONFIG_COMMON(inst)				\
 	}
 
 /*

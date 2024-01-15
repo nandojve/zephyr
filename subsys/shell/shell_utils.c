@@ -4,16 +4,52 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <ctype.h>
-#include <device.h>
+#include <zephyr/device.h>
+#include <zephyr/sys/iterable_sections.h>
+#include <stdlib.h>
 #include "shell_utils.h"
 #include "shell_wildcard.h"
 
-extern const struct shell_cmd_entry __shell_root_cmds_start[];
-extern const struct shell_cmd_entry __shell_root_cmds_end[];
+TYPE_SECTION_START_EXTERN(union shell_cmd_entry, shell_dynamic_subcmds);
+TYPE_SECTION_END_EXTERN(union shell_cmd_entry, shell_dynamic_subcmds);
 
-static inline const struct shell_cmd_entry *shell_root_cmd_get(uint32_t id)
+TYPE_SECTION_START_EXTERN(union shell_cmd_entry, shell_subcmds);
+TYPE_SECTION_END_EXTERN(union shell_cmd_entry, shell_subcmds);
+
+/* Macro creates empty entry at the bottom of the memory section with subcommands
+ * it is used to detect end of subcommand set that is located before this marker.
+ */
+#define Z_SHELL_SUBCMD_END_MARKER_CREATE()				\
+	static const TYPE_SECTION_ITERABLE(struct shell_static_entry, \
+			z_shell_subcmd_end_marker, shell_subcmds, Z_SHELL_UNDERSCORE(999))
+
+Z_SHELL_SUBCMD_END_MARKER_CREATE();
+
+static inline const union shell_cmd_entry *shell_root_cmd_get(uint32_t id)
 {
-	return &__shell_root_cmds_start[id];
+	const union shell_cmd_entry *cmd;
+
+	TYPE_SECTION_GET(union shell_cmd_entry, shell_root_cmds, id, &cmd);
+
+	return cmd;
+}
+
+/* Determine if entry is a dynamic command by checking if address is within
+ * dynamic commands memory section.
+ */
+static inline bool is_dynamic_cmd(const union shell_cmd_entry *entry)
+{
+	return (entry >= TYPE_SECTION_START(shell_dynamic_subcmds)) &&
+		(entry < TYPE_SECTION_END(shell_dynamic_subcmds));
+}
+
+/* Determine if entry is a section command by checking if address is within
+ * subcommands memory section.
+ */
+static inline bool is_section_cmd(const union shell_cmd_entry *entry)
+{
+	return (entry >= TYPE_SECTION_START(shell_subcmds)) &&
+		(entry < TYPE_SECTION_END(shell_subcmds));
 }
 
 /* Calculates relative line number of given position in buffer */
@@ -158,7 +194,7 @@ static char make_argv(char **ppcmd, uint8_t c)
 			}
 		}
 
-		if (!quote && isspace((int) c)) {
+		if (!quote && isspace((int) c) != 0) {
 			break;
 		}
 
@@ -183,7 +219,7 @@ char z_shell_make_argv(size_t *argc, const char **argv, char *cmd,
 			break;
 		}
 
-		if (isspace((int) c)) {
+		if (isspace((int) c) != 0) {
 			*cmd++ = '\0';
 			continue;
 		}
@@ -223,21 +259,23 @@ void z_shell_pattern_remove(char *buff, uint16_t *buff_len, const char *pattern)
 
 static inline uint32_t shell_root_cmd_count(void)
 {
-	return ((uint8_t *)__shell_root_cmds_end -
-			(uint8_t *)__shell_root_cmds_start)/
-				sizeof(struct shell_cmd_entry);
+	size_t len;
+
+	TYPE_SECTION_COUNT(union shell_cmd_entry, shell_root_cmds, &len);
+
+	return len;
 }
 
 /* Function returning pointer to parent command matching requested syntax. */
 const struct shell_static_entry *root_cmd_find(const char *syntax)
 {
 	const size_t cmd_count = shell_root_cmd_count();
-	const struct shell_cmd_entry *cmd;
+	const union shell_cmd_entry *cmd;
 
 	for (size_t cmd_idx = 0; cmd_idx < cmd_count; ++cmd_idx) {
 		cmd = shell_root_cmd_get(cmd_idx);
-		if (strcmp(syntax, cmd->u.entry->syntax) == 0) {
-			return cmd->u.entry;
+		if (strcmp(syntax, cmd->entry->syntax) == 0) {
+			return cmd->entry;
 		}
 	}
 
@@ -253,20 +291,32 @@ const struct shell_static_entry *z_shell_cmd_get(
 
 	if (parent == NULL) {
 		return  (idx < shell_root_cmd_count()) ?
-				shell_root_cmd_get(idx)->u.entry : NULL;
+				shell_root_cmd_get(idx)->entry : NULL;
 	}
 
 	__ASSERT_NO_MSG(dloc != NULL);
 
 	if (parent->subcmd) {
-		if (parent->subcmd->is_dynamic) {
-			parent->subcmd->u.dynamic_get(idx, dloc);
+		if (is_dynamic_cmd(parent->subcmd)) {
+			parent->subcmd->dynamic_get(idx, dloc);
 			if (dloc->syntax != NULL) {
 				res = dloc;
 			}
 		} else {
-			if (parent->subcmd->u.entry[idx].syntax != NULL) {
-				res = &parent->subcmd->u.entry[idx];
+			const struct shell_static_entry *entry_list;
+
+			if (is_section_cmd(parent->subcmd)) {
+				/* First element is null */
+				entry_list =
+					(const struct shell_static_entry *)parent->subcmd;
+				idx++;
+			} else {
+				entry_list = parent->subcmd->entry;
+			}
+
+
+			if (entry_list[idx].syntax != NULL) {
+				res = &entry_list[idx];
 			}
 		}
 	}
@@ -378,14 +428,14 @@ void z_shell_spaces_trim(char *str)
 	uint16_t len = z_shell_strlen(str);
 	uint16_t shift = 0U;
 
-	if (!str) {
+	if (len == 0U) {
 		return;
 	}
 
 	for (uint16_t i = 0; i < len - 1; i++) {
-		if (isspace((int)str[i])) {
+		if (isspace((int)str[i]) != 0) {
 			for (uint16_t j = i + 1; j < len; j++) {
-				if (isspace((int)str[j])) {
+				if (isspace((int)str[j]) != 0) {
 					shift++;
 					continue;
 				}
@@ -417,7 +467,7 @@ static void buffer_trim(char *buff, uint16_t *buff_len)
 		return;
 	}
 
-	while (isspace((int) buff[*buff_len - 1U])) {
+	while (isspace((int) buff[*buff_len - 1U]) != 0) {
 		*buff_len -= 1U;
 		if (*buff_len == 0U) {
 			buff[0] = '\0';
@@ -429,7 +479,7 @@ static void buffer_trim(char *buff, uint16_t *buff_len)
 	/* Counting whitespace characters starting from beginning of the
 	 * command.
 	 */
-	while (isspace((int) buff[i++])) {
+	while (isspace((int) buff[i++]) != 0) {
 	}
 
 
@@ -440,10 +490,10 @@ static void buffer_trim(char *buff, uint16_t *buff_len)
 	}
 }
 
-void z_shell_cmd_trim(const struct shell *shell)
+void z_shell_cmd_trim(const struct shell *sh)
 {
-	buffer_trim(shell->ctx->cmd_buff, &shell->ctx->cmd_buff_len);
-	shell->ctx->cmd_buff_pos = shell->ctx->cmd_buff_len;
+	buffer_trim(sh->ctx->cmd_buff, &sh->ctx->cmd_buff_len);
+	sh->ctx->cmd_buff_pos = sh->ctx->cmd_buff_len;
 }
 
 const struct device *shell_device_lookup(size_t idx,
@@ -470,4 +520,81 @@ const struct device *shell_device_lookup(size_t idx,
 	}
 
 	return NULL;
+}
+
+long shell_strtol(const char *str, int base, int *err)
+{
+	long val;
+	char *endptr = NULL;
+
+	errno = 0;
+	val = strtol(str, &endptr, base);
+	if (errno == ERANGE) {
+		*err = -ERANGE;
+		return 0;
+	} else if (errno || endptr == str || *endptr) {
+		*err = -EINVAL;
+		return 0;
+	}
+
+	return val;
+}
+
+unsigned long shell_strtoul(const char *str, int base, int *err)
+{
+	unsigned long val;
+	char *endptr = NULL;
+
+	if (*str == '-') {
+		*err = -EINVAL;
+		return 0;
+	}
+
+	errno = 0;
+	val = strtoul(str, &endptr, base);
+	if (errno == ERANGE) {
+		*err = -ERANGE;
+		return 0;
+	} else if (errno || endptr == str || *endptr) {
+		*err = -EINVAL;
+		return 0;
+	}
+
+	return val;
+}
+
+unsigned long long shell_strtoull(const char *str, int base, int *err)
+{
+	unsigned long long val;
+	char *endptr = NULL;
+
+	if (*str == '-') {
+		*err = -EINVAL;
+		return 0;
+	}
+
+	errno = 0;
+	val = strtoull(str, &endptr, base);
+	if (errno == ERANGE) {
+		*err = -ERANGE;
+		return 0;
+	} else if (errno || endptr == str || *endptr) {
+		*err = -EINVAL;
+		return 0;
+	}
+
+	return val;
+}
+
+bool shell_strtobool(const char *str, int base, int *err)
+{
+	if (!strcmp(str, "on") || !strcmp(str, "enable") || !strcmp(str, "true")) {
+		return true;
+	}
+
+	if (!strcmp(str, "off") || !strcmp(str, "disable") || !strcmp(str, "false")) {
+		return false;
+	}
+
+	return shell_strtoul(str, base, err);
 }

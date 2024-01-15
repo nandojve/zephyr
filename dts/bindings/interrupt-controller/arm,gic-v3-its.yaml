@@ -8,8 +8,5 @@ compatible: "arm,gic-v3-its"
 include: base.yaml
 
 properties:
-    reg:
-      required: true
-
-    label:
-      required: true
+  reg:
+    required: true

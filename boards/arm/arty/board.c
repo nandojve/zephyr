@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
-#include <device.h>
-#include <devicetree.h>
-#include <drivers/gpio.h>
-#include <init.h>
-#include <logging/log.h>
+#include <cmsis_core.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/init.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(board, CONFIG_LOG_DEFAULT_LEVEL);
 
 #include "board.h"
@@ -35,7 +35,7 @@ int board_daplink_qspi_mux_select(enum board_daplink_qspi_mux_mode mode)
 		return -EINVAL;
 	}
 
-	if (!device_is_ready(mux.port)) {
+	if (!gpio_is_ready_dt(&mux)) {
 		LOG_ERR("DAPLink QSPI MUX GPIO device not ready");
 		return -EINVAL;
 	}
@@ -60,9 +60,8 @@ bool board_daplink_is_fitted(void)
 	return !NVIC_GetPendingIRQ(DT_IRQN(DAPLINK_QSPI_MUX_NODE));
 }
 
-static int board_init(const struct device *dev)
+static int board_init(void)
 {
-	ARG_UNUSED(dev);
 
 	/*
 	 * Automatically select normal mode unless the DAPLink shield is fitted

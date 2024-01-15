@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Nordic Semiconductor ASA
+ * Copyright (c) 2020 - 2022 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,31 +8,37 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
-#include <init.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
 
-#include <net/buf.h>
+#include <zephyr/net/buf.h>
 
 #include "ots_l2cap_internal.h"
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
+/* This l2cap is the only OTS-file in use for OTC.
+ * If only OTC is used, the OTS log module must be registered here.
+ */
+#if defined(CONFIG_BT_OTS)
 LOG_MODULE_DECLARE(bt_ots, CONFIG_BT_OTS_LOG_LEVEL);
+#elif IS_ENABLED(CONFIG_BT_OTS_CLIENT)
+LOG_MODULE_REGISTER(bt_ots, CONFIG_BT_OTS_LOG_LEVEL);
+#endif
 
 /* According to BLE specification Assigned Numbers that are used in the
  * Logical Link Control for protocol/service multiplexers.
  */
 #define BT_GATT_OTS_L2CAP_PSM	0x0025
 
-
 NET_BUF_POOL_FIXED_DEFINE(ot_chan_tx_pool, 1,
 			  BT_L2CAP_SDU_BUF_SIZE(CONFIG_BT_OTS_L2CAP_CHAN_TX_MTU),
-			  NULL);
+			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
 
 #if (CONFIG_BT_OTS_L2CAP_CHAN_RX_MTU > BT_L2CAP_SDU_RX_MTU)
-NET_BUF_POOL_FIXED_DEFINE(ot_chan_rx_pool, 1, CONFIG_BT_OTS_L2CAP_CHAN_RX_MTU,
+NET_BUF_POOL_FIXED_DEFINE(ot_chan_rx_pool, 1, CONFIG_BT_OTS_L2CAP_CHAN_RX_MTU, 8,
 			  NULL);
 #endif
 
@@ -82,11 +88,12 @@ static struct net_buf *l2cap_alloc_buf(struct bt_l2cap_chan *chan)
 
 static void l2cap_sent(struct bt_l2cap_chan *chan)
 {
+	struct bt_l2cap_le_chan *l2chan = CONTAINER_OF(chan, struct bt_l2cap_le_chan, chan);
 	struct bt_gatt_ots_l2cap *l2cap_ctx;
 
 	LOG_DBG("Outgoing data channel %p transmitted", chan);
 
-	l2cap_ctx = CONTAINER_OF(chan, struct bt_gatt_ots_l2cap, ot_chan);
+	l2cap_ctx = CONTAINER_OF(l2chan, struct bt_gatt_ots_l2cap, ot_chan);
 
 	/* Ongoing TX - sending next chunk. */
 	if (l2cap_ctx->tx.len != l2cap_ctx->tx.len_sent) {
@@ -107,11 +114,12 @@ static void l2cap_sent(struct bt_l2cap_chan *chan)
 
 static int l2cap_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 {
+	struct bt_l2cap_le_chan *l2chan = CONTAINER_OF(chan, struct bt_l2cap_le_chan, chan);
 	struct bt_gatt_ots_l2cap *l2cap_ctx;
 
 	LOG_DBG("Incoming data channel %p received", chan);
 
-	l2cap_ctx = CONTAINER_OF(chan, struct bt_gatt_ots_l2cap, ot_chan);
+	l2cap_ctx = CONTAINER_OF(l2chan, struct bt_gatt_ots_l2cap, ot_chan);
 
 	if (!l2cap_ctx->rx_done) {
 		return -ENODEV;
@@ -122,7 +130,7 @@ static int l2cap_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 
 static void l2cap_status(struct bt_l2cap_chan *chan, atomic_t *status)
 {
-	LOG_DBG("Channel %p status %u", chan, *status);
+	LOG_DBG("Channel %p status %lu", chan, atomic_get(status));
 }
 
 static void l2cap_connected(struct bt_l2cap_chan *chan)
@@ -132,11 +140,12 @@ static void l2cap_connected(struct bt_l2cap_chan *chan)
 
 static void l2cap_disconnected(struct bt_l2cap_chan *chan)
 {
+	struct bt_l2cap_le_chan *l2chan = CONTAINER_OF(chan, struct bt_l2cap_le_chan, chan);
 	struct bt_gatt_ots_l2cap *l2cap_ctx;
 
 	LOG_DBG("Channel %p disconnected", chan);
 
-	l2cap_ctx = CONTAINER_OF(chan, struct bt_gatt_ots_l2cap, ot_chan);
+	l2cap_ctx = CONTAINER_OF(l2chan, struct bt_gatt_ots_l2cap, ot_chan);
 
 	if (l2cap_ctx->closed) {
 		l2cap_ctx->closed(l2cap_ctx, chan->conn);
@@ -162,17 +171,30 @@ static inline void l2cap_chan_init(struct bt_l2cap_le_chan *chan)
 	LOG_DBG("RX MTU set to %u", chan->rx.mtu);
 }
 
-static int l2cap_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
+static struct bt_gatt_ots_l2cap *find_free_l2cap_ctx(void)
 {
 	struct bt_gatt_ots_l2cap *l2cap_ctx;
-
-	LOG_DBG("Incoming conn %p", (void *)conn);
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&channels, l2cap_ctx, node) {
 		if (l2cap_ctx->ot_chan.chan.conn) {
 			continue;
 		}
 
+		return l2cap_ctx;
+	}
+
+	return NULL;
+}
+
+static int l2cap_accept(struct bt_conn *conn, struct bt_l2cap_server *server,
+			struct bt_l2cap_chan **chan)
+{
+	struct bt_gatt_ots_l2cap *l2cap_ctx;
+
+	LOG_DBG("Incoming conn %p", (void *)conn);
+
+	l2cap_ctx = find_free_l2cap_ctx();
+	if (l2cap_ctx) {
 		l2cap_chan_init(&l2cap_ctx->ot_chan);
 		memset(&l2cap_ctx->tx, 0, sizeof(l2cap_ctx->tx));
 
@@ -189,7 +211,7 @@ static struct bt_l2cap_server l2cap_server = {
 	.accept	= l2cap_accept,
 };
 
-static int bt_gatt_ots_l2cap_init(const struct device *arg)
+static int bt_gatt_ots_l2cap_init(void)
 {
 	int err;
 
@@ -250,6 +272,45 @@ int bt_gatt_ots_l2cap_unregister(struct bt_gatt_ots_l2cap *l2cap_ctx)
 	sys_slist_find_and_remove(&channels, &l2cap_ctx->node);
 
 	return 0;
+}
+
+/* Similar to l2cap_accept(), but for the client side */
+int bt_gatt_ots_l2cap_connect(struct bt_conn *conn,
+			      struct bt_gatt_ots_l2cap **l2cap_ctx)
+{
+	int err;
+	struct bt_gatt_ots_l2cap *ctx;
+
+	if (!conn) {
+		LOG_WRN("Invalid Connection");
+		return -ENOTCONN;
+	}
+
+	if (!l2cap_ctx) {
+		LOG_WRN("Invalid context");
+		return -EINVAL;
+	}
+
+	*l2cap_ctx = NULL;
+
+	ctx = find_free_l2cap_ctx();
+	if (!ctx) {
+		return -ENOMEM;
+	}
+
+	l2cap_chan_init(&ctx->ot_chan);
+	(void)memset(&ctx->tx, 0, sizeof(ctx->tx));
+
+	LOG_DBG("Connecting L2CAP CoC");
+	err = bt_l2cap_chan_connect(conn, &ctx->ot_chan.chan, BT_GATT_OTS_L2CAP_PSM);
+	if (err) {
+		LOG_WRN("Unable to connect to psm %u (err %d)", BT_GATT_OTS_L2CAP_PSM, err);
+	} else {
+		LOG_DBG("L2CAP connection pending");
+		*l2cap_ctx = ctx;
+	}
+
+	return err;
 }
 
 int bt_gatt_ots_l2cap_disconnect(struct bt_gatt_ots_l2cap *l2cap_ctx)

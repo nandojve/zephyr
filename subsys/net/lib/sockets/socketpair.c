@@ -4,17 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <fcntl.h>
-
-/* Zephyr headers */
-#include <logging/log.h>
-LOG_MODULE_REGISTER(net_spair, CONFIG_NET_SOCKETS_LOG_LEVEL);
-
-#include <kernel.h>
-#include <net/socket.h>
-#include <syscall_handler.h>
-#include <sys/__assert.h>
-#include <sys/fdtable.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/posix/fcntl.h>
+#include <zephyr/internal/syscall_handler.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/fdtable.h>
 
 #include "sockets_internal.h"
 
@@ -37,7 +32,7 @@ enum {
  * The implementation strives for compatibility with socketpair(2).
  *
  * Resources contained within this structure are said to be 'local', while
- * reources contained within the other half of the socketpair (or other
+ * resources contained within the other half of the socketpair (or other
  * endpoint) are said to be 'remote'.
  *
  * Theory of operation:
@@ -60,6 +55,11 @@ __net_socket struct spair {
 	/** buffer for @a recv_q recv_q */
 	uint8_t buf[CONFIG_NET_SOCKETPAIR_BUFFER_SIZE];
 };
+
+#ifdef CONFIG_NET_SOCKETPAIR_STATIC
+K_MEM_SLAB_DEFINE_STATIC(spair_slab, sizeof(struct spair), CONFIG_NET_SOCKETPAIR_MAX * 2,
+			 __alignof__(struct spair));
+#endif /* CONFIG_NET_SOCKETPAIR_STATIC */
 
 /* forward declaration */
 static const struct socket_op_vtable spair_fd_op_vtable;
@@ -156,7 +156,7 @@ static inline void swap32(uint32_t *a, uint32_t *b)
  *
  * If no threads are blocking on A, then the signals have no effect.
  *
- * The memeory associated with the local endpoint is cleared and freed.
+ * The memory associated with the local endpoint is cleared and freed.
  */
 static void spair_delete(struct spair *spair)
 {
@@ -191,17 +191,19 @@ static void spair_delete(struct spair *spair)
 	res = k_poll_signal_raise(&spair->writeable, SPAIR_SIG_CANCEL);
 	__ASSERT(res == 0, "k_poll_signal_raise() failed: %d", res);
 
+	if (remote != NULL && have_remote_sem) {
+		k_sem_give(&remote->sem);
+	}
+
 	/* ensure no private information is released to the memory pool */
 	memset(spair, 0, sizeof(*spair));
-#ifdef CONFIG_USERSPACE
+#ifdef CONFIG_NET_SOCKETPAIR_STATIC
+	k_mem_slab_free(&spair_slab, (void *)spair);
+#elif CONFIG_USERSPACE
 	k_object_free(spair);
 #else
 	k_free(spair);
 #endif
-
-	if (remote != NULL && have_remote_sem) {
-		k_sem_give(&remote->sem);
-	}
 }
 
 /**
@@ -218,8 +220,15 @@ static struct spair *spair_new(void)
 	struct spair *spair;
 	int res;
 
-#ifdef CONFIG_USERSPACE
-	struct z_object *zo = z_dynamic_object_create(sizeof(*spair));
+#ifdef CONFIG_NET_SOCKETPAIR_STATIC
+
+	res = k_mem_slab_alloc(&spair_slab, (void **) &spair, K_NO_WAIT);
+	if (res != 0) {
+		spair = NULL;
+	}
+
+#elif CONFIG_USERSPACE
+	struct k_object *zo = k_object_create_dynamic(sizeof(*spair));
 
 	if (zo == NULL) {
 		spair = NULL;
@@ -332,7 +341,7 @@ int z_vrfy_zsock_socketpair(int family, int type, int proto, int *sv)
 	int ret;
 	int tmp[2];
 
-	if (!sv || Z_SYSCALL_MEMORY_WRITE(sv, sizeof(tmp)) != 0) {
+	if (!sv || K_SYSCALL_MEMORY_WRITE(sv, sizeof(tmp)) != 0) {
 		/* not listed in normative spec, but mimics linux behaviour */
 		errno = EFAULT;
 		ret = -1;
@@ -341,7 +350,7 @@ int z_vrfy_zsock_socketpair(int family, int type, int proto, int *sv)
 
 	ret = z_impl_zsock_socketpair(family, type, proto, tmp);
 	if (ret == 0) {
-		Z_OOPS(z_user_to_copy(sv, tmp, sizeof(tmp)));
+		K_OOPS(k_usermode_to_copy(sv, tmp, sizeof(tmp)));
 	}
 
 out:
@@ -373,7 +382,7 @@ out:
  *    @ref spair.pipe. Thus, allowing more data to be written.
  *
  * 2) @ref SPAIR_SIG_CANCEL - the @em remote socketpair endpoint was closed
- *    Receipt of this result is analagous to SIGPIPE from POSIX
+ *    Receipt of this result is analogous to SIGPIPE from POSIX
  *    ("Write on a pipe with no one to read it."). In this case, the function
  *    will return -1 and set @ref errno to @ref EPIPE.
  *
@@ -460,6 +469,11 @@ static ssize_t spair_write(void *obj, const void *buffer, size_t count)
 	}
 
 	if (will_block) {
+		if (k_is_in_isr()) {
+			errno = EAGAIN;
+			res = -1;
+			goto out;
+		}
 
 		for (int signaled = false, result = -1; !signaled;
 			result = -1) {
@@ -646,6 +660,11 @@ static ssize_t spair_read(void *obj, void *buffer, size_t count)
 	}
 
 	if (will_block) {
+		if (k_is_in_isr()) {
+			errno = EAGAIN;
+			res = -1;
+			goto out;
+		}
 
 		for (int signaled = false, result = -1; !signaled;
 			result = -1) {
@@ -927,6 +946,22 @@ static int spair_ioctl(void *obj, unsigned int request, va_list args)
 			} else {
 				spair->flags &= ~SPAIR_FLAG_NONBLOCK;
 			}
+
+			res = 0;
+			goto out;
+		}
+
+		case ZFD_IOCTL_FIONBIO: {
+			spair->flags |= SPAIR_FLAG_NONBLOCK;
+			res = 0;
+			goto out;
+		}
+
+		case ZFD_IOCTL_FIONREAD: {
+			int *nbytes;
+
+			nbytes = va_arg(args, int *);
+			*nbytes = spair_read_avail(spair);
 
 			res = 0;
 			goto out;

@@ -4,10 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <devicetree.h>
-#include <soc.h>
-#include <arch/arc/v2/mpu/arc_mpu.h>
-#include <linker/linker-defs.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/arch/arc/v2/mpu/arc_mpu.h>
+#include <zephyr/linker/linker-defs.h>
 
 /*
  * for secure firmware, MPU entries are only set up for secure world.
@@ -26,6 +25,21 @@ static struct arc_mpu_region mpu_regions[] = {
 	MPU_REGION_ENTRY("DCCM",
 			 DT_REG_ADDR(DT_INST(0, arc_dccm)),
 			 DT_REG_SIZE(DT_INST(0, arc_dccm)),
+			 REGION_KERNEL_RAM_ATTR | REGION_DYNAMIC),
+#endif
+
+#if DT_REG_SIZE(DT_INST(0, arc_xccm)) > 0
+	/* Region XCCM */
+	MPU_REGION_ENTRY("XCCM",
+			 DT_REG_ADDR(DT_INST(0, arc_xccm)),
+			 DT_REG_SIZE(DT_INST(0, arc_xccm)),
+			 REGION_KERNEL_RAM_ATTR | REGION_DYNAMIC),
+#endif
+#if DT_REG_SIZE(DT_INST(0, arc_yccm)) > 0
+	/* Region YCCM */
+	MPU_REGION_ENTRY("YCCM",
+			 DT_REG_ADDR(DT_INST(0, arc_yccm)),
+			 DT_REG_SIZE(DT_INST(0, arc_yccm)),
 			 REGION_KERNEL_RAM_ATTR | REGION_DYNAMIC),
 #endif
 

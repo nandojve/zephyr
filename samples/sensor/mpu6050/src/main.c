@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
 
 static const char *now_str(void)
@@ -46,7 +46,7 @@ static int process_mpu6050(const struct device *dev)
 					gyro);
 	}
 	if (rc == 0) {
-		rc = sensor_channel_get(dev, SENSOR_CHAN_AMBIENT_TEMP,
+		rc = sensor_channel_get(dev, SENSOR_CHAN_DIE_TEMP,
 					&temperature);
 	}
 	if (rc == 0) {
@@ -84,14 +84,13 @@ static void handle_mpu6050_drdy(const struct device *dev,
 }
 #endif /* CONFIG_MPU6050_TRIGGER */
 
-void main(void)
+int main(void)
 {
-	const char *const label = DT_LABEL(DT_INST(0, invensense_mpu6050));
-	const struct device *mpu6050 = device_get_binding(label);
+	const struct device *const mpu6050 = DEVICE_DT_GET_ONE(invensense_mpu6050);
 
-	if (!mpu6050) {
-		printf("Failed to find sensor %s\n", label);
-		return;
+	if (!device_is_ready(mpu6050)) {
+		printf("Device %s is not ready\n", mpu6050->name);
+		return 0;
 	}
 
 #ifdef CONFIG_MPU6050_TRIGGER
@@ -102,7 +101,7 @@ void main(void)
 	if (sensor_trigger_set(mpu6050, &trigger,
 			       handle_mpu6050_drdy) < 0) {
 		printf("Cannot configure trigger\n");
-		return;
+		return 0;
 	}
 	printk("Configured for triggered sampling.\n");
 #endif
@@ -117,4 +116,5 @@ void main(void)
 	}
 
 	/* triggered runs with its own thread after exit */
+	return 0;
 }

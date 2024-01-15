@@ -10,12 +10,11 @@ The i.MX RT1064 adds to the industry's first crossover
 processor series and expands the i.MX RT series to three scalable families.
 The i.MX RT1064 doubles the On-Chip SRAM to 1MB while keeping pin-to-pin
 compatibility with i.MX RT1050. This series introduces additional features
-ideal for real-time applications such as High-Speed GPIO, CAN-FD, and
+ideal for real-time applications such as High-Speed GPIO, CAN FD, and
 synchronous parallel NAND/NOR/PSRAM controller. The i.MX RT1064 runs on the
 Arm® Cortex-M7® core up to 600 MHz.
 
-.. image:: ./mimxrt1064_evk.jpg
-   :width: 600px
+.. image:: mimxrt1064_evk.jpg
    :align: center
    :alt: MIMXRT1064-EVK
 
@@ -81,12 +80,29 @@ these references:
 - `MIMXRT1064-EVK Quick Reference Guide`_
 - `MIMXRT1064-EVK User Guide`_
 - `MIMXRT1064-EVK Schematics`_
+- `MIMXRT1064-EVK Debug Firmware`_
+
+External Memory
+===============
+
+This platform has the following external memories:
+
++--------------------+------------+-------------------------------------+
+| Device             | Controller | Status                              |
++====================+============+=====================================+
+| MT48LC16M16A2      | SEMC       | Enabled via device configuration    |
+|                    |            | data block, which sets up SEMC at   |
+|                    |            | boot time                           |
++--------------------+------------+-------------------------------------+
 
 Supported Features
 ==================
 
-The mimxrt1064_evk board configuration supports the following hardware
-features:
+NXP considers the MIMXRT1064-EVK as the superset board for the i.MX RT10xx
+family of MCUs.  This board is a focus for NXP's Full Platform Support for
+Zephyr, to better enable the entire RT10xx family.  NXP prioritizes enabling
+this board with new support for Zephyr features.  The mimxrt1064_evk board
+configuration supports the following hardware features:
 
 +-----------+------------+-------------------------------------+
 | Interface | Controller | Driver/Component                    |
@@ -124,11 +140,16 @@ features:
 +-----------+------------+-------------------------------------+
 | SPI       | on-chip    | spi                                 |
 +-----------+------------+-------------------------------------+
+| GPT       | on-chip    | gpt                                 |
++-----------+------------+-------------------------------------+
 | DMA       | on-chip    | dma                                 |
 +-----------+------------+-------------------------------------+
 | HWINFO    | on-chip    | Unique device serial number         |
 +-----------+------------+-------------------------------------+
-
+| TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| FLEXSPI   | on-chip    | flash programming                   |
++-----------+------------+-------------------------------------+
 
 The default configuration can be found in the defconfig file:
 ``boards/arm/mimxrt1064_evk/mimxrt1064_evk_defconfig``
@@ -277,8 +298,13 @@ The MIMXRT1064 SoC has four pairs of pinmux/gpio controllers.
 System Clock
 ============
 
-The MIMXRT1064 SoC is configured to use the 24 MHz external oscillator on the
-board with the on-chip PLL to generate a 600 MHz core clock.
+The MIMXRT1064 SoC is configured to use SysTick as the system clock source,
+running at 600MHz.
+
+When power management is enabled, the 32 KHz low frequency
+oscillator on the board will be used as a source for the GPT timer to
+generate a system clock. This clock enables lower power states, at the
+cost of reduced resolution
 
 Serial Port
 ===========
@@ -295,11 +321,21 @@ Build and flash applications as usual (see :ref:`build_an_application` and
 Configuring a Debug Probe
 =========================
 
+.. note::
+	When the device transitions into low power states, the debugger may be
+	unable to access the chip. Use caution when enabling ``CONFIG_PM``, and
+	if the debugger cannot flash the part, see :ref:`Troubleshooting RT1064`
+
 A debug probe is used for both flashing and debugging the board. This board is
 configured by default to use the :ref:`opensda-daplink-onboard-debug-probe`,
 however the :ref:`pyocd-debug-host-tools` do not yet support programming the
 external flashes on this board so you must reconfigure the board for one of the
 following debug probes instead.
+
+.. _Using LinkServer:
+
+        1. Install the :ref:`linkserver-debug-host-tools` and make sure they are in your search path.
+        2. To update the debug firmware, please follow the instructions on `MIMXRT1064-EVK Debug Firmware`
 
 .. _Using J-Link RT1064:
 
@@ -331,6 +367,12 @@ etc.):
 - Data: 8 bits
 - Parity: None
 - Stop bits: 1
+
+Using SWO
+---------
+SWO can be used as a logging backend, by setting ``CONFIG_LOG_BACKEND_SWO=y``.
+Your SWO viewer should be configured with a CPU frequency of 132MHz, and
+SWO frequency of 7500KHz.
 
 Flashing
 ========
@@ -368,12 +410,15 @@ should see the following message in the terminal:
    ***** Booting Zephyr OS v1.14.0-rc1 *****
    Hello World! mimxrt1064_evk
 
+
+.. _Troubleshooting RT1064:
+
 Troubleshooting
 ===============
 
 If the debug probe fails to connect with the following error, it's possible
 that the boot header in QSPI flash is invalid or corrupted. The boot header is
-configured by :kconfig:`CONFIG_NXP_IMX_RT_BOOT_HEADER`.
+configured by :kconfig:option:`CONFIG_NXP_IMX_RT_BOOT_HEADER`.
 
 .. code-block:: console
 
@@ -412,6 +457,9 @@ details.
 
 .. _MIMXRT1064-EVK User Guide:
    https://www.nxp.com/docs/en/data-sheet/MIMXRT10601064EKBHUG.pdf
+
+.. _MIMXRT1064-EVK Debug Firmware:
+   https://www.nxp.com/docs/en/application-note/AN13206.pdf
 
 .. _MIMXRT1064-EVK Schematics:
    https://www.nxp.com/webapp/Download?colCode=i.MXRT160EVKDS&Parent_nodeId=1537930933174731284155&Parent_pageType=product

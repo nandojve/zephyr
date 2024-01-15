@@ -6,14 +6,16 @@
  */
 #include <stdlib.h>
 
-#include <zephyr.h>
-#include <drivers/flash.h>
-#include <shell/shell.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/shell/shell.h>
 
-#define PR_SHELL(shell, fmt, ...)				\
-	shell_fprintf(shell, SHELL_NORMAL, fmt, ##__VA_ARGS__)
-#define PR_ERROR(shell, fmt, ...)				\
-	shell_fprintf(shell, SHELL_ERROR, fmt, ##__VA_ARGS__)
+#define PR_SHELL(sh, fmt, ...)				\
+	shell_fprintf(sh, SHELL_NORMAL, fmt, ##__VA_ARGS__)
+#define PR_ERROR(sh, fmt, ...)				\
+	shell_fprintf(sh, SHELL_ERROR, fmt, ##__VA_ARGS__)
 
 /* Assumption: our devices have less than 64MB of memory */
 #define RESERVED_MEM_MAP (CONFIG_SRAM_BASE_ADDRESS + 0x4000000)
@@ -27,7 +29,12 @@
 #define MTEST_CMD_HELP "Memory Test writes or reads a memory location.\n"    \
 			"Command accepts 1 (Read) or 2 (Write) parameters."
 
-static int cmd_read(const struct shell *shell, size_t argc, char *argv[])
+#if defined(CONFIG_SOC_FLASH_MCUX) || defined(CONFIG_SOC_FLASH_LPC) || \
+	defined(CONFIG_SOC_FLASH_STM32)
+static const struct device *const flash_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
+#endif
+
+static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -35,34 +42,30 @@ static int cmd_read(const struct shell *shell, size_t argc, char *argv[])
 	uint32_t *p_mem = (uint32_t *) RESERVED_MEM_MAP;
 
 	/* Reads from an address that is reserved in the memory map */
-	PR_SHELL(shell, "The value is: %d\n", *p_mem);
+	PR_SHELL(sh, "The value is: %d\n", *p_mem);
 
 	return 0;
 }
 
 #if defined(CONFIG_SOC_FLASH_MCUX) || defined(CONFIG_SOC_FLASH_LPC)
-static int cmd_write_mcux(const struct shell *shell, size_t argc, char *argv[])
+static int cmd_write_mcux(const struct shell *sh, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	const struct device *flash_dev;
 	uint32_t value[2];
 	uint32_t offset;
-
-	flash_dev =
-		device_get_binding(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
 
 	/* 128K reserved to the application */
 	offset = FLASH_MEM + 0x20000;
 	value[0] = 0xBADC0DE;
 	value[1] = 0xBADC0DE;
 
-	PR_SHELL(shell, "write address: 0x%x\n", offset);
+	PR_SHELL(sh, "write address: 0x%x\n", offset);
 
 	if (flash_write(flash_dev, offset, value,
 				sizeof(value)) != 0) {
-		PR_ERROR(shell, "Flash write failed!\n");
+		PR_ERROR(sh, "Flash write failed!\n");
 		return 1;
 	}
 
@@ -70,31 +73,26 @@ static int cmd_write_mcux(const struct shell *shell, size_t argc, char *argv[])
 
 }
 #elif defined(CONFIG_SOC_FLASH_STM32)
-static int cmd_write_stm32(const struct shell *shell, size_t argc, char *argv[])
+static int cmd_write_stm32(const struct shell *sh, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
-
-	const struct device *flash_dev;
-
-	flash_dev =
-		device_get_binding(DT_CHOSEN_ZEPHYR_FLASH_CONTROLLER_LABEL);
 
 	/* 16K reserved to the application */
 	uint32_t offset = FLASH_MEM + 0x4000;
 	uint32_t value = 0xBADC0DE;
 
-	PR_SHELL(shell, "write address: 0x%x\n", offset);
+	PR_SHELL(sh, "write address: 0x%x\n", offset);
 
 	if (flash_write(flash_dev, offset, &value, sizeof(value)) != 0) {
-		PR_ERROR(shell, "Flash write failed!\n");
+		PR_ERROR(sh, "Flash write failed!\n");
 		return 1;
 	}
 
 	return 0;
 }
 #else
-static int cmd_write(const struct shell *shell, size_t argc, char *argv[])
+static int cmd_write(const struct shell *sh, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -102,7 +100,7 @@ static int cmd_write(const struct shell *shell, size_t argc, char *argv[])
 	/* 16K reserved to the application */
 	uint32_t *p_mem = (uint32_t *) (FLASH_MEM + 0x4000);
 
-	PR_SHELL(shell, "write address: 0x%x\n", FLASH_MEM + 0x4000);
+	PR_SHELL(sh, "write address: 0x%x\n", FLASH_MEM + 0x4000);
 
 	/* Write in to boot FLASH/ROM */
 	*p_mem = 0xBADC0DE;
@@ -111,7 +109,7 @@ static int cmd_write(const struct shell *shell, size_t argc, char *argv[])
 }
 #endif /* SOC_FLASH_MCUX || SOC_FLASH_LPC */
 
-static int cmd_run(const struct shell *shell, size_t argc, char *argv[])
+static int cmd_run(const struct shell *sh, size_t argc, char *argv[])
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
@@ -124,7 +122,7 @@ static int cmd_run(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
-static int cmd_mtest(const struct shell *shell, size_t argc, char *argv[])
+static int cmd_mtest(const struct shell *sh, size_t argc, char *argv[])
 {
 	uint32_t *mem;
 	uint32_t val;
@@ -133,7 +131,7 @@ static int cmd_mtest(const struct shell *shell, size_t argc, char *argv[])
 	mem = (uint32_t *) val;
 
 	if (argc == 2) {
-		PR_SHELL(shell, "The value is: 0x%x\n", *mem);
+		PR_SHELL(sh, "The value is: 0x%x\n", *mem);
 	} else {
 		*mem = (uint32_t) strtol(argv[2], NULL, 16);
 	}
@@ -141,9 +139,16 @@ static int cmd_mtest(const struct shell *shell, size_t argc, char *argv[])
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
-
+#if defined(CONFIG_SOC_FLASH_MCUX) || defined(CONFIG_SOC_FLASH_LPC) || \
+	defined(CONFIG_SOC_FLASH_STM32)
+	if (!device_is_ready(flash_dev)) {
+		printk("Flash device not ready\n");
+		return 0;
+	}
+#endif
+	return 0;
 }
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_mpu,

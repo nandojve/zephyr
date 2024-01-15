@@ -12,8 +12,7 @@ to accelerate software development and debug of ARC EM processors and subsystems
 a wide range of ultra-low power embedded applications such as IoT, sensor fusion,
 and voice applications.
 
-.. image:: ./emsdp.jpg
-   :width: 442px
+.. image:: emsdp.jpg
    :align: center
    :alt: DesignWare(R) ARC(R) EM Software Development Platform (synopsys.com)
 
@@ -26,10 +25,10 @@ Hardware
 
 The EM Software Development Platform supports different core configurations, such as EM4,
 EM5D, EM6, EM7D, EM9D, EM9D+ESP, EM11D, the default core configuration is EM11D. Use
-:kconfig:`CONFIG_SOC_EMSDP_EM4`, :kconfig:`CONFIG_SOC_EMSDP_EM5D`,
-:kconfig:`CONFIG_SOC_EMSDP_EM6`, :kconfig:`CONFIG_SOC_EMSDP_EM7D`,
-:kconfig:`CONFIG_SOC_EMSDP_EM7D_ESP`, :kconfig:`CONFIG_SOC_EMSDP_EM9D` or
-:kconfig:`CONFIG_SOC_EMSDP_EM11D` to select different core configuration.
+:kconfig:option:`CONFIG_SOC_EMSDP_EM4`, :kconfig:option:`CONFIG_SOC_EMSDP_EM5D`,
+:kconfig:option:`CONFIG_SOC_EMSDP_EM6`, :kconfig:option:`CONFIG_SOC_EMSDP_EM7D`,
+:kconfig:option:`CONFIG_SOC_EMSDP_EM7D_ESP`, :kconfig:option:`CONFIG_SOC_EMSDP_EM9D` or
+:kconfig:option:`CONFIG_SOC_EMSDP_EM11D` to select different core configuration.
 
 The following table shows the hardware features supported for different core configuration:
 
@@ -45,9 +44,83 @@ The following table shows the hardware features supported for different core con
 | Secure    | N   | N   | N    | N    | Y        | N    | N     |
 +-----------+-----+-----+------+------+----------+------+-------+
 
-For hardware feature details, refer to : `ARC EM Software Development Platform
-<https://embarc.org/embarc_osp/doc/build/html/board/emsdp.html>`__
+The table below shows which drivers are currently available in Zephyr.
 
++-----------+------------+-------+-----------------------+
+| Interface | Controller | EMSDP | Driver/Component      |
++===========+============+=======+=======================+
+| SDIO      | on-chip    |   N   | SD-card controller    |
++-----------+------------+-------+-----------------------+
+| UART      | Arduino +  |   Y   | serial port-polling;  |
+|           | 3 Pmods    |       | serial port-interrupt |
++-----------+------------+-------+-----------------------+
+| SPI       | Arduino +  |   Y   | spi                   |
+|           | Pmod + adc |       |                       |
++-----------+------------+-------+-----------------------+
+| ADC       | 1 Pmod     |   N   | adc (via spi)         |
++-----------+------------+-------+-----------------------+
+| I2C       | Arduino +  |   N   | i2c                   |
+|           | Pmod       |       |                       |
++-----------+------------+-------+-----------------------+
+| GPIO      | Arduino +  |   Y   | gpio                  |
+|           | Pmod + Pin |       |                       |
++-----------+------------+-------+-----------------------+
+| PWM       | Arduino +  |   N   | pwm                   |
+|           | Pmod       |       |                       |
++-----------+------------+-------+-----------------------+
+| I2S       | on-chip    |   N   | Audio interface       |
++-----------+------------+-------+-----------------------+
+
+Support two 32 MByte Quad-SPI Flash memory, one only contains FPGA image, the other
+one is user SPI-FLASH, which is connected via SPI bus and its sample can be found in
+``samples/drivers/spi_flash``.
+
+To configure the FPGA, The ARC EM SDP offers a single USB 2.0 host port, which is
+both used to access the FPGAs configuration memory and as a DEBUG/ UART port.
+
+When connected using the USB cable to a PC, the ARC EM SDP presents itself as a mass
+storage device. This allows an FPGA configuration bitstream to be dragged and dropped into
+the configuration memory. The FPGA bitstream is automatically loaded into the FPGA device
+upon power-on reset, or when the configuration button is pressed.
+
+For hardware feature details, refer to : `ARC EM Software Development Platform
+<https://embarc.org/project/arc-em-software-development-platform-sdp/>`__
+
+Peripheral driver test and sample
+=================================
+
+``tests/drivers/spi/spi_loopback``: verify DesignWare SPI driver. No need to connect
+MISO with MOSI, DW SPI register is configured to internally connect them. This test
+use two different speed to verify data transfer with asynchronous functionality.
+Note: DW SPI only available on SPI0 and SPI1.
+
+``samples/drivers/spi_flash``: Verfiy DW SPI and SPI-FLASH on SPI1. First erase the
+whole flash then write 4 byte data to the flash. Read from the flash and compare the
+result with buffer to check functionality.
+
+Pinmux interface
+================
+
+The following pinmux peripheral module standards are supported:
+
+* Digilent Pmod (3x)
+
+The ARC EM SDP features three 12-pin Pmod connectors: Pmod_A, Pmod_B, and Pmod_C.
+The functionality of the Pmod connectors is programmable and includes GPIO, UART, SPI,
+I2C, and PWM (Note: support two type UART Pmod interface: UARTA is newer version).
+Multiplexing is controlled by software using the PMOD_MUX_CTRL register.
+
+* Arduino (1x)
+
+The ARC EM SDP provides an Arduino shield interface. Multiplexing is controlled by software
+using the ARDUINO_MUX_CTRL register. Note: some IO must be programmed in group and can't be
+set individually, for details see Table 9 in `EM Software Development Platform user guide`_.
+
+* MikroBUS (1x)
+
+Note that since the controllers that are mapped to the MikroBUS are shared with the Arduino
+controllers, and therefore the MikroBUS functions are only available when the Arduino
+multiplexer ARDUINO_MUX_CTRL is in the default mode (GPIO).
 
 Programming and Debugging
 *************************
@@ -63,7 +136,7 @@ a few additional pieces of hardware are required.
 * A universal switching power adaptor (110-240V AC to 12 DC),
   provided in the package, which used to power the board.
 
-* :ref:`The Zephyr SDK <zephyr_sdk>`
+* :ref:`The Zephyr SDK <toolchain_zephyr_sdk>`
 
 * Terminal emulator software for use with the USB-UART. Suggestion:
   `Putty Website`_.
@@ -202,6 +275,9 @@ References
 **********
 
 .. target-notes::
+
+.. _EM Software Development Platform user guide:
+   https://www.synopsys.com/dw/ipdir.php?ds=arc-em-software-development-platform
 
 .. _Digilent Pmod Modules:
    http://store.digilentinc.com/pmod-modules

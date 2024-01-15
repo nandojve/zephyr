@@ -6,14 +6,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
-#include <lorawan/lorawan.h>
-#include <zephyr.h>
-
-#define DEFAULT_RADIO_NODE DT_ALIAS(lora0)
-BUILD_ASSERT(DT_NODE_HAS_STATUS(DEFAULT_RADIO_NODE, okay),
-	     "No default LoRa radio specified in DT");
-#define DEFAULT_RADIO DT_LABEL(DEFAULT_RADIO_NODE)
+#include <zephyr/device.h>
+#include <zephyr/lorawan/lorawan.h>
+#include <zephyr/kernel.h>
 
 /* Customize based on network configuration */
 #define LORAWAN_DEV_EUI			{ 0xDD, 0xEE, 0xAA, 0xDD, 0xBB, 0xEE,\
@@ -27,18 +22,18 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(DEFAULT_RADIO_NODE, okay),
 #define DELAY K_MSEC(10000)
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(lorawan_class_a);
 
 char data[] = {'h', 'e', 'l', 'l', 'o', 'w', 'o', 'r', 'l', 'd'};
 
 static void dl_callback(uint8_t port, bool data_pending,
 			int16_t rssi, int8_t snr,
-			uint8_t len, const uint8_t *data)
+			uint8_t len, const uint8_t *hex_data)
 {
 	LOG_INF("Port %d, Pending %d, RSSI %ddB, SNR %ddBm", port, data_pending, rssi, snr);
-	if (data) {
-		LOG_HEXDUMP_INF(data, len, "Payload: ");
+	if (hex_data) {
+		LOG_HEXDUMP_INF(hex_data, len, "Payload: ");
 	}
 }
 
@@ -50,7 +45,7 @@ static void lorwan_datarate_changed(enum lorawan_datarate dr)
 	LOG_INF("New Datarate: DR_%d, Max Payload %d", dr, max_size);
 }
 
-void main(void)
+int main(void)
 {
 	const struct device *lora_dev;
 	struct lorawan_join_config join_cfg;
@@ -64,16 +59,27 @@ void main(void)
 		.cb = dl_callback
 	};
 
-	lora_dev = device_get_binding(DEFAULT_RADIO);
-	if (!lora_dev) {
-		LOG_ERR("%s Device not found", DEFAULT_RADIO);
-		return;
+	lora_dev = DEVICE_DT_GET(DT_ALIAS(lora0));
+	if (!device_is_ready(lora_dev)) {
+		LOG_ERR("%s: device not ready.", lora_dev->name);
+		return 0;
 	}
+
+#if defined(CONFIG_LORAMAC_REGION_EU868)
+	/* If more than one region Kconfig is selected, app should set region
+	 * before calling lorawan_start()
+	 */
+	ret = lorawan_set_region(LORAWAN_REGION_EU868);
+	if (ret < 0) {
+		LOG_ERR("lorawan_set_region failed: %d", ret);
+		return 0;
+	}
+#endif
 
 	ret = lorawan_start();
 	if (ret < 0) {
 		LOG_ERR("lorawan_start failed: %d", ret);
-		return;
+		return 0;
 	}
 
 	lorawan_register_downlink_callback(&downlink_cb);
@@ -84,13 +90,18 @@ void main(void)
 	join_cfg.otaa.join_eui = join_eui;
 	join_cfg.otaa.app_key = app_key;
 	join_cfg.otaa.nwk_key = app_key;
+	join_cfg.otaa.dev_nonce = 0u;
 
 	LOG_INF("Joining network over OTAA");
 	ret = lorawan_join(&join_cfg);
 	if (ret < 0) {
 		LOG_ERR("lorawan_join_network failed: %d", ret);
-		return;
+		return 0;
 	}
+
+#ifdef CONFIG_LORAWAN_APP_CLOCK_SYNC
+	lorawan_clock_sync_run();
+#endif
 
 	LOG_INF("Sending data...");
 	while (1) {
@@ -111,7 +122,7 @@ void main(void)
 
 		if (ret < 0) {
 			LOG_ERR("lorawan_send failed: %d", ret);
-			return;
+			return 0;
 		}
 
 		LOG_INF("Data sent!");

@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(modbus, CONFIG_MODBUS_LOG_LEVEL);
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <string.h>
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 #include <modbus_internal.h>
 
 #define DT_DRV_COMPAT zephyr_modbus_serial
@@ -35,7 +35,7 @@ DT_INST_FOREACH_STATUS_OKAY(MB_RTU_DEFINE_GPIO_CFGS)
 		    (&prop##_cfg_##inst), (NULL))
 
 #define MODBUS_DT_GET_SERIAL_DEV(inst) {			\
-		.dev_name = DT_INST_BUS_LABEL(inst),		\
+		.dev = DEVICE_DT_GET(DT_INST_PARENT(inst)),	\
 		.de = MB_RTU_ASSIGN_GPIO_CFG(inst, de_gpios),	\
 		.re = MB_RTU_ASSIGN_GPIO_CFG(inst, re_gpios),	\
 	},
@@ -47,21 +47,21 @@ static struct modbus_serial_config modbus_serial_cfg[] = {
 #endif
 
 #define MODBUS_DT_GET_DEV(inst) {				\
-		.iface_name = DT_INST_LABEL(inst),		\
+		.iface_name = DEVICE_DT_NAME(DT_DRV_INST(inst)),\
 		.cfg = &modbus_serial_cfg[inst],		\
 	},
 
 #define DEFINE_MODBUS_RAW_ADU(x, _) {				\
 		.iface_name = "RAW_"#x,				\
-		.raw_tx_cb = NULL,				\
+		.rawcb.raw_tx_cb = NULL,				\
 		.mode = MODBUS_MODE_RAW,			\
-	},
+	}
 
 
 static struct modbus_context mb_ctx_tbl[] = {
 	DT_INST_FOREACH_STATUS_OKAY(MODBUS_DT_GET_DEV)
 #ifdef CONFIG_MODBUS_RAW_ADU
-	UTIL_LISTIFY(CONFIG_MODBUS_NUMOF_RAW_ADU, DEFINE_MODBUS_RAW_ADU, _)
+	LISTIFY(CONFIG_MODBUS_NUMOF_RAW_ADU, DEFINE_MODBUS_RAW_ADU, (,), _)
 #endif
 };
 
@@ -70,10 +70,6 @@ static void modbus_rx_handler(struct k_work *item)
 	struct modbus_context *ctx;
 
 	ctx = CONTAINER_OF(item, struct modbus_context, server_work);
-	if (ctx == NULL) {
-		LOG_ERR("Failed to obtain context pointer?");
-		return;
-	}
 
 	switch (ctx->mode) {
 	case MODBUS_MODE_RTU:
@@ -204,7 +200,7 @@ static struct modbus_context *modbus_init_iface(const uint8_t iface)
 	ctx = &mb_ctx_tbl[iface];
 
 	if (atomic_test_and_set_bit(&ctx->state, MODBUS_STATE_CONFIGURED)) {
-		LOG_ERR("Interface allready used");
+		LOG_ERR("Interface already used");
 		return NULL;
 	}
 
@@ -213,6 +209,14 @@ static struct modbus_context *modbus_init_iface(const uint8_t iface)
 	k_work_init(&ctx->server_work, modbus_rx_handler);
 
 	return ctx;
+}
+
+static int modbus_user_fc_init(struct modbus_context *ctx, struct modbus_iface_param param)
+{
+	sys_slist_init(&ctx->user_defined_cbs);
+	LOG_DBG("Initializing user-defined function code support.");
+
+	return 0;
 }
 
 int modbus_init_server(const int iface, struct modbus_iface_param param)
@@ -238,6 +242,14 @@ int modbus_init_server(const int iface, struct modbus_iface_param param)
 		goto init_server_error;
 	}
 
+	ctx->client = false;
+
+	if (modbus_user_fc_init(ctx, param) != 0) {
+		LOG_ERR("Failed to init MODBUS user defined function codes");
+		rc = -EINVAL;
+		goto init_server_error;
+	}
+
 	switch (param.mode) {
 	case MODBUS_MODE_RTU:
 	case MODBUS_MODE_ASCII:
@@ -262,7 +274,6 @@ int modbus_init_server(const int iface, struct modbus_iface_param param)
 		goto init_server_error;
 	}
 
-	ctx->client = false;
 	ctx->unit_id = param.server.unit_id;
 	ctx->mbs_user_cb = param.server.user_cb;
 	if (IS_ENABLED(CONFIG_MODBUS_FC08_DIAGNOSTIC)) {
@@ -281,6 +292,28 @@ init_server_error:
 	return rc;
 }
 
+int modbus_register_user_fc(const int iface, struct modbus_custom_fc *custom_fc)
+{
+	struct modbus_context *ctx = modbus_get_context(iface);
+
+	if (!custom_fc) {
+		LOG_ERR("Provided function code handler was NULL");
+		return -EINVAL;
+	}
+
+	if (custom_fc->fc & BIT(7)) {
+		LOG_ERR("Function codes must have MSB of 0");
+		return -EINVAL;
+	}
+
+	custom_fc->excep_code = MODBUS_EXC_NONE;
+
+	LOG_DBG("Registered new custom function code %d", custom_fc->fc);
+	sys_slist_append(&ctx->user_defined_cbs, &custom_fc->node);
+
+	return 0;
+}
+
 int modbus_init_client(const int iface, struct modbus_iface_param param)
 {
 	struct modbus_context *ctx = NULL;
@@ -297,6 +330,8 @@ int modbus_init_client(const int iface, struct modbus_iface_param param)
 		rc = -EINVAL;
 		goto init_client_error;
 	}
+
+	ctx->client = true;
 
 	switch (param.mode) {
 	case MODBUS_MODE_RTU:
@@ -322,7 +357,6 @@ int modbus_init_client(const int iface, struct modbus_iface_param param)
 		goto init_client_error;
 	}
 
-	ctx->client = true;
 	ctx->unit_id = 0;
 	ctx->mbs_user_cb = NULL;
 	ctx->rxwait_to = param.rx_timeout;
@@ -340,6 +374,7 @@ init_client_error:
 int modbus_disable(const uint8_t iface)
 {
 	struct modbus_context *ctx;
+	struct k_work_sync work_sync;
 
 	ctx = modbus_get_context(iface);
 	if (ctx == NULL) {
@@ -360,6 +395,7 @@ int modbus_disable(const uint8_t iface)
 		LOG_ERR("Unknown MODBUS mode");
 	}
 
+	k_work_cancel_sync(&ctx->server_work, &work_sync);
 	ctx->rxwait_to = 0;
 	ctx->unit_id = 0;
 	ctx->mode = MODBUS_MODE_RTU;

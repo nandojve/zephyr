@@ -1,0 +1,69 @@
+/*
+ * Copyright 2022 NXP
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <nxp/nxp_mimx93_a55.dtsi>
+#include "mimx93_evk-pinctrl.dtsi"
+
+/ {
+	model = "NXP i.MX93 A55";
+	compatible = "fsl,mimx93";
+
+	chosen {
+		zephyr,console = &lpuart2;
+		zephyr,shell-uart = &lpuart2;
+		zephyr,sram = &sram0;
+	};
+
+	cpus {
+		cpu@0 {
+			status = "disabled";
+		};
+	};
+
+	sram0: memory@c0000000 {
+		reg = <0xc0000000 DT_SIZE_M(1)>;
+	};
+};
+
+&lpuart1 {
+	status = "disabled";
+	current-speed = <115200>;
+	/* clocks = <&ccm IMX_CCM_UART4_CLK 0x6c 24>; */
+	pinctrl-0 = <&uart1_default>;
+	pinctrl-names = "default";
+};
+
+&lpuart2 {
+	status = "okay";
+	current-speed = <115200>;
+	/* clocks = <&ccm IMX_CCM_UART4_CLK 0x6c 24>; */
+	pinctrl-0 = <&uart2_default>;
+	pinctrl-names = "default";
+};
+
+
+&lpi2c1{
+	status = "disabled";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	pinctrl-0 = <&i2c1_default>;
+	pinctrl-names = "default";
+};
+
+&lpi2c2{
+	status = "disabled";
+	clock-frequency = <I2C_BITRATE_FAST>;
+	pinctrl-0 = <&i2c2_default>;
+	pinctrl-names = "default";
+};
+
+&lpspi3 {
+	status = "disabled";
+	clock-frequency = <1000000>;
+	pinctrl-0 = <&spi3_default>;
+	pinctrl-names = "default";
+};

@@ -90,7 +90,8 @@ enum {
 	kFlexSpiSerialClk_100MHz = 6,
 	kFlexSpiSerialClk_133MHz = 7,
 };
-#elif defined(CONFIG_SOC_MIMXRT1051) || defined(CONFIG_SOC_MIMXRT1052)
+#elif defined(CONFIG_SOC_MIMXRT1051) || defined(CONFIG_SOC_MIMXRT1052) || \
+	defined(CONFIG_SOC_SERIES_IMX_RT11XX)
 enum {
 	kFlexSpiSerialClk_30MHz  = 1,
 	kFlexSpiSerialClk_50MHz  = 2,
@@ -246,7 +247,7 @@ struct flexspi_mem_config_t {
 	uint8_t deviceType;
 	/* !< [0x045-0x045] Serial Flash Pad Type: 1 - Single, 2 - Dual, 4 - Quad, 8 - Octal */
 	uint8_t sflashPadType;
-	/* !< [0x046-0x046] Serial Flash Frequencey, device specific definitions, See System Boot */
+	/* !< [0x046-0x046] Serial Flash Frequency, device specific definitions, See System Boot */
 	uint8_t serialClkFreq;
 	/* ! Chapter for more details */
 	/* !< [0x047-0x047] LUT customization Enable, it is required if the program/erase cannot */
@@ -330,7 +331,7 @@ struct flexspi_nor_config_t {
 	uint8_t needExitNoCmdMode;
 	/* !< Half the Serial Clock for non-read command: true/false */
 	uint8_t halfClkForNonReadCmd;
-	/* !< Need to Restore NoCmd mode after IP commmand execution */
+	/* !< Need to Restore NoCmd mode after IP command execution */
 	uint8_t needRestoreNoCmdMode;
 	/* !< Block size */
 	uint32_t blockSize;

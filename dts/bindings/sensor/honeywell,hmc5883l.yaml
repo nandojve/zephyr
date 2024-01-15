@@ -5,14 +5,13 @@ description: Honeywell HMC5883L 3-axis magnetometer sensor
 
 compatible: "honeywell,hmc5883l"
 
-include: i2c-device.yaml
+include: [sensor-device.yaml, i2c-device.yaml]
 
 properties:
-    int-gpios:
-      type: phandle-array
-      required: false
-      description: DRDY pin
+  int-gpios:
+    type: phandle-array
+    description: DRDY pin
 
-        This pin is active low, with an internal pullup in the sensor.
-        The property value should ensure the flags properly describe
-        the signal that is presented to the driver.
+      This pin is active low, with an internal pullup in the sensor.
+      The property value should ensure the flags properly describe
+      the signal that is presented to the driver.

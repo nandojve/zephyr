@@ -8,28 +8,23 @@
  * http://ae-bst.resource.bosch.com/media/_tech/media/datasheets/BST-BMG160-DS000-09.pdf
  */
 
-#include <kernel.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
 
 #include "bmg160.h"
 
 extern struct bmg160_device_data bmg160_data;
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(BMG160, CONFIG_SENSOR_LOG_LEVEL);
 
 static inline int setup_int(const struct device *dev,
 			      bool enable)
 {
-	struct bmg160_device_data *data = dev->data;
-	const struct bmg160_device_config *const cfg =
-		dev->config;
+	const struct bmg160_device_config *cfg = dev->config;
 
-	return gpio_pin_interrupt_configure(data->gpio,
-					    cfg->int_pin,
-					    enable
-					    ? GPIO_INT_EDGE_TO_ACTIVE
-					    : GPIO_INT_DISABLE);
+	return gpio_pin_interrupt_configure_dt(&cfg->int_gpio,
+					       enable ? GPIO_INT_EDGE_TO_ACTIVE : GPIO_INT_DISABLE);
 }
 
 static void bmg160_gpio_callback(const struct device *port,
@@ -50,6 +45,7 @@ static void bmg160_gpio_callback(const struct device *port,
 }
 
 static int bmg160_anymotion_set(const struct device *dev,
+				const struct sensor_trigger *trig,
 				sensor_trigger_handler_t handler)
 {
 	struct bmg160_device_data *bmg160 = dev->data;
@@ -67,11 +63,13 @@ static int bmg160_anymotion_set(const struct device *dev,
 	}
 
 	bmg160->anymotion_handler = handler;
+	bmg160->anymotion_trig = trig;
 
 	return 0;
 }
 
 static int bmg160_drdy_set(const struct device *dev,
+			   const struct sensor_trigger *trig,
 			   sensor_trigger_handler_t handler)
 {
 	struct bmg160_device_data *bmg160 = dev->data;
@@ -83,6 +81,7 @@ static int bmg160_drdy_set(const struct device *dev,
 	}
 
 	bmg160->drdy_handler = handler;
+	bmg160->drdy_trig = trig;
 
 	return 0;
 }
@@ -126,10 +125,16 @@ int bmg160_trigger_set(const struct device *dev,
 		       const struct sensor_trigger *trig,
 		       sensor_trigger_handler_t handler)
 {
+	const struct bmg160_device_config *config = dev->config;
+
+	if (!config->int_gpio.port) {
+		return -ENOTSUP;
+	}
+
 	if (trig->type == SENSOR_TRIG_DELTA) {
-		return bmg160_anymotion_set(dev, handler);
+		return bmg160_anymotion_set(dev, trig, handler);
 	} else if (trig->type == SENSOR_TRIG_DATA_READY) {
-		return bmg160_drdy_set(dev, handler);
+		return bmg160_drdy_set(dev, trig, handler);
 	}
 
 	return -ENOTSUP;
@@ -138,13 +143,9 @@ int bmg160_trigger_set(const struct device *dev,
 static int bmg160_handle_anymotion_int(const struct device *dev)
 {
 	struct bmg160_device_data *bmg160 = dev->data;
-	struct sensor_trigger any_trig = {
-		.type = SENSOR_TRIG_DELTA,
-		.chan = SENSOR_CHAN_GYRO_XYZ,
-	};
 
 	if (bmg160->anymotion_handler) {
-		bmg160->anymotion_handler(dev, &any_trig);
+		bmg160->anymotion_handler(dev, bmg160->anymotion_trig);
 	}
 
 	return 0;
@@ -153,13 +154,9 @@ static int bmg160_handle_anymotion_int(const struct device *dev)
 static int bmg160_handle_dataready_int(const struct device *dev)
 {
 	struct bmg160_device_data *bmg160 = dev->data;
-	struct sensor_trigger drdy_trig = {
-		.type = SENSOR_TRIG_DATA_READY,
-		.chan = SENSOR_CHAN_GYRO_XYZ,
-	};
 
 	if (bmg160->drdy_handler) {
-		bmg160->drdy_handler(dev, &drdy_trig);
+		bmg160->drdy_handler(dev, bmg160->drdy_trig);
 	}
 
 	return 0;
@@ -184,8 +181,13 @@ static void bmg160_handle_int(const struct device *dev)
 static K_KERNEL_STACK_DEFINE(bmg160_thread_stack, CONFIG_BMG160_THREAD_STACK_SIZE);
 static struct k_thread bmg160_thread;
 
-static void bmg160_thread_main(struct bmg160_device_data *bmg160)
+static void bmg160_thread_main(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct bmg160_device_data *bmg160 = p1;
+
 	while (true) {
 		k_sem_take(&bmg160->trig_sem, K_FOREVER);
 
@@ -237,10 +239,9 @@ int bmg160_trigger_init(const struct device *dev)
 		return -EIO;
 	}
 
-	bmg160->gpio = device_get_binding((char *)cfg->gpio_port);
-	if (!bmg160->gpio) {
-		LOG_DBG("Gpio controller %s not found", cfg->gpio_port);
-		return -EINVAL;
+	if (!gpio_is_ready_dt(&cfg->int_gpio)) {
+		LOG_ERR("GPIO device not ready");
+		return -ENODEV;
 	}
 
 	bmg160->dev = dev;
@@ -249,7 +250,7 @@ int bmg160_trigger_init(const struct device *dev)
 	k_sem_init(&bmg160->trig_sem, 0, K_SEM_MAX_LIMIT);
 	k_thread_create(&bmg160_thread, bmg160_thread_stack,
 			CONFIG_BMG160_THREAD_STACK_SIZE,
-			(k_thread_entry_t)bmg160_thread_main,
+			bmg160_thread_main,
 			bmg160, NULL, NULL,
 			K_PRIO_COOP(CONFIG_BMG160_THREAD_PRIORITY), 0,
 			K_NO_WAIT);
@@ -258,16 +259,15 @@ int bmg160_trigger_init(const struct device *dev)
 	bmg160->work.handler = bmg160_work_cb;
 #endif
 
-	ret = gpio_pin_configure(bmg160->gpio, cfg->int_pin,
-				 cfg->int_flags | GPIO_INT_EDGE_TO_ACTIVE);
+	ret = gpio_pin_configure_dt(&cfg->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
 	if (ret < 0) {
 		return ret;
 	}
 
 	gpio_init_callback(&bmg160->gpio_cb, bmg160_gpio_callback,
-			   BIT(cfg->int_pin));
+			   BIT(cfg->int_gpio.pin));
 
-	ret = gpio_add_callback(bmg160->gpio, &bmg160->gpio_cb);
+	ret = gpio_add_callback(cfg->int_gpio.port, &bmg160->gpio_cb);
 	if (ret < 0) {
 		return ret;
 	}

@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/ztest.h>
+#include <zephyr/arch/cpu.h>
+#include <cmsis_core.h>
+#include <zephyr/sys/barrier.h>
 
 static volatile int test_flag;
 
@@ -17,7 +18,7 @@ void arm_zero_latency_isr_handler(const void *args)
 	test_flag = 1;
 }
 
-void test_arm_zero_latency_irqs(void)
+ZTEST(arm_irq_advanced_features, test_arm_zero_latency_irqs)
 {
 
 	if (!IS_ENABLED(CONFIG_ZERO_LATENCY_IRQS)) {
@@ -94,8 +95,8 @@ void test_arm_zero_latency_irqs(void)
 	 * Instruction barriers to make sure the NVIC IRQ is
 	 * set to pending state before 'test_flag' is checked.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Confirm test flag is set by the zero-latency ISR handler. */
 	post_flag = test_flag;

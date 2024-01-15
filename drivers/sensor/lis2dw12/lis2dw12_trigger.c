@@ -10,10 +10,10 @@
 
 #define DT_DRV_COMPAT st_lis2dw12
 
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/logging/log.h>
 
 #include "lis2dw12.h"
 
@@ -67,6 +67,36 @@ static int lis2dw12_enable_int(const struct device *dev,
 		return lis2dw12_pin_int1_route_set(ctx,
 				&int_route.ctrl4_int1_pad_ctrl);
 #endif /* CONFIG_LIS2DW12_TAP */
+#ifdef CONFIG_LIS2DW12_THRESHOLD
+	/**
+	 * Trigger fires when channel reading transitions configured
+	 * thresholds.  The thresholds are configured via the @ref
+	 * SENSOR_ATTR_LOWER_THRESH and @ref SENSOR_ATTR_UPPER_THRESH
+	 * attributes.
+	 */
+	case SENSOR_TRIG_THRESHOLD:
+		LOG_DBG("Setting int1_wu: %d\n", enable);
+		lis2dw12_pin_int1_route_get(ctx,
+				&int_route.ctrl4_int1_pad_ctrl);
+		int_route.ctrl4_int1_pad_ctrl.int1_wu = enable;
+		return lis2dw12_pin_int1_route_set(ctx,
+						   &int_route.ctrl4_int1_pad_ctrl);
+#endif
+#ifdef CONFIG_LIS2DW12_FREEFALL
+	/**
+	 * Trigger fires when the readings does not include Earth's
+	 * gravitional force for configured duration and threshold.
+	 * The duration and the threshold can be configured in the
+	 * devicetree source of the accelerometer node.
+	 */
+	case SENSOR_TRIG_FREEFALL:
+		LOG_DBG("Setting int1_ff: %d\n", enable);
+		lis2dw12_pin_int1_route_get(ctx,
+				&int_route.ctrl4_int1_pad_ctrl);
+		int_route.ctrl4_int1_pad_ctrl.int1_ff = enable;
+		return lis2dw12_pin_int1_route_set(ctx,
+				&int_route.ctrl4_int1_pad_ctrl);
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 	default:
 		LOG_ERR("Unsupported trigger interrupt route %d", type);
 		return -ENOTSUP;
@@ -94,6 +124,7 @@ int lis2dw12_trigger_set(const struct device *dev,
 	switch (trig->type) {
 	case SENSOR_TRIG_DATA_READY:
 		lis2dw12->drdy_handler = handler;
+		lis2dw12->drdy_trig = trig;
 		if (state) {
 			/* dummy read: re-trigger interrupt */
 			lis2dw12_acceleration_raw_get(ctx, raw);
@@ -114,13 +145,32 @@ int lis2dw12_trigger_set(const struct device *dev,
 		/* Set single TAP trigger  */
 		if (trig->type == SENSOR_TRIG_TAP) {
 			lis2dw12->tap_handler = handler;
+			lis2dw12->tap_trig = trig;
 			return lis2dw12_enable_int(dev, SENSOR_TRIG_TAP, state);
 		}
 
 		/* Set double TAP trigger  */
 		lis2dw12->double_tap_handler = handler;
+		lis2dw12->double_tap_trig = trig;
 		return lis2dw12_enable_int(dev, SENSOR_TRIG_DOUBLE_TAP, state);
 #endif /* CONFIG_LIS2DW12_TAP */
+#ifdef CONFIG_LIS2DW12_THRESHOLD
+	case SENSOR_TRIG_THRESHOLD:
+	{
+		LOG_DBG("Set trigger %d (handler: %p)\n", trig->type, handler);
+		lis2dw12->threshold_handler = handler;
+		lis2dw12->threshold_trig = trig;
+		return lis2dw12_enable_int(dev, SENSOR_TRIG_THRESHOLD, state);
+	}
+#endif
+#ifdef CONFIG_LIS2DW12_FREEFALL
+	case SENSOR_TRIG_FREEFALL:
+	LOG_DBG("Set freefall %d (handler: %p)\n", trig->type, handler);
+		lis2dw12->freefall_handler = handler;
+		lis2dw12->freefall_trig = trig;
+		return lis2dw12_enable_int(dev, SENSOR_TRIG_FREEFALL, state);
+	break;
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 	default:
 		LOG_ERR("Unsupported sensor trigger");
 		return -ENOTSUP;
@@ -131,13 +181,8 @@ static int lis2dw12_handle_drdy_int(const struct device *dev)
 {
 	struct lis2dw12_data *data = dev->data;
 
-	struct sensor_trigger drdy_trig = {
-		.type = SENSOR_TRIG_DATA_READY,
-		.chan = SENSOR_CHAN_ALL,
-	};
-
 	if (data->drdy_handler) {
-		data->drdy_handler(dev, &drdy_trig);
+		data->drdy_handler(dev, data->drdy_trig);
 	}
 
 	return 0;
@@ -149,13 +194,8 @@ static int lis2dw12_handle_single_tap_int(const struct device *dev)
 	struct lis2dw12_data *data = dev->data;
 	sensor_trigger_handler_t handler = data->tap_handler;
 
-	struct sensor_trigger pulse_trig = {
-		.type = SENSOR_TRIG_TAP,
-		.chan = SENSOR_CHAN_ALL,
-	};
-
 	if (handler) {
-		handler(dev, &pulse_trig);
+		handler(dev, data->tap_trig);
 	}
 
 	return 0;
@@ -166,18 +206,41 @@ static int lis2dw12_handle_double_tap_int(const struct device *dev)
 	struct lis2dw12_data *data = dev->data;
 	sensor_trigger_handler_t handler = data->double_tap_handler;
 
-	struct sensor_trigger pulse_trig = {
-		.type = SENSOR_TRIG_DOUBLE_TAP,
-		.chan = SENSOR_CHAN_ALL,
-	};
-
 	if (handler) {
-		handler(dev, &pulse_trig);
+		handler(dev, data->double_tap_trig);
 	}
 
 	return 0;
 }
 #endif /* CONFIG_LIS2DW12_TAP */
+
+#ifdef CONFIG_LIS2DW12_THRESHOLD
+static int lis2dw12_handle_wu_ia_int(const struct device *dev)
+{
+	struct lis2dw12_data *lis2dw12 = dev->data;
+	sensor_trigger_handler_t handler = lis2dw12->threshold_handler;
+
+	if (handler) {
+		handler(dev, lis2dw12->threshold_trig);
+	}
+
+	return 0;
+}
+#endif
+
+#ifdef CONFIG_LIS2DW12_FREEFALL
+static int lis2dw12_handle_ff_ia_int(const struct device *dev)
+{
+	struct lis2dw12_data *lis2dw12 = dev->data;
+	sensor_trigger_handler_t handler = lis2dw12->freefall_handler;
+
+	if (handler) {
+		handler(dev, lis2dw12->freefall_trig);
+	}
+
+	return 0;
+}
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 
 /**
  * lis2dw12_handle_interrupt - handle the drdy event
@@ -202,6 +265,16 @@ static void lis2dw12_handle_interrupt(const struct device *dev)
 		lis2dw12_handle_double_tap_int(dev);
 	}
 #endif /* CONFIG_LIS2DW12_TAP */
+#ifdef CONFIG_LIS2DW12_THRESHOLD
+	if (sources.all_int_src.wu_ia) {
+		lis2dw12_handle_wu_ia_int(dev);
+	}
+#endif
+#ifdef CONFIG_LIS2DW12_FREEFALL
+	if (sources.all_int_src.ff_ia) {
+		lis2dw12_handle_ff_ia_int(dev);
+	}
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 
 	gpio_pin_interrupt_configure_dt(&cfg->gpio_int,
 					GPIO_INT_EDGE_TO_ACTIVE);
@@ -228,8 +301,13 @@ static void lis2dw12_gpio_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_LIS2DW12_TRIGGER_OWN_THREAD
-static void lis2dw12_thread(struct lis2dw12_data *lis2dw12)
+static void lis2dw12_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct lis2dw12_data *lis2dw12 = p1;
+
 	while (1) {
 		k_sem_take(&lis2dw12->gpio_sem, K_FOREVER);
 		lis2dw12_handle_interrupt(lis2dw12->dev);
@@ -323,6 +401,34 @@ static int lis2dw12_tap_init(const struct device *dev)
 }
 #endif /* CONFIG_LIS2DW12_TAP */
 
+#ifdef CONFIG_LIS2DW12_FREEFALL
+static int lis2dw12_ff_init(const struct device *dev)
+{
+	int rc;
+	const struct lis2dw12_device_config *cfg = dev->config;
+	struct lis2dw12_data *lis2dw12 = dev->data;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	uint16_t duration;
+
+	duration = (lis2dw12->odr * cfg->freefall_duration) / 1000;
+
+	LOG_DBG("FREEFALL: duration is %d ms", cfg->freefall_duration);
+	rc = lis2dw12_ff_dur_set(ctx, duration);
+	if (rc != 0) {
+		LOG_ERR("Failed to set freefall duration");
+		return -EIO;
+	}
+
+	LOG_DBG("FREEFALL: threshold is %02x", cfg->freefall_threshold);
+	rc = lis2dw12_ff_threshold_set(ctx, cfg->freefall_threshold);
+	if (rc != 0) {
+		LOG_ERR("Failed to set freefall thrshold");
+		return -EIO;
+	}
+	return 0;
+}
+#endif /* CONFIG_LIS2DW12_FREEFALL */
+
 int lis2dw12_init_interrupt(const struct device *dev)
 {
 	struct lis2dw12_data *lis2dw12 = dev->data;
@@ -331,7 +437,7 @@ int lis2dw12_init_interrupt(const struct device *dev)
 	int ret;
 
 	/* setup data ready gpio interrupt (INT1 or INT2) */
-	if (!device_is_ready(cfg->gpio_int.port)) {
+	if (!gpio_is_ready_dt(&cfg->gpio_int)) {
 		if (cfg->gpio_int.port) {
 			LOG_ERR("%s: device %s is not ready", dev->name,
 						cfg->gpio_int.port->name);
@@ -350,7 +456,7 @@ int lis2dw12_init_interrupt(const struct device *dev)
 
 	k_thread_create(&lis2dw12->thread, lis2dw12->thread_stack,
 		       CONFIG_LIS2DW12_THREAD_STACK_SIZE,
-		       (k_thread_entry_t)lis2dw12_thread, lis2dw12,
+		       lis2dw12_thread, lis2dw12,
 		       NULL, NULL, K_PRIO_COOP(CONFIG_LIS2DW12_THREAD_PRIORITY),
 		       0, K_NO_WAIT);
 #elif defined(CONFIG_LIS2DW12_TRIGGER_GLOBAL_THREAD)
@@ -375,9 +481,15 @@ int lis2dw12_init_interrupt(const struct device *dev)
 		return -EIO;
 	}
 
-	/* enable interrupt on int1/int2 in pulse mode */
-	if (lis2dw12_int_notification_set(ctx, LIS2DW12_INT_PULSED)) {
-		return -EIO;
+	/* set data ready mode on int1/int2 */
+	LOG_DBG("drdy_pulsed is %d", (int)cfg->drdy_pulsed);
+	lis2dw12_drdy_pulsed_t mode = cfg->drdy_pulsed ? LIS2DW12_DRDY_PULSED :
+							 LIS2DW12_DRDY_LATCHED;
+
+	ret = lis2dw12_data_ready_mode_set(ctx, mode);
+	if (ret < 0) {
+		LOG_ERR("drdy_pulsed config error %d", (int)cfg->drdy_pulsed);
+		return ret;
 	}
 
 #ifdef CONFIG_LIS2DW12_TAP
@@ -386,6 +498,13 @@ int lis2dw12_init_interrupt(const struct device *dev)
 		return ret;
 	}
 #endif /* CONFIG_LIS2DW12_TAP */
+
+#ifdef CONFIG_LIS2DW12_FREEFALL
+	ret = lis2dw12_ff_init(dev);
+		if (ret < 0) {
+			return ret;
+		}
+#endif /* CONFIG_LIS2DW12_FREEFALL */
 
 	return gpio_pin_interrupt_configure_dt(&cfg->gpio_int,
 					       GPIO_INT_EDGE_TO_ACTIVE);

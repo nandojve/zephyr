@@ -4,13 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <stdio.h>
 
-#include "main.h"
 #include "thread_def.h"
 
-void main(void)
+int main(void)
 {
 	printf("Main Thread started; %s\n", CONFIG_BOARD);
 
@@ -23,4 +22,5 @@ void main(void)
 	k_thread_create(&user_thread, user_stack, THREAD_STACKSIZE,
 			user_thread_function, NULL, NULL, NULL,
 			-1, K_USER | K_INHERIT_PERMS, K_NO_WAIT);
+	return 0;
 }

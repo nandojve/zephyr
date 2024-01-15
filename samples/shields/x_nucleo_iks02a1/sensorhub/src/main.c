@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifdef CONFIG_IIS2DLPC_TRIGGER
 static int iis2dlpc_trig_cnt;
@@ -148,7 +148,7 @@ static void ism330dhcx_config(const struct device *ism330dhcx)
 #endif
 }
 
-void main(void)
+int main(void)
 {
 #ifdef CONFIG_ISM330DHCX_ENABLE_TEMP
 	struct sensor_value die_temp;
@@ -156,17 +156,17 @@ void main(void)
 	struct sensor_value accel1[3], accel2[3];
 	struct sensor_value gyro[3];
 	struct sensor_value magn[3];
-	const struct device *iis2dlpc = device_get_binding(DT_LABEL(DT_INST(0, st_iis2dlpc)));
-	const struct device *ism330dhcx = device_get_binding(DT_LABEL(DT_INST(0, st_ism330dhcx)));
+	const struct device *const iis2dlpc = DEVICE_DT_GET_ONE(st_iis2dlpc);
+	const struct device *const ism330dhcx = DEVICE_DT_GET_ONE(st_ism330dhcx);
 	int cnt = 1;
 
-	if (iis2dlpc == NULL) {
-		printf("Could not get IIS2DLPC device\n");
-		return;
+	if (!device_is_ready(iis2dlpc)) {
+		printk("%s: device not ready.\n", iis2dlpc->name);
+		return 0;
 	}
-	if (ism330dhcx == NULL) {
-		printf("Could not get ISM330DHCX device\n");
-		return;
+	if (!device_is_ready(ism330dhcx)) {
+		printk("%s: device not ready.\n", ism330dhcx->name);
+		return 0;
 	}
 
 	iis2dlpc_config(iis2dlpc);
@@ -178,13 +178,13 @@ void main(void)
 #ifndef CONFIG_IIS2DLPC_TRIGGER
 		if (sensor_sample_fetch(iis2dlpc) < 0) {
 			printf("IIS2DLPC Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 #ifndef CONFIG_ISM330DHCX_TRIGGER
 		if (sensor_sample_fetch(ism330dhcx) < 0) {
 			printf("ISM330DHCX Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 

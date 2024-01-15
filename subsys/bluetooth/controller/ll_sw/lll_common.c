@@ -6,16 +6,13 @@
 
 #include <errno.h>
 #include <zephyr/types.h>
-#include <device.h>
+#include <zephyr/device.h>
 
 #include "util/mem.h"
 #include "util/memq.h"
 
 #include "lll.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_lll_common
-#include "common/log.h"
 #include "hal/debug.h"
 
 /**
@@ -41,6 +38,8 @@ int lll_prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 		lll_prepare_cb_t prepare_cb, int8_t event_prio,
 		struct lll_prepare_param *prepare_param)
 {
+	int err;
+
 #if defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
 	int prio = event_prio;
 	struct lll_hdr *hdr = prepare_param->param;
@@ -63,20 +62,20 @@ int lll_prepare(lll_is_abort_cb_t is_abort_cb, lll_abort_cb_t abort_cb,
 	prepare_param->prio = prio;
 #endif /* CONFIG_BT_CTLR_JIT_SCHEDULING */
 
-	return lll_prepare_resolve(is_abort_cb, abort_cb, prepare_cb,
-				   prepare_param, 0, 0);
+	err = lll_prepare_resolve(is_abort_cb, abort_cb, prepare_cb, prepare_param, 0U, 0U);
+
+	return err;
 }
 
 void lll_resume(void *param)
 {
 	struct lll_event *next;
-	int ret;
+	int err;
 
 	next = param;
-	ret = lll_prepare_resolve(next->is_abort_cb, next->abort_cb,
-				  next->prepare_cb, &next->prepare_param,
-				  next->is_resume, 1);
-	LL_ASSERT(!ret || ret == -EINPROGRESS);
+	err = lll_prepare_resolve(next->is_abort_cb, next->abort_cb, next->prepare_cb,
+				  &next->prepare_param, next->is_resume, 1U);
+	LL_ASSERT(!err || err == -EINPROGRESS);
 }
 
 #if defined(CONFIG_BT_CTLR_JIT_SCHEDULING)

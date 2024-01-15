@@ -28,9 +28,7 @@ Here are some highlights of the BLACK_F407ZG_PRO board:
 - Mini-AB connector
 
 .. image:: img/black_f407zg_pro.jpg
-     :width: 500px
      :align: center
-     :height: 500px
      :alt: BLACK_F407ZG_PRO
 
 .. warning:: The +5V pins on this board are directly connected to the +5V pin
@@ -186,7 +184,7 @@ This interface is supported by the openocd version included in Zephyr SDK.
 Flashing an application to BLACK_F407ZG_PRO
 -------------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 Run a serial host program to connect with your board:
 

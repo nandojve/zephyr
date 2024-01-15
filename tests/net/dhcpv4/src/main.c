@@ -6,32 +6,32 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_DHCPV4_LOG_LEVEL);
 
-#include <zephyr.h>
-#include <linker/sections.h>
+#include <zephyr/kernel.h>
+#include <zephyr/linker/sections.h>
 
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <device.h>
-#include <init.h>
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_ip.h>
-#include <net/dhcpv4.h>
-#include <net/ethernet.h>
-#include <net/net_mgmt.h>
-#include <net/dummy.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/dhcpv4.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/dummy.h>
 
 #include "ipv4.h"
 #include "udp_internal.h"
 
-#include <tc_util.h>
-#include <ztest.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
 
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
@@ -148,6 +148,7 @@ static const struct in_addr client_addr = { { { 255, 255, 255, 255 } } };
 #define MSG_TYPE	53
 #define DISCOVER	1
 #define REQUEST		3
+#define OPTION_DOMAIN	15
 
 struct dhcp_msg {
 	uint32_t xid;
@@ -389,6 +390,10 @@ NET_DEVICE_INIT(net_dhcpv4_test, "net_dhcpv4_test",
 static struct net_mgmt_event_callback rx_cb;
 static struct net_mgmt_event_callback dns_cb;
 static struct net_mgmt_event_callback dhcp_cb;
+#ifdef CONFIG_NET_DHCPV4_OPTION_CALLBACKS
+static struct net_dhcpv4_option_callback opt_cb;
+static uint8_t buffer[15];
+#endif
 static int event_count;
 
 static void receiver_cb(struct net_mgmt_event_callback *cb,
@@ -408,7 +413,28 @@ static void receiver_cb(struct net_mgmt_event_callback *cb,
 	k_sem_give(&test_lock);
 }
 
-void test_dhcp(void)
+#ifdef CONFIG_NET_DHCPV4_OPTION_CALLBACKS
+
+static void option_cb(struct net_dhcpv4_option_callback *cb,
+		      size_t length,
+		      enum net_dhcpv4_msg_type msg_type,
+		      struct net_if *iface)
+{
+	char expectation[] = "fi.intel.com";
+
+	zassert_equal(cb->option, OPTION_DOMAIN, "Unexpected option value");
+	zassert_equal(length, sizeof(expectation), "Incorrect data length");
+	zassert_mem_equal(buffer, expectation, sizeof(expectation),
+			  "Incorrect buffer contents");
+
+	event_count++;
+
+	k_sem_give(&test_lock);
+}
+
+#endif /* CONFIG_NET_DHCPV4_OPTION_CALLBACKS */
+
+ZTEST(dhcpv4_tests, test_dhcp)
 {
 	struct net_if *iface;
 
@@ -431,6 +457,14 @@ void test_dhcp(void)
 
 	net_mgmt_add_event_callback(&dhcp_cb);
 
+#ifdef CONFIG_NET_DHCPV4_OPTION_CALLBACKS
+	net_dhcpv4_init_option_callback(&opt_cb, option_cb,
+					OPTION_DOMAIN, buffer,
+					sizeof(buffer));
+
+	net_dhcpv4_add_option_callback(&opt_cb);
+#endif /* CONFIG_NET_DHCPV4_OPTION_CALLBACKS */
+
 	iface = net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY));
 	if (!iface) {
 		zassert_true(false, "Interface not available");
@@ -438,7 +472,11 @@ void test_dhcp(void)
 
 	net_dhcpv4_start(iface);
 
+#ifdef CONFIG_NET_DHCPV4_OPTION_CALLBACKS
+	while (event_count < 6) {
+#else
 	while (event_count < 5) {
+#endif
 		if (k_sem_take(&test_lock, WAIT_TIME)) {
 			zassert_true(false, "Timeout while waiting");
 		}
@@ -446,9 +484,4 @@ void test_dhcp(void)
 }
 
 /**test case main entry */
-void test_main(void)
-{
-	ztest_test_suite(test_dhcpv4,
-			ztest_unit_test(test_dhcp));
-	ztest_run_test_suite(test_dhcpv4);
-}
+ZTEST_SUITE(dhcpv4_tests, NULL, NULL, NULL, NULL, NULL);

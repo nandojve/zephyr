@@ -7,7 +7,7 @@
 #ifndef ZEPHYR_DRIVERS_I2C_I2C_NPCX_CONTROLLER_H_
 #define ZEPHYR_DRIVERS_I2C_I2C_NPCX_CONTROLLER_H_
 
-#include <device.h>
+#include <zephyr/device.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -68,6 +68,43 @@ int npcx_i2c_ctrl_get_speed(const struct device *i2c_dev, uint32_t *speed);
  */
 int npcx_i2c_ctrl_transfer(const struct device *i2c_dev, struct i2c_msg *msgs,
 			      uint8_t num_msgs, uint16_t addr, uint8_t port);
+
+/**
+ * @brief Toggle the SCL to generate maxmium 9 clocks until the target release
+ * the SDA line and send a STOP condition.
+ *
+ * @param i2c_dev Pointer to the device structure for i2c controller instance.
+ *
+ * @retval 0 If successful.
+ * @retval -EBUSY fail to recover the bus.
+ */
+int npcx_i2c_ctrl_recover_bus(const struct device *dev);
+
+/**
+ * @brief Registers the provided config as Target device of a npcx i2c controller.
+ *
+ * @param i2c_dev Pointer to the device structure for i2c controller instance.
+ * @param target_cfg Config struct used by the i2c target driver
+ * @param port Port index of selected i2c port.
+ *
+ * @retval 0 Is successful
+ * @retval -EBUSY If i2c transaction is proceeding.
+ */
+int npcx_i2c_ctrl_target_register(const struct device *i2c_dev,
+				 struct i2c_target_config *target_cfg, uint8_t port);
+
+/**
+ * @brief Unregisters the provided config as Target device of a npcx i2c controller.
+ *
+ * @param i2c_dev Pointer to the device structure for i2c controller instance.
+ * @param target_cfg Config struct used by the i2c target driver
+ *
+ * @retval 0 Is successful
+ * @retval -EBUSY If i2c transaction is proceeding.
+ * @retval -EINVAL If parameters are invalid
+ */
+int npcx_i2c_ctrl_target_unregister(const struct device *i2c_dev,
+				   struct i2c_target_config *target_cfg);
 
 #ifdef __cplusplus
 }

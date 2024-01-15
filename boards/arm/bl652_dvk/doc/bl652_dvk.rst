@@ -32,14 +32,12 @@ Available BL652 DVK part numbers:
 * DVK-BL652-SC
 
 .. figure:: img/bl652_dvk.jpg
-     :width: 500px
      :align: center
      :alt: BL652 DVK
 
      BL652 DVK Board
 
 .. figure:: img/BL652-SA_DVK_BoxContents.jpg
-     :width: 500px
      :align: center
      :alt: BL652-SA DVK Box Contents
 
@@ -89,7 +87,7 @@ hardware features:
 | WDT       | on-chip    | watchdog             |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 See `BL652 Module Website`_.
 
 Connections and IOs
@@ -257,8 +255,8 @@ Testing the LEDs and buttons in the BL652 DVK
 There are 2 samples that allow you to test that the buttons (switches) and LEDs on
 the board are working properly with Zephyr:
 
-* :ref:`blinky-sample`
-* :ref:`button-sample`
+* :zephyr:code-sample:`blinky`
+* :zephyr:code-sample:`button`
 
 You can build and flash the examples to make sure Zephyr is running correctly on
 your board. The button and LED definitions can be found in

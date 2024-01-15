@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017-2020 Nordic Semiconductor ASA
+ * Copyright (c) 2017-2023 Nordic Semiconductor ASA
  * Copyright (c) 2015 Runtime Inc
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -10,9 +10,9 @@
 
 #include <stdio.h>
 #include <string.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <fs/fcb.h>
+#include <zephyr/fs/fcb.h>
 #include "fcb_priv.h"
 #include <errno.h>
 
@@ -20,9 +20,11 @@
 extern "C" {
 #endif
 
-#define TEST_FCB_FLASH_AREA_ID FLASH_AREA_ID(image_1)
+#define TEST_FCB_FLASH_AREA		slot1_partition
+#define TEST_FCB_FLASH_AREA_ID		FIXED_PARTITION_ID(TEST_FCB_FLASH_AREA)
 
 extern struct fcb test_fcb;
+extern struct fcb test_fcb_crc_disabled;
 
 extern struct flash_sector test_fcb_sector[];
 

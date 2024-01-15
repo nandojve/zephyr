@@ -8,14 +8,15 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/iso.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/iso.h>
+#include <zephyr/settings/settings.h>
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -90,8 +91,10 @@ static void iso_print_data(uint8_t *data, size_t data_len)
 static void iso_recv(struct bt_iso_chan *chan, const struct bt_iso_recv_info *info,
 		struct net_buf *buf)
 {
-	printk("Incoming data channel %p len %u\n", chan, buf->len);
-	iso_print_data(buf->data, buf->len);
+	if (info->flags & BT_ISO_FLAGS_VALID) {
+		printk("Incoming data channel %p len %u\n", chan, buf->len);
+		iso_print_data(buf->data, buf->len);
+	}
 }
 
 static void iso_connected(struct bt_iso_chan *chan)
@@ -141,18 +144,24 @@ static int iso_accept(const struct bt_iso_accept_info *info,
 }
 
 static struct bt_iso_server iso_server = {
+#if defined(CONFIG_BT_SMP)
 	.sec_level = BT_SECURITY_L1,
+#endif /* CONFIG_BT_SMP */
 	.accept = iso_accept,
 };
 
-void main(void)
+int main(void)
 {
 	int err;
 
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
+	}
+
+	if (IS_ENABLED(CONFIG_SETTINGS)) {
+		settings_load();
 	}
 
 	printk("Bluetooth initialized\n");
@@ -160,14 +169,15 @@ void main(void)
 	err = bt_iso_server_register(&iso_server);
 	if (err) {
 		printk("Unable to register ISO server (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	err = bt_le_adv_start(BT_LE_ADV_CONN_NAME, ad, ARRAY_SIZE(ad), NULL, 0);
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	printk("Advertising successfully started\n");
+	return 0;
 }

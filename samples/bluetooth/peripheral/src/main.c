@@ -10,19 +10,20 @@
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <sys/printk.h>
-#include <sys/byteorder.h>
-#include <zephyr.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
 
-#include <settings/settings.h>
+#include <zephyr/settings/settings.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/gatt.h>
-#include <bluetooth/services/bas.h>
-#include <bluetooth/services/hrs.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/services/bas.h>
+#include <zephyr/bluetooth/services/hrs.h>
+#include <zephyr/bluetooth/services/ias.h>
 
 #include "cts.h"
 
@@ -30,13 +31,13 @@
 #define BT_UUID_CUSTOM_SERVICE_VAL \
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef0)
 
-static struct bt_uuid_128 vnd_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 vnd_uuid = BT_UUID_INIT_128(
 	BT_UUID_CUSTOM_SERVICE_VAL);
 
-static struct bt_uuid_128 vnd_enc_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 vnd_enc_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef1));
 
-static struct bt_uuid_128 vnd_auth_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 vnd_auth_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdef2));
 
 #define VND_MAX_LEN 20
@@ -248,9 +249,30 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	printk("Disconnected (reason 0x%02x)\n", reason);
 }
 
+static void alert_stop(void)
+{
+	printk("Alert stopped\n");
+}
+
+static void alert_start(void)
+{
+	printk("Mild alert started\n");
+}
+
+static void alert_high_start(void)
+{
+	printk("High alert started\n");
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
+};
+
+BT_IAS_CB_DEFINE(ias_callbacks) = {
+	.no_alert = alert_stop,
+	.mild_alert = alert_start,
+	.high_alert = alert_high_start,
 };
 
 static void bt_ready(void)
@@ -324,7 +346,7 @@ static void hrs_notify(void)
 	bt_hrs_notify(heartrate);
 }
 
-void main(void)
+int main(void)
 {
 	struct bt_gatt_attr *vnd_ind_attr;
 	char str[BT_UUID_STR_LEN];
@@ -333,7 +355,7 @@ void main(void)
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	bt_ready();
@@ -378,4 +400,5 @@ void main(void)
 			}
 		}
 	}
+	return 0;
 }

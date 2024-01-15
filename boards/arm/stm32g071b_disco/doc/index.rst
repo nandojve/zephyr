@@ -44,8 +44,6 @@ as a USB Type-C™ and Power Delivery analyzer.
   mass storage, Virtual COM port and debug port
 
 .. image:: img/stm32g071b_disco.jpg
-   :width: 500px
-   :height: 450px
    :align: center
    :alt: STM32G071B-DISCO
 
@@ -70,6 +68,10 @@ The Zephyr stm32g071b_disco board configuration supports the following hardware 
 | UART      | on-chip    | serial port-polling;                |
 |           |            | serial port-interrupt               |
 +-----------+------------+-------------------------------------+
+| I2C       | on-chip    | i2c                                 |
++-----------+------------+-------------------------------------+
+| UCPD      | on-chip    | ucpd                                |
++-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
 | WATCHDOG  | on-chip    | independent watchdog                |
@@ -92,6 +94,7 @@ Default Zephyr Peripheral Mapping:
 ----------------------------------
 
 - UART_3 TX/RX       : PC10/PC11 (ST-Link Virtual Port Com)
+- UCPD1              : PA8/PB15
 - BUTTON (JOY_SEL)   : PC0
 - BUTTON (JOY_LEFT)  : PC1
 - BUTTON (JOY_DOWN)  : PC2
@@ -101,6 +104,10 @@ Default Zephyr Peripheral Mapping:
 - LED (TO_PLUG)      : PD8
 - LED (SINK_SPY)     : PD5
 - LED (SOURCE)       : PC12
+- ENCC1              : PB10 (Enable CC1)
+- ENCC2              : PB11 (Enable CC2)
+- RDCC1              : PB12 (Enable Door Sense on CC1)
+
 
 For mode details please refer to `STM32G0 Discovery board User Manual`_.
 
@@ -123,7 +130,7 @@ The STM32G071B Discovery board includes an ST-LINK/V2-1 embedded debug tool inte
 Flashing an application to the STM32G071B_DISCO
 -----------------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -153,10 +160,10 @@ References
    https://www.st.com/en/evaluation-tools/stm32g071b-disco.html
 
 .. _STM32G071 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00371828.pdf
+   https://www.st.com/resource/en/reference_manual/dm00371828.pdf
 
 .. _STM32G0 Discovery board User Manual:
    https://www.st.com/resource/en/user_manual/dm00496511.pdf
 
 .. _G071RB on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32g071rb.html
+   https://www.st.com/en/microcontrollers/stm32g071rb.html

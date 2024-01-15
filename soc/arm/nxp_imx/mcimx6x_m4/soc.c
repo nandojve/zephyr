@@ -4,11 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/barrier.h>
 #include <soc.h>
-#include <dt-bindings/rdc/imx_rdc.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/dt-bindings/rdc/imx_rdc.h>
 #include "wdog_imx.h"
+
+#include <cmsis_core.h>
 
 /* Initialize Resource Domain Controller. */
 static void SOC_RdcInit(void)
@@ -104,6 +106,47 @@ static void SOC_RdcInit(void)
 	/* Set access to I2C-4 for M4 core */
 	RDC_SetPdapAccess(RDC, rdcPdapI2c4, RDC_DT_VAL(i2c4), false, false);
 #endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm1), okay)
+	/* Set access to PWM-1 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm1, RDC_DT_VAL(pwm1), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm2), okay)
+	/* Set access to PWM-2 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm2, RDC_DT_VAL(pwm2), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm3), okay)
+	/* Set access to PWM-3 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm3, RDC_DT_VAL(pwm3), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm4), okay)
+	/* Set access to PWM-4 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm4, RDC_DT_VAL(pwm4), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm5), okay)
+	/* Set access to PWM-5 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm5, RDC_DT_VAL(pwm5), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm6), okay)
+	/* Set access to PWM-6 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm6, RDC_DT_VAL(pwm6), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm7), okay)
+	/* Set access to PWM-7 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm7, RDC_DT_VAL(pwm7), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm8), okay)
+	/* Set access to PWM-8 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapPwm8, RDC_DT_VAL(pwm8), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(adc1), okay)
+	/* Set access to ADC-1 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapAdc1, RDC_DT_VAL(adc1), false, false);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(adc2), okay)
+	/* Set access to ADC-2 for M4 core */
+	RDC_SetPdapAccess(RDC, rdcPdapAdc2, RDC_DT_VAL(adc2), false, false);
+#endif
 }
 
 /* Initialize cache. */
@@ -120,7 +163,7 @@ static void SOC_CacheInit(void)
 		;
 	/* Enable system bus cache, enable write buffer */
 	LMEM_PSCCR = (LMEM_PSCCR_ENWRBUF_MASK | LMEM_PSCCR_ENCACHE_MASK);
-	__ISB();
+	barrier_isync_fence_full();
 
 	/* Enable Code Bus Cache */
 	/* set command to invalidate all ways and write GO bit
@@ -133,8 +176,8 @@ static void SOC_CacheInit(void)
 		;
 	/* Enable code bus cache, enable write buffer */
 	LMEM_PCCCR = (LMEM_PCCCR_ENWRBUF_MASK | LMEM_PCCCR_ENCACHE_MASK);
-	__ISB();
-	__DSB();
+	barrier_isync_fence_full();
+	barrier_dsync_fence_full();
 }
 
 /* Initialize clock. */
@@ -196,7 +239,41 @@ static void SOC_ClockInit(void)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c4), okay)
 	CCM_ControlGate(CCM, ccmCcgrGateI2c4Serialclk, ccmClockNeededAll);
 #endif
+#endif /* CONFIG_I2C_IMX */
+
+#ifdef CONFIG_PWM_IMX
+	/* Select PWM clock is derived from OSC (24M) */
+	CCM_SetRootMux(CCM, ccmRootPerclkClkSel, ccmRootmuxPerclkClkOsc24m);
+
+	/* Set relevant divider = 1. */
+	CCM_SetRootDivider(CCM, ccmRootPerclkPodf, 0);
+
+	/* Enable PWM clock */
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm1), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm1Clk, ccmClockNeededAll);
 #endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm2), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm2Clk, ccmClockNeededAll);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm3), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm3Clk, ccmClockNeededAll);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm4), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm4Clk, ccmClockNeededAll);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm5), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm5Clk, ccmClockNeededAll);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm6), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm6Clk, ccmClockNeededAll);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm7), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm7Clk, ccmClockNeededAll);
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pwm8), okay)
+	CCM_ControlGate(CCM, ccmCcgrGatePwm8Clk, ccmClockNeededAll);
+#endif
+#endif /* CONFIG_PWM_IMX */
 }
 
 /**
@@ -208,15 +285,8 @@ static void SOC_ClockInit(void)
  *
  * @return 0
  */
-static int mcimx6x_m4_init(const struct device *arg)
+static int mcimx6x_m4_init(void)
 {
-	ARG_UNUSED(arg);
-
-	unsigned int oldLevel; /* Old interrupt lock level */
-
-	/* Disable interrupts */
-	oldLevel = irq_lock();
-
 	/* Configure RDC */
 	SOC_RdcInit();
 
@@ -228,15 +298,6 @@ static int mcimx6x_m4_init(const struct device *arg)
 
 	/* Initialize clock */
 	SOC_ClockInit();
-
-	/*
-	 * Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	/* Restore interrupt state */
-	irq_unlock(oldLevel);
 
 	return 0;
 }

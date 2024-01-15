@@ -5,12 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/util.h>
-#include <modbus/modbus.h>
-#include <net/socket.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/modbus/modbus.h>
+#include <zephyr/net/socket.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(tcp_gateway, LOG_LEVEL_INF);
 
 #define MODBUS_TCP_PORT 502
@@ -27,14 +27,16 @@ const static struct modbus_iface_param backend_param = {
 	},
 };
 
+#define MODBUS_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_modbus_serial)
+
 static int init_backend_iface(void)
 {
-	const char bend_name[] = {DT_PROP(DT_INST(0, zephyr_modbus_serial), label)};
+	const char bend_name[] = {DEVICE_DT_NAME(MODBUS_NODE)};
 
 	backend = modbus_iface_get_by_name(bend_name);
 	if (backend < 0) {
 		LOG_ERR("Failed to get iface index for %s",
-			log_strdup(bend_name));
+			bend_name);
 		return -ENODEV;
 	}
 
@@ -86,7 +88,7 @@ static int modbus_tcp_connection(int client)
 	return modbus_tcp_reply(client, &tmp_adu);
 }
 
-void main(void)
+int main(void)
 {
 	int serv;
 	struct sockaddr_in bind_addr;
@@ -94,14 +96,14 @@ void main(void)
 
 	if (init_backend_iface()) {
 		LOG_ERR("Modbus initialization failed");
-		return;
+		return 0;
 	}
 
 	serv = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 
 	if (serv < 0) {
 		LOG_ERR("error: socket: %d", errno);
-		return;
+		return 0;
 	}
 
 	bind_addr.sin_family = AF_INET;
@@ -110,12 +112,12 @@ void main(void)
 
 	if (bind(serv, (struct sockaddr *)&bind_addr, sizeof(bind_addr)) < 0) {
 		LOG_ERR("error: bind: %d", errno);
-		return;
+		return 0;
 	}
 
 	if (listen(serv, 5) < 0) {
 		LOG_ERR("error: listen: %d", errno);
-		return;
+		return 0;
 	}
 
 	LOG_INF("Started MODBUS TCP gateway example on port %d", MODBUS_TCP_PORT);
@@ -138,7 +140,7 @@ void main(void)
 		inet_ntop(client_addr.sin_family, &client_addr.sin_addr,
 			  addr_str, sizeof(addr_str));
 		LOG_INF("Connection #%d from %s",
-			counter++, log_strdup(addr_str));
+			counter++, addr_str);
 
 		do {
 			rc = modbus_tcp_connection(client);
@@ -146,6 +148,7 @@ void main(void)
 
 		close(client);
 		LOG_INF("Connection from %s closed, errno %d",
-			log_strdup(addr_str), rc);
+			addr_str, rc);
 	}
+	return 0;
 }

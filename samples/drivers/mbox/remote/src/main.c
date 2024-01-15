@@ -6,8 +6,8 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <zephyr.h>
-#include <drivers/mbox.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/mbox.h>
 
 #define TX_ID (0)
 #define RX_ID (1)
@@ -18,7 +18,7 @@ static void callback(const struct device *dev, uint32_t channel,
 	printk("Pong (on channel %d)\n", channel);
 }
 
-void main(void)
+int main(void)
 {
 	struct mbox_channel tx_channel;
 	struct mbox_channel rx_channel;
@@ -31,12 +31,15 @@ void main(void)
 	mbox_init_channel(&tx_channel, dev, TX_ID);
 	mbox_init_channel(&rx_channel, dev, RX_ID);
 
-	if (mbox_set_enabled(&rx_channel, 1)) {
-		printk("mbox_set_enable() error\n");
-		return;
+	if (mbox_register_callback(&rx_channel, callback, NULL)) {
+		printk("mbox_register_callback() error\n");
+		return 0;
 	}
 
-	mbox_register_callback(&rx_channel, callback, NULL);
+	if (mbox_set_enabled(&rx_channel, 1)) {
+		printk("mbox_set_enable() error\n");
+		return 0;
+	}
 
 	while (1) {
 
@@ -44,9 +47,10 @@ void main(void)
 
 		if (mbox_send(&tx_channel, NULL) < 0) {
 			printk("mbox_send() error\n");
-			return;
+			return 0;
 		}
 
 		k_sleep(K_MSEC(3000));
 	}
+	return 0;
 }

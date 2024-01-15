@@ -97,7 +97,7 @@ Options:
   --list-types               list the possible message types
   --types TYPE(,TYPE2...)    show only these comma separated message types
   --ignore TYPE(,TYPE2...)   ignore various comma separated message types
-  --exclude DIR(,DIR22...)   exclude directories
+  --exclude DIR (--exclude DIR2...)   exclude directories
   --show-types               show the specific message type in the output
   --max-line-length=n        set the maximum line length, (default $max_line_length)
                              if exceeded, warn on patches
@@ -389,6 +389,7 @@ our $Attribute	= qr{
 			__always_unused|
 			__noreturn|
 			__used|
+			__unused|
 			__cold|
 			__pure|
 			__noclone|
@@ -493,6 +494,7 @@ our $allocFunctions = qr{(?x:
 
 our $signature_tags = qr{(?xi:
 	Signed-off-by:|
+	Co-authored-by:|
 	Co-developed-by:|
 	Acked-by:|
 	Tested-by:|
@@ -590,6 +592,20 @@ our @mode_permission_funcs = (
 	["SENSOR_TEMPLATE(?:_2|)", 3],
 	["__ATTR", 2],
 );
+
+our $api_defines = qr{(?x:
+	_ATFILE_SOURCE|
+	_BSD_SOURCE|
+	_DEFAULT_SOURCE|
+	_GNU_SOURCE|
+	_ISOC11_SOURCE|
+	_ISOC99_SOURCE|
+	_POSIX_C_SOURCE|
+	_POSIX_SOURCE|
+	_SVID_SOURCE|
+	_XOPEN_SOURCE|
+	_XOPEN_SOURCE_EXTENDED
+)};
 
 my $word_pattern = '\b[A-Z]?[a-z]{2,}\b';
 
@@ -2939,6 +2955,7 @@ sub process {
 
 # Check for various typo / spelling mistakes
 		if (defined($misspellings) &&
+		    ($spelling_file !~ /$realfile/) &&
 		    ($in_commit_log || $line =~ /^(?:\+|Subject:)/i)) {
 			while ($rawline =~ /(?:^|[^a-z@])($misspellings)(?:\b|$|[^a-z@])/gi) {
 				my $typo = $1;
@@ -3283,9 +3300,11 @@ sub process {
 		next if ($realfile !~ /\.(h|c|pl|dtsi|dts)$/);
 
 # at the beginning of a line any tabs must come first and anything
-# more than $tabsize must use tabs.
+# more than $tabsize must use tabs, except multi-line macros which may start
+# with spaces on empty lines
 		if ($rawline =~ /^\+\s* \t\s*\S/ ||
-		    $rawline =~ /^\+\s*        \s*/) {
+		    $rawline =~ /^\+\s*        \s*/ &&
+		    $rawline !~ /^\+\s*\\$/) {
 			my $herevet = "$here\n" . cat_vet($rawline) . "\n";
 			$rpt_cleaners = 1;
 			if (ERROR("CODE_INDENT",
@@ -3548,7 +3567,9 @@ sub process {
 #  1) within comments
 #  2) indented preprocessor commands
 #  3) hanging labels
-		if ($rawline =~ /^\+ / && $line !~ /^\+ *(?:$;|#|$Ident:)/)  {
+#  4) empty lines in multi-line macros
+		if ($rawline =~ /^\+ / && $line !~ /^\+ *(?:$;|#|$Ident:)/ &&
+		    $rawline !~ /^\+\s+\\$/) {
 			my $herevet = "$here\n" . cat_vet($rawline) . "\n";
 			if (WARN("LEADING_SPACE",
 				 "please, no spaces at the start of a line\n" . $herevet) &&
@@ -3718,7 +3739,7 @@ sub process {
 
 # if/while/etc brace do not go on next line, unless defining a do while loop,
 # or if that brace on the next line is for something else
-		if ($line =~ /(.*)\b((?:if|while|for|switch|(?:[A-Z_]+|)FOR_EACH[A-Z_]+)\s*\(|do\b|else\b)/ && $line !~ /^.\s*\#/) {
+		if ($line =~ /(.*)\b((?:if|while|for|switch|(?:[A-Z_]+|)FOR_EACH(?!_NONEMPTY_TERM)[A-Z_]+)\s*\(|do\b|else\b)/ && $line !~ /^.\s*\#/) {
 			my $pre_ctx = "$1$2";
 
 			my ($level, @ctx) = ctx_statement_level($linenr, $realcnt, 0);
@@ -3764,7 +3785,7 @@ sub process {
 		}
 
 # Check relative indent for conditionals and blocks.
-		if ($line =~ /\b(?:(?:if|while|for|(?:[A-Z_]+|)FOR_EACH[A-Z_]+)\s*\(|(?:do|else)\b)/ && $line !~ /^.\s*#/ && $line !~ /\}\s*while\s*/) {
+		if ($line =~ /\b(?:(?:if|while|for|(?:[A-Z_]+|)FOR_EACH(?!_NONEMPTY_TERM|_IDX|_FIXED_ARG|_IDX_FIXED_ARG)[A-Z_]+)\s*\(|(?:do|else)\b)/ && $line !~ /^.\s*#/ && $line !~ /\}\s*while\s*/) {
 			($stat, $cond, $line_nr_next, $remain_next, $off_next) =
 				ctx_statement_block($linenr, $realcnt, 0)
 					if (!defined $stat);
@@ -4145,13 +4166,15 @@ sub process {
 
 # check for new typedefs, only function parameters and sparse annotations
 # make sense.
-		if ($line =~ /\btypedef\s/ &&
-		    $line !~ /\btypedef\s+$Type\s*\(\s*\*?$Ident\s*\)\s*\(/ &&
-		    $line !~ /\btypedef\s+$Type\s+$Ident\s*\(/ &&
-		    $line !~ /\b$typeTypedefs\b/ &&
-		    $line !~ /\b__bitwise\b/) {
-			WARN("NEW_TYPEDEFS",
-			     "do not add new typedefs\n" . $herecurr);
+		if ($realfile =~ /\/include\/zephyr\/posix\/*.h/) {
+			if ($line =~ /\btypedef\s/ &&
+			$line !~ /\btypedef\s+$Type\s*\(\s*\*?$Ident\s*\)\s*\(/ &&
+			$line !~ /\btypedef\s+$Type\s+$Ident\s*\(/ &&
+			$line !~ /\b$typeTypedefs\b/ &&
+			$line !~ /\b__bitwise\b/) {
+				WARN("NEW_TYPEDEFS",
+				"do not add new typedefs\n" . $herecurr);
+			}
 		}
 
 # * goes on variable not on type
@@ -4726,6 +4749,13 @@ sub process {
 						$ok = 1;
 					}
 
+					# some macros require a separator
+					# argument to be in parentheses,
+					# e.g. (||).
+					if ($ca =~ /\($/ || $cc =~ /^\)/) {
+						$ok = 1;
+					}
+
 					# messages are ERROR, but ?: are CHK
 					if ($ok == 0) {
 						my $msg_level = \&ERROR;
@@ -4911,9 +4941,13 @@ sub process {
 			}
 		}
 
-#goto labels aren't indented, allow a single space however
-		if ($line=~/^.\s+[A-Za-z\d_]+:(?![0-9]+)/ and
-		   !($line=~/^. [A-Za-z\d_]+:/) and !($line=~/^.\s+default:/)) {
+# check that goto labels aren't indented (allow a single space indentation)
+# and ignore bitfield definitions like foo:1
+# Strictly, labels can have whitespace after the identifier and before the :
+# but this is not allowed here as many ?: uses would appear to be labels
+		if ($sline =~ /^.\s+[A-Za-z_][A-Za-z\d_]*:(?!\s*\d+)/ &&
+		    $sline !~ /^. [A-Za-z\d_][A-Za-z\d_]*:/ &&
+		    $sline !~ /^.\s+default:/) {
 			if (WARN("INDENTED_LABEL",
 				 "labels should not be indented\n" . $herecurr) &&
 			    $fix) {
@@ -4998,8 +5032,11 @@ sub process {
 		if ($sline =~ /\breturn(?:\s*\(+\s*|\s+)(E[A-Z]+)(?:\s*\)+\s*|\s*)[;:,]/) {
 			my $name = $1;
 			if ($name ne 'EOF' && $name ne 'ERROR') {
-				WARN("USE_NEGATIVE_ERRNO",
-				     "return of an errno should typically be negative (ie: return -$1)\n" . $herecurr);
+				# only print this warning if not dealing with 'lib/posix/*.c'
+				if ($realfile =~ /.*\/lib\/posix\/*.c/) {
+					WARN("USE_NEGATIVE_ERRNO",
+						"return of an errno should typically be negative (ie: return -$1)\n" . $herecurr);
+				}
 			}
 		}
 
@@ -5261,7 +5298,7 @@ sub process {
 			#print "LINE<$lines[$ln-1]> len<" . length($lines[$ln-1]) . "\n";
 
 			$has_flow_statement = 1 if ($ctx =~ /\b(goto|return)\b/);
-			$has_arg_concat = 1 if ($ctx =~ /\#\#/ && $ctx !~ /\#\#\s*(?:__VA_ARGS__|args)\b/);
+			$has_arg_concat = 1 if (($ctx =~ /\#\#/ || $ctx =~ /UTIL_CAT/) && $ctx !~ /\#\#\s*(?:__VA_ARGS__|args)\b/);
 
 			$dstat =~ s/^.\s*\#\s*define\s+$Ident(\([^\)]*\))?\s*//;
 			my $define_args = $1;
@@ -6508,6 +6545,13 @@ sub process {
 			}
 		}
 
+# check for feature test macros that request C library API extensions, violating rules A.4 and A.5
+
+		if ($line =~ /#\s*define\s+$api_defines/) {
+			ERROR("API_DEFINE",
+			      "do not specify a non-Zephyr API for libc\n" . "$here$rawline\n");
+		}
+
 # check for IS_ENABLED() without CONFIG_<FOO> ($rawline for comments too)
 		if ($rawline =~ /\bIS_ENABLED\s*\(\s*(\w+)\s*\)/ && $1 !~ /^CONFIG_/) {
 			WARN("IS_ENABLED_CONFIG",
@@ -6548,6 +6592,12 @@ sub process {
 		while ($line =~ /\b(__(?:DATE|TIME|TIMESTAMP)__)\b/g) {
 			ERROR("DATE_TIME",
 			      "Use of the '$1' macro makes the build non-deterministic\n" . $herecurr);
+		}
+
+# check for uses of __BYTE_ORDER__
+		while ($line =~ /\b(__BYTE_ORDER__)\b/g) {
+			ERROR("BYTE_ORDER",
+			      "Use of the '$1' macro is disallowed. Use CONFIG_(BIG|LITTLE)_ENDIAN instead\n" . $herecurr);
 		}
 
 # check for use of yield()

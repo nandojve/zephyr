@@ -16,3 +16,5 @@ supported:
   - spi
   - uart
   - watchdog
+  - lora
+vendor: seeed

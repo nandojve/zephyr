@@ -10,11 +10,12 @@ toolchain:
   - xtools
 supported:
   - dma
+  - dac
   - gpio
   - hwinfo
-  - pinmux
   - spi
   - i2c
   - uart
   - usb_device
   - watchdog
+vendor: seeed

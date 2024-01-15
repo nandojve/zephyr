@@ -20,7 +20,6 @@
 			gpio-controller;
 			reg = <0xdeadbeef 0x1000>;
 			#gpio-cells = <0x2>;
-			label = "TEST_GPIO_1";
 			status = "okay";
 		};
 
@@ -29,29 +28,33 @@
 			#size-cells = <0>;
 			compatible = "vnd,i2c";
 			reg = <0x11112222 0x1000>;
-			label = "TEST_I2C_CTLR";
 			status = "okay";
 			clock-frequency = <100000>;
 
 			test_i2c_dac43608: dac43608@1 {
 				compatible = "ti,dac43608";
 				reg = <0x1>;
-				label = "DAC43608";
 				#io-channel-cells = <1>;
 			};
 
 			test_i2c_dac53608: dac53608@2 {
 				compatible = "ti,dac53608";
 				reg = <0x2>;
-				label = "DAC53608";
 				#io-channel-cells = <1>;
 			};
 
 			test_i2c_mcp4725: mcp4725@60 {
 				compatible = "microchip,mcp4725";
 				reg = <0x60>;
-				label = "MCP4725";
 				#io-channel-cells = <1>;
+			};
+
+			test_i2c_mcp4728: mcp4728@61 {
+				compatible = "microchip,mcp4728";
+				reg = <0x61>;
+				#io-channel-cells = <1>;
+				voltage_reference = <0>;
+				power_down_mode = <0>;
 			};
 		};
 
@@ -60,18 +63,30 @@
 			#size-cells = <0>;
 			compatible = "vnd,spi";
 			reg = <0x33334444 0x1000>;
-			label = "TEST_SPI_CTLR";
 			status = "okay";
 			clock-frequency = <2000000>;
 
 			/* one entry for every devices at spi.dtsi */
 			cs-gpios = <&test_gpio 0 0>,
 				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>,
 				   <&test_gpio 0 0>;
 
 			test_spi_dac60508: dac60508@0 {
 				compatible = "ti,dac60508";
-				label = "DAC60508";
 				reg = <0x0>;
 				spi-max-frequency = <0>;
 				#io-channel-cells = <1>;
@@ -88,7 +103,6 @@
 
 			test_spi_dac70508: dac70508@1 {
 				compatible = "ti,dac70508";
-				label = "DAC70508";
 				reg = <0x1>;
 				spi-max-frequency = <0>;
 				#io-channel-cells = <1>;
@@ -105,7 +119,6 @@
 
 			test_spi_dac80508: dac80508@2 {
 				compatible = "ti,dac80508";
-				label = "DAC80508";
 				reg = <0x2>;
 				spi-max-frequency = <0>;
 				#io-channel-cells = <1>;
@@ -118,6 +131,121 @@
 				channel5-gain = <0>;
 				channel6-gain = <0>;
 				channel7-gain = <0>;
+			};
+
+			test_spi_ltc1660: ltc1660@3 {
+				compatible = "lltc,ltc1660";
+				reg = <0x3>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+			};
+
+			test_spi_ltc1665: ltc1665@4 {
+				compatible = "lltc,ltc1665";
+				reg = <0x4>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+			};
+
+			test_spi_ad5628: ad5628@5 {
+				compatible = "adi,ad5628";
+				reg = <0x5>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5648: ad5648@6 {
+				compatible = "adi,ad5648";
+				reg = <0x6>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5668: ad5668@7 {
+				compatible = "adi,ad5668";
+				reg = <0x7>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5672: ad5672@8 {
+				compatible = "adi,ad5672";
+				reg = <0x8>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5674: ad5674@9 {
+				compatible = "adi,ad5674";
+				reg = <0x9>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5676: ad5676@A {
+				compatible = "adi,ad5676";
+				reg = <0xA>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5679: ad5679@B {
+				compatible = "adi,ad5679";
+				reg = <0xB>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5684: ad5684@C {
+				compatible = "adi,ad5684";
+				reg = <0xC>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5686: ad5686@D {
+				compatible = "adi,ad5686";
+				reg = <0xD>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5687: ad5687@E {
+				compatible = "adi,ad5687";
+				reg = <0xE>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5689: ad5689@F {
+				compatible = "adi,ad5689";
+				reg = <0xF>;
+				spi-max-frequency = <0>;
+				#io-channel-cells = <1>;
+				reset-gpios = <&test_gpio 0 0>;
+			};
+
+			test_spi_ad5592: ad5592@10 {
+				compatible = "adi,ad5592";
+				status = "okay";
+				reg = <0x10>;
+				spi-max-frequency = <0>;
+				reset-gpios = <&test_gpio 0 0>;
+
+				ad5592_dac: dac-controller {
+					compatible = "adi,ad5592-dac";
+					#io-channel-cells = <1>;
+				};
 			};
 		};
 	};

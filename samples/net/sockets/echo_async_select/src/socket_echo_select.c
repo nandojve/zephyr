@@ -25,8 +25,8 @@
 #else
 
 #include <fcntl.h>
-#include <net/socket.h>
-#include <kernel.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/kernel.h>
 
 /* Generic read()/write() are not defined, so use socket-specific recv(). */
 #define READ(fd, buf, sz) recv(fd, buf, sz, 0)
@@ -91,7 +91,7 @@ void pollfds_del(int fd)
 	FD_CLR(fd, &readfds);
 }
 
-void main(void)
+int main(void)
 {
 	int res;
 	static int counter;
@@ -243,4 +243,5 @@ error:
 			}
 		}
 	}
+	return 0;
 }

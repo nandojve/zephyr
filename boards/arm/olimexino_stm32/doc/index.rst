@@ -9,10 +9,8 @@ Overview
 The OLIMEXINO-STM32 board is based on the STMicroelectronics STM32F103RB ARM
 Cortex-M3 CPU.
 
-.. figure:: img/olimexino_stm32.png
-     :width: 540px
+.. figure:: img/olimexino_stm32.jpg
      :align: center
-     :height: 454px
      :alt: OLIMEXINO-STM32
 
      OLIMEXINO-STM32
@@ -51,15 +49,13 @@ hardware features:
 | CAN       | on-chip    | Controller Area Network |
 +-----------+------------+-------------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Pin Mapping
 ===========
 
-.. figure:: img/olimexino-stm32-front.png
-     :width: 739px
+.. figure:: img/olimexino-stm32-front.jpg
      :align: center
-     :height: 530px
      :alt: OLIMEXINO-STM32 connectors
 
      OLIMEXINO-STM32 connectors
@@ -418,7 +414,7 @@ Flashing an Application to OLIMEXINO-STM32
 
 To upload an application to the OLIMEXINO-STM32 board a TTL(3.3V)
 serial adapter is required. This tutorial uses the
-:ref:`button-sample` sample application.
+:zephyr:code-sample:`button` sample application.
 
 #. Connect the serial cable to the UEXT lines of the UART
    interface (pin #3=TX and pin #4=RX).
@@ -462,7 +458,7 @@ serial adapter is required. This tutorial uses the
    https://www.olimex.com/Products/Duino/STM32/OLIMEXINO-STM32/resources/OLIMEXINO-STM32.pdf
 
 .. _ST STM32F103xB Datasheet:
-   http://www.st.com/resource/en/datasheet/stm32f103tb.pdf
+   https://www.st.com/resource/en/datasheet/stm32f103tb.pdf
 
 .. _stm32flash tool:
    https://sourceforge.net/p/stm32flash/wiki/Home/

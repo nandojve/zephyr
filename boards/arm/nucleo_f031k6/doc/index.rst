@@ -17,8 +17,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f031k6.jpg
-   :width: 250px
-   :height: 250px
    :align: center
    :alt: Nucleo F031k6
 
@@ -87,10 +85,8 @@ GPIO pins are shared with digital or analog alternate functions.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f031k6_connectors.png
-   :width: 960px
+.. image:: img/nucleo_f031k6_connectors.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo F031K6 connectors
 
 Default Zephyr Peripheral Mapping:
@@ -120,7 +116,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application to Nucleo F030R8
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -133,7 +129,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky

@@ -5,6 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "efm32pg_stk3402a-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
 / {
 	model = "Silicon Labs EFM32PG STK3402A board";
 
@@ -13,16 +16,17 @@
 		zephyr,shell-uart = &usart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
-		watchdog0 = &wdog0;
-		watchdog1 = &wdog1;
 	};
 
 	/* These aliases are provided for compatibility with samples */
 	aliases {
 		led0 = &led0;
 		led1 = &led1;
+		pwm-led0 = &pwm_led0;
 		sw0 = &button0;
 		sw1 = &button1;
+		watchdog0 = &wdog0;
+		watchdog1 = &wdog1;
 	};
 
 	leds {
@@ -43,11 +47,21 @@
 			/* gpio flags need validation */
 			gpios = <&gpiof 6 GPIO_ACTIVE_LOW>;
 			label = "User Push Button 0";
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		button1: button_1 {
 			/* gpio flags need validation */
 			gpios = <&gpiof 7 GPIO_ACTIVE_LOW>;
 			label = "User Push Button 1";
+			zephyr,code = <INPUT_KEY_1>;
+		};
+	};
+
+	pwmleds {
+		compatible = "pwm-leds";
+		status = "okay";
+		pwm_led0: pwm_led0 {
+			pwms = <&pwm0 0 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
 		};
 	};
 };
@@ -58,8 +72,8 @@
 
 &usart0 {
 	current-speed = <115200>;
-	location-rx = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(1)>;
-	location-tx = <GECKO_LOCATION(0) GECKO_PORT_A GECKO_PIN(0)>;
+	pinctrl-0 = <&usart0_default>;
+	pinctrl-names = "default";
 	status = "okay";
 };
 
@@ -81,6 +95,16 @@
 	status = "okay";
 };
 
+&timer0 {
+	status = "okay";
+
+	pwm0: pwm {
+		status = "okay";
+		pin-location = <GECKO_LOCATION(28) GECKO_PORT_F GECKO_PIN(4)>;
+		prescaler = <1024>;
+	};
+};
+
 &gpio {
 	location-swo = <0>;
 	status = "okay";
@@ -88,6 +112,12 @@
 
 &gpioa {
 	status = "okay";
+
+	board-controller-enable {
+		gpio-hog;
+		gpios = <5 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
 };
 
 &gpiob {
@@ -128,5 +158,9 @@
 };
 
 &trng0 {
-		status = "okay";
+	status = "okay";
+};
+
+&adc0 {
+	status = "okay";
 };

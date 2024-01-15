@@ -3,15 +3,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <kernel_arch_data.h>
 #include <kernel_arch_func.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
-#include <arch/x86/multiboot.h>
+#include <zephyr/arch/x86/multiboot.h>
 #include <x86_mmu.h>
-#include <drivers/interrupt_controller/loapic.h>
-#include <arch/x86/acpi.h>
+#include <zephyr/drivers/interrupt_controller/loapic.h>
+#ifdef CONFIG_ACPI
+#include <zephyr/acpi/acpi.h>
+#endif
+
+BUILD_ASSERT(CONFIG_MP_MAX_NUM_CPUS <= 4, "Only supports max 4 CPUs");
 
 /*
  * Map of CPU logical IDs to CPU local APIC IDs. By default,
@@ -51,7 +55,7 @@ struct x86_tss64 tss0 = {
 	.cpu = &(_kernel.cpus[0])
 };
 
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 Z_GENERIC_SECTION(.tss)
 struct x86_tss64 tss1 = {
 #ifdef CONFIG_X86_KPTI
@@ -64,7 +68,7 @@ struct x86_tss64 tss1 = {
 };
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 2
+#if CONFIG_MP_MAX_NUM_CPUS > 2
 Z_GENERIC_SECTION(.tss)
 struct x86_tss64 tss2 = {
 #ifdef CONFIG_X86_KPTI
@@ -77,7 +81,7 @@ struct x86_tss64 tss2 = {
 };
 #endif
 
-#if CONFIG_MP_NUM_CPUS > 3
+#if CONFIG_MP_MAX_NUM_CPUS > 3
 Z_GENERIC_SECTION(.tss)
 struct x86_tss64 tss3 = {
 #ifdef CONFIG_X86_KPTI
@@ -90,6 +94,14 @@ struct x86_tss64 tss3 = {
 };
 #endif
 
+
+/* We must put this in a dedicated section, or else it will land into .bss:
+ * in this case, though locore.S initalizes it relevantly, all will be
+ * lost when calling z_bss_zero() in z_x86_cpu_init prior to using it.
+ */
+Z_GENERIC_SECTION(.boot_arg)
+x86_boot_arg_t x86_cpu_boot_arg;
+
 struct x86_cpuboot x86_cpuboot[] = {
 	{
 		.tr = X86_KERNEL_CPU0_TR,
@@ -98,21 +110,22 @@ struct x86_cpuboot x86_cpuboot[] = {
 			Z_KERNEL_STACK_SIZE_ADJUST(CONFIG_ISR_STACK_SIZE),
 		.stack_size =
 			Z_KERNEL_STACK_SIZE_ADJUST(CONFIG_ISR_STACK_SIZE),
-		.fn = z_x86_prep_c,
+		.fn = z_prep_c,
+		.arg = &x86_cpu_boot_arg,
 	},
-#if CONFIG_MP_NUM_CPUS > 1
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 	{
 		.tr = X86_KERNEL_CPU1_TR,
 		.gs_base = &tss1
 	},
 #endif
-#if CONFIG_MP_NUM_CPUS > 2
+#if CONFIG_MP_MAX_NUM_CPUS > 2
 	{
 		.tr = X86_KERNEL_CPU2_TR,
 		.gs_base = &tss2
 	},
 #endif
-#if CONFIG_MP_NUM_CPUS > 3
+#if CONFIG_MP_MAX_NUM_CPUS > 3
 	{
 		.tr = X86_KERNEL_CPU3_TR,
 		.gs_base = &tss3
@@ -128,18 +141,18 @@ struct x86_cpuboot x86_cpuboot[] = {
 void arch_start_cpu(int cpu_num, k_thread_stack_t *stack, int sz,
 		    arch_cpustart_t fn, void *arg)
 {
+#if CONFIG_MP_MAX_NUM_CPUS > 1
 	uint8_t vector = ((unsigned long) x86_ap_start) >> 12;
 	uint8_t apic_id;
 
-	if (IS_ENABLED(CONFIG_ACPI)) {
-		struct acpi_cpu *cpu;
+	IF_ENABLED(CONFIG_ACPI, ({
+		ACPI_MADT_LOCAL_APIC *lapic = acpi_local_apic_get(cpu_num);
 
-		cpu = z_acpi_get_cpu(cpu_num);
-		if (cpu != NULL) {
-			/* We update the apic_id, x86_ap_start will need it. */
-			x86_cpu_loapics[cpu_num] = cpu->apic_id;
+		if (lapic != NULL) {
+			/* We update the apic_id, __start will need it. */
+			x86_cpu_loapics[cpu_num] = lapic->Id;
 		}
-	}
+	}));
 
 	apic_id = x86_cpu_loapics[cpu_num];
 
@@ -154,9 +167,16 @@ void arch_start_cpu(int cpu_num, k_thread_stack_t *stack, int sz,
 
 	while (x86_cpuboot[cpu_num].ready == 0) {
 	}
+#else
+	ARG_UNUSED(cpu_num);
+	ARG_UNUSED(stack);
+	ARG_UNUSED(sz);
+	ARG_UNUSED(fn);
+	ARG_UNUSED(arg);
+#endif
 }
 
-/* Per-CPU initialization, C domain. On the first CPU, z_x86_prep_c is the
+/* Per-CPU initialization, C domain. On the first CPU, z_prep_c is the
  * next step. For other CPUs it is probably smp_init_top().
  */
 FUNC_NORETURN void z_x86_cpu_init(struct x86_cpuboot *cpuboot)
@@ -169,9 +189,7 @@ FUNC_NORETURN void z_x86_cpu_init(struct x86_cpuboot *cpuboot)
 	if (cpu_num == 0U) {
 		/* Only need to do these once per boot */
 		z_bss_zero();
-#ifdef CONFIG_XIP
 		z_data_copy();
-#endif
 	}
 
 	z_loapic_enable(cpu_num);

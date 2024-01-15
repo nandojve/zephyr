@@ -6,7 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, CONFIG_NET_IPV6_LOG_LEVEL);
 
 #include <zephyr/types.h>
@@ -14,20 +14,21 @@ LOG_MODULE_REGISTER(net_test, CONFIG_NET_IPV6_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <linker/sections.h>
+#include <zephyr/linker/sections.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <net/net_if.h>
-#include <net/net_pkt.h>
-#include <net/net_ip.h>
-#include <net/net_core.h>
-#include <net/ethernet.h>
-#include <net/dummy.h>
-#include <net/net_mgmt.h>
-#include <net/net_event.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/dummy.h>
+#include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/net_event.h>
+#include <zephyr/net/socket.h>
 
-#include <random/rand32.h>
+#include <zephyr/random/random.h>
 
 #include "icmpv6.h"
 #include "ipv6.h"
@@ -50,7 +51,7 @@ static struct in6_addr peer_addr = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
 static struct in6_addr mcast_addr = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
 					  0, 0, 0, 0, 0, 0, 0, 0x1 } } };
 
-static struct net_if *iface;
+static struct net_if *net_iface;
 static bool is_group_joined;
 static bool is_group_left;
 static bool is_join_msg_ok;
@@ -200,20 +201,22 @@ static void setup_mgmt_events(void)
 	}
 }
 
-static void test_mld_setup(void)
+static void *test_mld_setup(void)
 {
 	struct net_if_addr *ifaddr;
 
 	setup_mgmt_events();
 
-	iface = net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY));
+	net_iface = net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY));
 
-	zassert_not_null(iface, "Interface is NULL");
+	zassert_not_null(net_iface, "Interface is NULL");
 
-	ifaddr = net_if_ipv6_addr_add(iface, &my_addr,
+	ifaddr = net_if_ipv6_addr_add(net_iface, &my_addr,
 				      NET_ADDR_MANUAL, 0);
 
 	zassert_not_null(ifaddr, "Cannot add IPv6 address");
+
+	return NULL;
 }
 
 static void test_join_group(void)
@@ -223,7 +226,7 @@ static void test_join_group(void)
 	/* Using adhoc multicast group outside standard range */
 	net_ipv6_addr_create(&mcast_addr, 0xff10, 0, 0, 0, 0, 0, 0, 0x0001);
 
-	ret = net_ipv6_mld_join(iface, &mcast_addr);
+	ret = net_ipv6_mld_join(net_iface, &mcast_addr);
 
 	if (ignore_already) {
 		zassert_true(ret == 0 || ret == -EALREADY,
@@ -242,16 +245,11 @@ static void test_leave_group(void)
 
 	net_ipv6_addr_create(&mcast_addr, 0xff10, 0, 0, 0, 0, 0, 0, 0x0001);
 
-	ret = net_ipv6_mld_leave(iface, &mcast_addr);
+	ret = net_ipv6_mld_leave(net_iface, &mcast_addr);
 
 	zassert_equal(ret, 0, "Cannot leave IPv6 multicast group");
 
-	if (IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE)) {
-		/* Let the network stack to proceed */
-		k_msleep(THREAD_SLEEP);
-	} else {
-		k_yield();
-	}
+	k_msleep(THREAD_SLEEP);
 }
 
 static void test_catch_join_group(void)
@@ -411,12 +409,8 @@ static void join_mldv2_capable_routers_group(void)
 	zassert_true(ret == 0 || ret == -EALREADY,
 		     "Cannot join MLDv2-capable routers multicast group");
 
-	if (IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE)) {
-		/* Let the network stack to proceed */
-		k_msleep(THREAD_SLEEP);
-	} else {
-		k_yield();
-	}
+	k_msleep(THREAD_SLEEP);
+
 }
 
 static void leave_mldv2_capable_routers_group(void)
@@ -432,19 +426,22 @@ static void leave_mldv2_capable_routers_group(void)
 	zassert_equal(ret, 0,
 		      "Cannot leave MLDv2-capable routers multicast group");
 
-	if (IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE)) {
-		/* Let the network stack to proceed */
-		k_msleep(THREAD_SLEEP);
-	} else {
-		k_yield();
-	}
+	k_msleep(THREAD_SLEEP);
 }
 
 /* We are not really interested to parse the query at this point */
-static enum net_verdict handle_mld_query(struct net_pkt *pkt,
-					 struct net_ipv6_hdr *ip_hdr,
-					 struct net_icmp_hdr *icmp_hdr)
+static int handle_mld_query(struct net_icmp_ctx *ctx,
+			    struct net_pkt *pkt,
+			    struct net_icmp_ip_hdr *hdr,
+			    struct net_icmp_hdr *icmp_hdr,
+			    void *user_data)
 {
+	ARG_UNUSED(ctx);
+	ARG_UNUSED(pkt);
+	ARG_UNUSED(hdr);
+	ARG_UNUSED(icmp_hdr);
+	ARG_UNUSED(user_data);
+
 	is_query_received = true;
 
 	NET_DBG("Handling MLD query");
@@ -452,28 +449,23 @@ static enum net_verdict handle_mld_query(struct net_pkt *pkt,
 	return NET_DROP;
 }
 
-static struct net_icmpv6_handler mld_query_input_handler = {
-	.type = NET_ICMPV6_MLD_QUERY,
-	.code = 0,
-	.handler = handle_mld_query,
-};
-
 static void test_catch_query(void)
 {
+	struct net_icmp_ctx ctx;
+	int ret;
+
 	join_mldv2_capable_routers_group();
 
 	is_query_received = false;
 
-	net_icmpv6_register_handler(&mld_query_input_handler);
+	ret = net_icmp_init_ctx(&ctx, NET_ICMPV6_MLD_QUERY,
+				0, handle_mld_query);
+	zassert_equal(ret, 0, "Cannot register %s handler (%d)",
+		      STRINGIFY(NET_ICMPV6_MLD_QUERY), ret);
 
 	send_query(net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY)));
 
-	if (IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE)) {
-		/* Let the network stack to proceed */
-		k_msleep(THREAD_SLEEP);
-	} else {
-		k_yield();
-	}
+	k_msleep(THREAD_SLEEP);
 
 	if (k_sem_take(&wait_data, K_MSEC(WAIT_TIME))) {
 		zassert_true(0, "Timeout while waiting query event");
@@ -485,9 +477,9 @@ static void test_catch_query(void)
 
 	is_query_received = false;
 
-	net_icmpv6_unregister_handler(&mld_query_input_handler);
-
 	leave_mldv2_capable_routers_group();
+
+	net_icmp_cleanup_ctx(&ctx);
 }
 
 static void test_verify_send_report(void)
@@ -516,7 +508,7 @@ static void test_verify_send_report(void)
 /* This value should be longer that the one in net_if.c when DAD timeouts */
 #define DAD_TIMEOUT (MSEC_PER_SEC / 5U)
 
-static void test_allnodes(void)
+ZTEST(net_mld_test_suite, test_allnodes)
 {
 	struct net_if *iface = NULL;
 	struct net_if_mcast_addr *ifmaddr;
@@ -533,7 +525,7 @@ static void test_allnodes(void)
 			"allnodes multicast address");
 }
 
-static void test_solicit_node(void)
+ZTEST(net_mld_test_suite, test_solicit_node)
 {
 	struct net_if *iface = NULL;
 	struct net_if_mcast_addr *ifmaddr;
@@ -547,21 +539,139 @@ static void test_solicit_node(void)
 			"solicit node multicast address");
 }
 
-void test_main(void)
+ZTEST(net_mld_test_suite, test_join_leave)
 {
-	ztest_test_suite(net_mld_test,
-			 ztest_unit_test(test_mld_setup),
-			 ztest_unit_test(test_join_group),
-			 ztest_unit_test(test_leave_group),
-			 ztest_unit_test(test_catch_join_group),
-			 ztest_unit_test(test_catch_leave_group),
-			 ztest_unit_test(test_verify_join_group),
-			 ztest_unit_test(test_verify_leave_group),
-			 ztest_unit_test(test_catch_query),
-			 ztest_unit_test(test_verify_send_report),
-			 ztest_unit_test(test_allnodes),
-			 ztest_unit_test(test_solicit_node)
-			 );
-
-	ztest_run_test_suite(net_mld_test);
+	test_join_group();
+	test_leave_group();
 }
+
+ZTEST(net_mld_test_suite, test_catch_join_leave)
+{
+	test_catch_join_group();
+	test_catch_leave_group();
+}
+
+ZTEST(net_mld_test_suite, test_verify_join_leave)
+{
+	test_verify_join_group();
+	test_verify_leave_group();
+	test_catch_query();
+	test_verify_send_report();
+}
+
+ZTEST(net_mld_test_suite, test_no_mld_flag)
+{
+	int ret;
+
+	is_join_msg_ok = false;
+	is_leave_msg_ok = false;
+
+	net_if_flag_set(net_iface, NET_IF_IPV6_NO_MLD);
+
+	/* Using adhoc multicast group outside standard range */
+	net_ipv6_addr_create(&mcast_addr, 0xff10, 0, 0, 0, 0, 0, 0, 0x0001);
+
+	ret = net_ipv6_mld_join(net_iface, &mcast_addr);
+	zassert_equal(ret, 0, "Cannot add multicast address");
+
+	/* Let the network stack to proceed */
+	k_msleep(THREAD_SLEEP);
+
+	zassert_false(is_join_msg_ok, "Received join message when not expected");
+
+	ret = net_ipv6_mld_leave(net_iface, &mcast_addr);
+	zassert_equal(ret, 0, "Cannot remove multicast address");
+
+	/* Let the network stack to proceed */
+	k_msleep(THREAD_SLEEP);
+
+	zassert_false(is_leave_msg_ok, "Received leave message when not expected");
+
+	net_if_flag_clear(net_iface, NET_IF_IPV6_NO_MLD);
+}
+
+static void socket_group_with_index(const struct in6_addr *local_addr, bool do_join)
+{
+	struct ipv6_mreq mreq = { 0 };
+	int option;
+	int ret, fd;
+
+	if (do_join) {
+		option = IPV6_ADD_MEMBERSHIP;
+	} else {
+		option = IPV6_DROP_MEMBERSHIP;
+	}
+
+	fd = zsock_socket(AF_INET6, SOCK_DGRAM, 0);
+	zassert_true(fd >= 0, "Cannot get socket (%d)", -errno);
+
+	ret = zsock_setsockopt(fd, IPPROTO_IPV6, option,
+			       NULL, sizeof(mreq));
+	zassert_true(ret == -1 && errno == EINVAL,
+		     "Incorrect return value (%d)", -errno);
+
+	ret = zsock_setsockopt(fd, IPPROTO_IPV6, option,
+			       (void *)&mreq, 1);
+	zassert_true(ret == -1 && errno == EINVAL,
+		     "Incorrect return value (%d)", -errno);
+
+	/* First try with empty mreq */
+	ret = zsock_setsockopt(fd, IPPROTO_IPV6, option,
+			       (void *)&mreq, sizeof(mreq));
+	zassert_true(ret == -1 && errno == EINVAL,
+		     "Incorrect return value (%d)", -errno);
+
+	mreq.ipv6mr_ifindex = net_if_ipv6_addr_lookup_by_index(local_addr);
+	memcpy(&mreq.ipv6mr_multiaddr, &mcast_addr,
+	       sizeof(mreq.ipv6mr_multiaddr));
+
+	ret = zsock_setsockopt(fd, IPPROTO_IPV6, option,
+			       (void *)&mreq, sizeof(mreq));
+
+	if (do_join) {
+		if (ignore_already) {
+			zassert_true(ret == 0 || ret == -EALREADY,
+				     "Cannot join IPv6 multicast group (%d)",
+				     -errno);
+		} else {
+			zassert_equal(ret, 0,
+				      "Cannot join IPv6 multicast group (%d)",
+				      -errno);
+		}
+	} else {
+		zassert_equal(ret, 0, "Cannot leave IPv6 multicast group (%d)",
+			      -errno);
+
+		if (IS_ENABLED(CONFIG_NET_TC_THREAD_PREEMPTIVE)) {
+			/* Let the network stack to proceed */
+			k_msleep(THREAD_SLEEP);
+		} else {
+			k_yield();
+		}
+	}
+
+	zsock_close(fd);
+
+	/* Let the network stack to proceed */
+	k_msleep(THREAD_SLEEP);
+}
+
+static void socket_join_group_with_index(const struct in6_addr *addr)
+{
+	socket_group_with_index(addr, true);
+}
+
+static void socket_leave_group_with_index(const struct in6_addr *addr)
+{
+	socket_group_with_index(addr, false);
+}
+
+ZTEST_USER(net_mld_test_suite, test_socket_catch_join_with_index)
+{
+	socket_join_group_with_index(net_ipv6_unspecified_address());
+	socket_leave_group_with_index(net_ipv6_unspecified_address());
+	socket_join_group_with_index(&my_addr);
+	socket_leave_group_with_index(&my_addr);
+}
+
+ZTEST_SUITE(net_mld_test_suite, NULL, test_mld_setup, NULL, NULL, NULL);

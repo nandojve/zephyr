@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 #include <soc/soc_memory_layout.h>
 
 static int check_allocated_memory(int *m1, size_t size)
@@ -67,7 +67,7 @@ ret:
 	return err;
 }
 
-void main(void)
+int main(void)
 {
 	int err = test_heap_caps(10001);
 
@@ -83,4 +83,5 @@ void main(void)
 	} else {
 		printk("Internal mem test pass\n");
 	}
+	return 0;
 }

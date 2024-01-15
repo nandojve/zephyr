@@ -6,12 +6,11 @@
 #ifndef SOC_H
 #define SOC_H
 
-#include <sys/util.h>
-#include <toolchain.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
 
 #ifndef _ASMLANGUAGE
 
-#include <devicetree.h>
 
 /* Interrupt Number Definition */
 typedef enum IRQn {
@@ -292,5 +291,7 @@ typedef enum IRQn {
 #define PCIE_PERSTB_INTR_CTL_STS	0x400700e4
 #define PCIE0_PERST_FE_INTR		BIT(1)
 #define PCIE0_PERST_INB_FE_INTR		BIT(3)
+
+#include <core_cm7.h>
 
 #endif

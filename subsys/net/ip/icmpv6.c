@@ -8,23 +8,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_icmpv6, CONFIG_NET_ICMPV6_LOG_LEVEL);
 
 #include <errno.h>
-#include <sys/slist.h>
-#include <sys/byteorder.h>
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
+#include <zephyr/sys/slist.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/icmp.h>
 #include "net_private.h"
 #include "icmpv6.h"
 #include "ipv6.h"
 #include "net_stats.h"
 
 #define PKT_WAIT_TIME K_SECONDS(1)
-
-static sys_slist_t handlers;
 
 const char *net_icmpv6_type2str(int icmpv6_type)
 {
@@ -58,17 +57,7 @@ const char *net_icmpv6_type2str(int icmpv6_type)
 	return "?";
 }
 
-void net_icmpv6_register_handler(struct net_icmpv6_handler *handler)
-{
-	sys_slist_prepend(&handlers, &handler->node);
-}
-
-void net_icmpv6_unregister_handler(struct net_icmpv6_handler *handler)
-{
-	sys_slist_find_and_remove(&handlers, &handler->node);
-}
-
-int net_icmpv6_finalize(struct net_pkt *pkt)
+int net_icmpv6_finalize(struct net_pkt *pkt, bool force_chksum)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(icmp_access,
 					      struct net_icmp_hdr);
@@ -79,7 +68,11 @@ int net_icmpv6_finalize(struct net_pkt *pkt)
 		return -ENOBUFS;
 	}
 
-	icmp_hdr->chksum = net_calc_chksum_icmpv6(pkt);
+	icmp_hdr->chksum = 0U;
+	if (net_if_need_calc_tx_checksum(net_pkt_iface(pkt)) || force_chksum) {
+		icmp_hdr->chksum = net_calc_chksum_icmpv6(pkt);
+		net_pkt_set_chksum_done(pkt, true);
+	}
 
 	return net_pkt_set_data(pkt, &icmp_access);
 }
@@ -102,20 +95,23 @@ int net_icmpv6_create(struct net_pkt *pkt, uint8_t icmp_type, uint8_t icmp_code)
 	return net_pkt_set_data(pkt, &icmp_access);
 }
 
-static
-enum net_verdict icmpv6_handle_echo_request(struct net_pkt *pkt,
-					    struct net_ipv6_hdr *ip_hdr,
-					    struct net_icmp_hdr *icmp_hdr)
+static int icmpv6_handle_echo_request(struct net_icmp_ctx *ctx,
+				      struct net_pkt *pkt,
+				      struct net_icmp_ip_hdr *hdr,
+				      struct net_icmp_hdr *icmp_hdr,
+				      void *user_data)
 {
 	struct net_pkt *reply = NULL;
+	struct net_ipv6_hdr *ip_hdr = hdr->ipv6;
 	const struct in6_addr *src;
 	int16_t payload_len;
 
+	ARG_UNUSED(user_data);
 	ARG_UNUSED(icmp_hdr);
 
 	NET_DBG("Received Echo Request from %s to %s",
-		log_strdup(net_sprint_ipv6_addr(&ip_hdr->src)),
-		log_strdup(net_sprint_ipv6_addr(&ip_hdr->dst)));
+		net_sprint_ipv6_addr(&ip_hdr->src),
+		net_sprint_ipv6_addr(&ip_hdr->dst));
 
 	payload_len = ntohs(ip_hdr->len) -
 		net_pkt_ipv6_ext_len(pkt) - NET_ICMPH_LEN;
@@ -132,11 +128,16 @@ enum net_verdict icmpv6_handle_echo_request(struct net_pkt *pkt,
 		goto drop;
 	}
 
-	if (net_ipv6_is_addr_mcast(&ip_hdr->dst)) {
+	if (net_ipv6_is_addr_mcast((struct in6_addr *)ip_hdr->dst)) {
 		src = net_if_ipv6_select_src_addr(net_pkt_iface(pkt),
-						  &ip_hdr->dst);
+						  (struct in6_addr *)ip_hdr->src);
+
+		if (net_ipv6_is_addr_unspecified(src)) {
+			NET_DBG("DROP: No src address match");
+			goto drop;
+		}
 	} else {
-		src = &ip_hdr->dst;
+		src = (struct in6_addr *)ip_hdr->dst;
 	}
 
 	/* We must not set the destination ll address here but trust
@@ -146,7 +147,10 @@ enum net_verdict icmpv6_handle_echo_request(struct net_pkt *pkt,
 	net_pkt_lladdr_dst(reply)->addr = NULL;
 	net_pkt_lladdr_src(reply)->addr = NULL;
 
-	if (net_ipv6_create(reply, src, &ip_hdr->src)) {
+	net_pkt_set_ip_dscp(reply, net_pkt_ip_dscp(pkt));
+	net_pkt_set_ip_ecn(reply, net_pkt_ip_ecn(pkt));
+
+	if (net_ipv6_create(reply, src, (struct in6_addr *)ip_hdr->src)) {
 		NET_DBG("DROP: wrong buffer");
 		goto drop;
 	}
@@ -161,8 +165,8 @@ enum net_verdict icmpv6_handle_echo_request(struct net_pkt *pkt,
 	net_ipv6_finalize(reply, IPPROTO_ICMPV6);
 
 	NET_DBG("Sending Echo Reply from %s to %s",
-		log_strdup(net_sprint_ipv6_addr(src)),
-		log_strdup(net_sprint_ipv6_addr(&ip_hdr->src)));
+		net_sprint_ipv6_addr(src),
+		net_sprint_ipv6_addr(&ip_hdr->src));
 
 	if (net_send_data(reply) < 0) {
 		goto drop;
@@ -170,9 +174,7 @@ enum net_verdict icmpv6_handle_echo_request(struct net_pkt *pkt,
 
 	net_stats_update_icmp_sent(net_pkt_iface(reply));
 
-	net_pkt_unref(pkt);
-
-	return NET_OK;
+	return 0;
 
 drop:
 	if (reply) {
@@ -181,7 +183,7 @@ drop:
 
 	net_stats_update_icmp_drop(net_pkt_iface(pkt));
 
-	return NET_DROP;
+	return -EIO;
 }
 
 int net_icmpv6_send_error(struct net_pkt *orig, uint8_t type, uint8_t code,
@@ -211,7 +213,7 @@ int net_icmpv6_send_error(struct net_pkt *orig, uint8_t type, uint8_t code,
 
 		icmp_hdr = (struct net_icmp_hdr *)net_pkt_get_data(
 							orig, &icmpv6_access);
-		if (!icmp_hdr || icmp_hdr->code < 128) {
+		if (!icmp_hdr || icmp_hdr->type < 128) {
 			/* We must not send ICMP errors back */
 			err = -EINVAL;
 			goto drop_no_pkt;
@@ -279,14 +281,14 @@ int net_icmpv6_send_error(struct net_pkt *orig, uint8_t type, uint8_t code,
 	net_pkt_lladdr_src(pkt)->len = net_pkt_lladdr_dst(orig)->len;
 	net_pkt_lladdr_dst(pkt)->len = net_pkt_lladdr_src(orig)->len;
 
-	if (net_ipv6_is_addr_mcast(&ip_hdr->dst)) {
+	if (net_ipv6_is_addr_mcast((struct in6_addr *)ip_hdr->dst)) {
 		src = net_if_ipv6_select_src_addr(net_pkt_iface(pkt),
-						  &ip_hdr->dst);
+						  (struct in6_addr *)ip_hdr->dst);
 	} else {
-		src = &ip_hdr->dst;
+		src = (struct in6_addr *)ip_hdr->dst;
 	}
 
-	if (net_ipv6_create(pkt, src, &ip_hdr->src) ||
+	if (net_ipv6_create(pkt, src, (struct in6_addr *)ip_hdr->src) ||
 	    net_icmpv6_create(pkt, type, code)) {
 		goto drop;
 	}
@@ -313,8 +315,8 @@ int net_icmpv6_send_error(struct net_pkt *orig, uint8_t type, uint8_t code,
 
 	NET_DBG("Sending ICMPv6 Error Message type %d code %d param %d"
 		" from %s to %s", type, code, param,
-		log_strdup(net_sprint_ipv6_addr(src)),
-		log_strdup(net_sprint_ipv6_addr(&ip_hdr->src)));
+		net_sprint_ipv6_addr(src),
+		net_sprint_ipv6_addr(&ip_hdr->src));
 
 	if (net_send_data(pkt) >= 0) {
 		net_stats_update_icmp_sent(net_pkt_iface(pkt));
@@ -330,78 +332,13 @@ drop_no_pkt:
 	return err;
 }
 
-int net_icmpv6_send_echo_request(struct net_if *iface,
-				 struct in6_addr *dst,
-				 uint16_t identifier,
-				 uint16_t sequence,
-				 const void *data,
-				 size_t data_size)
-{
-	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(icmpv6_access,
-					      struct net_icmpv6_echo_req);
-	int ret = -ENOBUFS;
-	struct net_icmpv6_echo_req *echo_req;
-	const struct in6_addr *src;
-	struct net_pkt *pkt;
-
-	src = net_if_ipv6_select_src_addr(iface, dst);
-
-	pkt = net_pkt_alloc_with_buffer(iface,
-					sizeof(struct net_icmpv6_echo_req)
-					+ data_size,
-					AF_INET6, IPPROTO_ICMPV6,
-					PKT_WAIT_TIME);
-	if (!pkt) {
-		return -ENOMEM;
-	}
-
-	if (net_ipv6_create(pkt, src, dst) ||
-	    net_icmpv6_create(pkt, NET_ICMPV6_ECHO_REQUEST, 0)) {
-		goto drop;
-	}
-
-	echo_req = (struct net_icmpv6_echo_req *)net_pkt_get_data(
-							pkt, &icmpv6_access);
-	if (!echo_req) {
-		goto drop;
-	}
-
-	echo_req->identifier = htons(identifier);
-	echo_req->sequence   = htons(sequence);
-
-	net_pkt_set_data(pkt, &icmpv6_access);
-	net_pkt_write(pkt, data, data_size);
-
-	net_pkt_cursor_init(pkt);
-	net_ipv6_finalize(pkt, IPPROTO_ICMPV6);
-
-	NET_DBG("Sending ICMPv6 Echo Request type %d from %s to %s",
-		NET_ICMPV6_ECHO_REQUEST,
-		log_strdup(net_sprint_ipv6_addr(src)),
-		log_strdup(net_sprint_ipv6_addr(dst)));
-
-	if (net_send_data(pkt) >= 0) {
-		net_stats_update_icmp_sent(iface);
-		return 0;
-	}
-
-	net_stats_update_icmp_drop(iface);
-
-	ret = -EIO;
-
-drop:
-	net_pkt_unref(pkt);
-
-	return ret;
-}
-
 enum net_verdict net_icmpv6_input(struct net_pkt *pkt,
 				  struct net_ipv6_hdr *ip_hdr)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(icmp_access,
 					      struct net_icmp_hdr);
 	struct net_icmp_hdr *icmp_hdr;
-	struct net_icmpv6_handler *cb;
+	int ret;
 
 	icmp_hdr = (struct net_icmp_hdr *)net_pkt_get_data(pkt, &icmp_access);
 	if (!icmp_hdr) {
@@ -409,9 +346,13 @@ enum net_verdict net_icmpv6_input(struct net_pkt *pkt,
 		return NET_DROP;
 	}
 
-	if (net_calc_chksum_icmpv6(pkt) != 0U) {
-		NET_DBG("DROP: invalid checksum");
-		goto drop;
+
+	if (net_if_need_calc_rx_checksum(net_pkt_iface(pkt)) ||
+	    net_pkt_is_ip_reassembled(pkt)) {
+		if (net_calc_chksum_icmpv6(pkt) != 0U) {
+			NET_DBG("DROP: invalid checksum");
+			goto drop;
+		}
 	}
 
 	net_pkt_acknowledge_data(pkt, &icmp_access);
@@ -422,25 +363,29 @@ enum net_verdict net_icmpv6_input(struct net_pkt *pkt,
 
 	net_stats_update_icmp_recv(net_pkt_iface(pkt));
 
-	SYS_SLIST_FOR_EACH_CONTAINER(&handlers, cb, node) {
-		if (cb->type == icmp_hdr->type &&
-		    (cb->code == icmp_hdr->code || cb->code == 0U)) {
-			return cb->handler(pkt, ip_hdr, icmp_hdr);
-		}
+	ret = net_icmp_call_ipv6_handlers(pkt, ip_hdr, icmp_hdr);
+	if (ret < 0) {
+		NET_ERR("ICMPv6 handling failure (%d)", ret);
 	}
+
+	net_pkt_unref(pkt);
+
+	return NET_OK;
+
 drop:
 	net_stats_update_icmp_drop(net_pkt_iface(pkt));
 
 	return NET_DROP;
 }
 
-static struct net_icmpv6_handler echo_request_handler = {
-	.type = NET_ICMPV6_ECHO_REQUEST,
-	.code = 0,
-	.handler = icmpv6_handle_echo_request,
-};
-
 void net_icmpv6_init(void)
 {
-	net_icmpv6_register_handler(&echo_request_handler);
+	static struct net_icmp_ctx ctx;
+	int ret;
+
+	ret = net_icmp_init_ctx(&ctx, NET_ICMPV6_ECHO_REQUEST, 0, icmpv6_handle_echo_request);
+	if (ret < 0) {
+		NET_ERR("Cannot register %s handler (%d)", STRINGIFY(NET_ICMPV6_ECHO_REQUEST),
+			ret);
+	}
 }

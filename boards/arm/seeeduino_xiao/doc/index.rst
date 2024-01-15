@@ -10,8 +10,7 @@ The Seeeduino XIAO is a tiny (20 mm x 17.5 mm) ARM development
 board with onboard LEDs, USB port, and range of I/O broken out
 onto 14 pins.
 
-.. image:: img/seeeduino_xiao.png
-     :width: 500px
+.. image:: img/seeeduino_xiao.jpg
      :align: center
      :alt: Seeeduino XIAO
 
@@ -33,6 +32,8 @@ features:
 | Interface | Controller | Driver/Component                         |
 +===========+============+==========================================+
 | DMA       | on-chip    | Direct memory access                     |
++-----------+------------+------------------------------------------+
+| DAC       | on-chip    | Digital to analogue converter            |
 +-----------+------------+------------------------------------------+
 | Flash     | on-chip    | Can be used with LittleFS to store files |
 +-----------+------------+------------------------------------------+
@@ -98,8 +99,14 @@ USB Device Port
 
 The SAMD21 MCU has a USB device port that can be used to communicate
 with a host PC.  See the :ref:`usb-samples` sample applications for
-more, such as the :ref:`usb_cdc-acm` sample which sets up a virtual
+more, such as the :zephyr:code-sample:`usb-cdc-acm` sample which sets up a virtual
 serial port that echos characters back to the host PC.
+
+DAC
+===
+
+The SAMD21 MCU has a single channel DAC with 10 bits of resolution. On
+the XIAO, the DAC is available on pin 0.
 
 Programming and Debugging
 *************************

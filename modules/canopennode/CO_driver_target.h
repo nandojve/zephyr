@@ -18,10 +18,11 @@
 extern "C" {
 #endif
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <device.h>
-#include <toolchain.h>
+#include <zephyr/device.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/dsp/types.h> /* float32_t, float64_t */
 
 /* Use static variables instead of calloc() */
 #define CO_USE_GLOBALS
@@ -39,20 +40,19 @@ extern "C" {
 #define CO_USE_LEDS 1
 #endif
 
-#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#ifdef CONFIG_LITTLE_ENDIAN
 #define CO_LITTLE_ENDIAN
-#elif __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-#define CO_BIG_ENDIAN
 #else
-#error "Unsupported endianness"
+#define CO_BIG_ENDIAN
 #endif
 
 typedef bool          bool_t;
-typedef float         float32_t;
-typedef long double   float64_t;
 typedef char          char_t;
 typedef unsigned char oChar_t;
 typedef unsigned char domain_t;
+
+BUILD_ASSERT(sizeof(float32_t) >= 4);
+BUILD_ASSERT(sizeof(float64_t) >= 8);
 
 typedef struct canopen_rx_msg {
 	uint8_t data[8];
@@ -68,6 +68,7 @@ typedef struct canopen_rx {
 	void *object;
 	CO_CANrxBufferCallback_t pFunct;
 	uint16_t ident;
+	uint16_t mask;
 } CO_CANrx_t;
 
 typedef struct canopen_tx {

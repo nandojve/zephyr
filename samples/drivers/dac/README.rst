@@ -1,12 +1,13 @@
-.. _dac-sample:
+.. zephyr:code-sample:: dac
+   :name: Digital-to-Analog Converter (DAC)
+   :relevant-api: dac_interface
 
-Digital-to-Analog Converter (DAC)
-#################################
+   Generate an analog sawtooth signal using the DAC driver API.
 
 Overview
 ********
 
-This sample demonstrates how to use the DAC driver API.
+This sample demonstrates how to use the :ref:`DAC driver API <dac_api>`.
 
 Building and Running
 ********************
@@ -175,6 +176,52 @@ built and executed for the :ref:`bl5340_dvk` as follows:
    :compact:
 
 DAC output is available on pin 1 of the MCP4725.
+
+Building and Running for GD32450I-EVAL
+======================================
+The sample can be built and executed for the
+:ref:`gd32f450i_eval` as follows:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/drivers/dac
+   :board: gd32f450i_eval
+   :goals: build flash
+   :compact:
+
+Bridge the JP23 to DAC with the jumper cap, then DAC output will available on JP7.
+
+Building and Running for Longan Nano and Longan Nano Lite
+=========================================================
+The sample can be built and executed for the
+:ref:`longan_nano` as follows:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/drivers/dac
+   :board: longan_nano
+   :goals: build flash
+   :compact:
+
+also can run for the
+:ref: `longan_nano_lite` as follows:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/drivers/dac
+   :board: longan_nano_lite
+   :goals: build flash
+   :compact:
+
+Building and Running for NXP LPCXpresso55S36
+============================================
+The sample can be built and executed for the :ref:`lpcxpresso55s36` as
+follows:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/drivers/dac
+   :board: lpcxpresso55s36
+   :goals: build flash
+   :compact:
+
+DAC output is available on connector J12 pin 4.
 
 Sample output
 =============

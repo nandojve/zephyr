@@ -7,12 +7,12 @@
 #ifndef ZEPHYR_DRIVERS_WIFI_ESWIFI_ESWIFI_H_
 #define ZEPHYR_DRIVERS_WIFI_ESWIFI_ESWIFI_H_
 
-#include <zephyr.h>
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <stdio.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/drivers/gpio.h>
 
-#include <net/wifi_mgmt.h>
+#include <zephyr/net/wifi_mgmt.h>
 
 #include "eswifi_offload.h"
 
@@ -22,11 +22,6 @@
 #define AT_OK_STR_LEN 8
 #define AT_RSP_DELIMITER "\r\n"
 #define AT_RSP_DELIMITER_LEN 2
-
-struct eswifi_gpio {
-	const struct device *dev;
-	unsigned int pin;
-};
 
 enum eswifi_security_type {
 	ESWIFI_SEC_OPEN,
@@ -55,18 +50,23 @@ struct eswifi_sta {
 	char pass[65];
 	bool connected;
 	uint8_t channel;
+	int rssi;
 };
 
 struct eswifi_bus_ops;
 
+struct eswifi_cfg {
+	struct gpio_dt_spec resetn;
+	struct gpio_dt_spec wakeup;
+};
+
 struct eswifi_dev {
 	struct net_if *iface;
 	struct eswifi_bus_ops *bus;
-	struct eswifi_gpio resetn;
-	struct eswifi_gpio wakeup;
 	scan_result_cb_t scan_cb;
 	struct k_work_q work_q;
 	struct k_work request_work;
+	struct k_work_delayable status_work;
 	struct eswifi_sta sta;
 	enum eswifi_request req;
 	enum eswifi_role role;
@@ -121,7 +121,7 @@ static inline int __select_socket(struct eswifi_dev *eswifi, uint8_t idx)
 static inline
 struct eswifi_dev *eswifi_socket_to_dev(struct eswifi_off_socket *socket)
 {
-	return CONTAINER_OF(socket - socket->index, struct eswifi_dev, socket);
+	return CONTAINER_OF(socket - socket->index, struct eswifi_dev, socket[0]);
 }
 
 struct eswifi_bus_ops *eswifi_get_bus(void);
@@ -130,6 +130,9 @@ struct eswifi_dev *eswifi_by_iface_idx(uint8_t iface);
 int eswifi_at_cmd_rsp(struct eswifi_dev *eswifi, char *cmd, char **rsp);
 void eswifi_async_msg(struct eswifi_dev *eswifi, char *msg, size_t len);
 void eswifi_offload_async_msg(struct eswifi_dev *eswifi, char *msg, size_t len);
+int eswifi_socket_create(int family, int type, int proto);
+
+int eswifi_socket_type_from_zephyr(int proto, enum eswifi_transport_type *type);
 
 int __eswifi_socket_free(struct eswifi_dev *eswifi,
 			 struct eswifi_off_socket *socket);
@@ -137,6 +140,7 @@ int __eswifi_socket_new(struct eswifi_dev *eswifi, int family, int type,
 			int proto, void *context);
 int __eswifi_off_start_client(struct eswifi_dev *eswifi,
 			      struct eswifi_off_socket *socket);
+int __eswifi_listen(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket, int backlog);
 int __eswifi_accept(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket);
 int __eswifi_bind(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket,
 		  const struct sockaddr *addr, socklen_t addrlen);

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <zephyr.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
 
 /*
  * precision timing tests in an emulation environment are not reliable.
@@ -29,12 +29,11 @@
  * nRF51, which has a slow CPU clock.
  */
 #define MAXIMUM_SHORTEST_TICKS (IS_ENABLED(CONFIG_SOC_SERIES_NRF51X) ? 6 : 3)
-/*
- * Similar situation for TI CC13X2/CC26X2 RTC due to the limitation
- * that a value too close to the current time cannot be loaded to
- * its comparator.
+/* Similar situation for TI CC13XX/CC26XX RTC kernel timer due to the
+ * limitation that a value too close to the current time cannot be
+ * loaded to its comparator.
  */
-#elif defined(CONFIG_CC13X2_CC26X2_RTC_TIMER) && \
+#elif defined(CONFIG_CC13XX_CC26XX_RTC_TIMER) && \
 	(CONFIG_SYS_CLOCK_TICKS_PER_SEC > 16384)
 #define MAXIMUM_SHORTEST_TICKS 3
 #else
@@ -62,10 +61,10 @@
 #define UPPER_BOUND_MS	(((3 + MAXIMUM_SHORTEST_TICKS) * 1000 * LOOPS)	\
 			 / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
-void test_usleep(void)
+ZTEST_USER(sleep, test_usleep)
 {
 	int retries = 0;
-	int64_t elapsed_ms;
+	int64_t elapsed_ms = 0;
 
 	while (retries < RETRIES) {
 		int64_t start_ms;

@@ -10,14 +10,14 @@
 
 #include "button_svc.h"
 
-#include <zephyr.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/hci.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/gatt.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/gatt.h>
 
 LOG_MODULE_REGISTER(button_svc);
 
@@ -28,7 +28,7 @@ int button_init(gpio_callback_handler_t handler)
 {
 	int ret;
 
-	if (!device_is_ready(button.port)) {
+	if (!gpio_is_ready_dt(&button)) {
 		LOG_ERR("Error: button GPIO device %s is not ready",
 			button.port->name);
 		return -ENODEV;

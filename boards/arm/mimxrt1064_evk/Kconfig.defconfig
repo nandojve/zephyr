@@ -1,6 +1,6 @@
 # MIMXRT1064-EVK board
 
-# Copyright (c) 2018, NXP
+# Copyright 2018,2023 NXP
 # SPDX-License-Identifier: Apache-2.0
 
 if BOARD_MIMXRT1064_EVK
@@ -12,64 +12,46 @@ choice CODE_LOCATION
 	default CODE_FLEXSPI2
 endchoice
 
-config DISK_DRIVER_SDMMC
-	default y if DISK_DRIVERS
+config DEVICE_CONFIGURATION_DATA
+	default y
 
-config FLASH_MCUX_FLEXSPI_NOR
-	default y if FLASH
+config NXP_IMX_EXTERNAL_SDRAM
+	default y
 
-config FLASH_MCUX_FLEXSPI_XIP
-	default y if FLASH
-	depends on MEMC_MCUX_FLEXSPI
-
-config I2C
-	default y if KSCAN
-
-config KSCAN
+config INPUT
 	default y if LVGL
 
-if KSCAN
+if INPUT
 
-config KSCAN_FT5336
+config INPUT_FT5336_INTERRUPT
 	default y
 
-config KSCAN_FT5336_INTERRUPT
-	default y
-
-endif # KSCAN
+endif # INPUT
 
 if NETWORKING
 
 config NET_L2_ETHERNET
 	default y
 
+if ETH_MCUX
+
+config ETH_MCUX_PHY_RESET
+	default y
+
+endif # ETH_MCUX
+
 endif # NETWORKING
 
 if LVGL
 
-config LVGL_DISPLAY_DEV_NAME
-	default "ELCDIF_1"
-
-config LVGL_POINTER_KSCAN
-	default y
-
-config LVGL_POINTER_KSCAN_DEV_NAME
-	default "FT5336"
-
-config LVGL_HOR_RES_MAX
-	default 480
-
-config LVGL_VER_RES_MAX
-	default 272
-
-config LVGL_VDB_SIZE
+config LV_Z_VDB_SIZE
 	default 16
 
-config LVGL_DPI
+config LV_DPI_DEF
 	default 128
 
-choice LVGL_COLOR_DEPTH
-	default LVGL_COLOR_DEPTH_16
+choice LV_COLOR_DEPTH
+	default LV_COLOR_DEPTH_16
 endchoice
 
 endif # LVGL

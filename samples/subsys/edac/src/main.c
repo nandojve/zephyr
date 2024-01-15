@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <devicetree.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/devicetree.h>
 
-#include <drivers/edac.h>
+#include <zephyr/drivers/edac.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
 #define STACKSIZE	1024
@@ -30,24 +30,22 @@ static void notification_callback(const struct device *dev, void *data)
 	atomic_set(&handled, true);
 }
 
-#define DEVICE_NAME DT_LABEL(DT_NODELABEL(ibecc))
-
-void main(void)
+int main(void)
 {
-	const struct device *dev;
+	const struct device *const dev = DEVICE_DT_GET(DT_NODELABEL(ibecc));
 
-	dev = device_get_binding(DEVICE_NAME);
-	if (!dev) {
-		LOG_ERR("Cannot open EDAC device: %s", DEVICE_NAME);
-		return;
+	if (!device_is_ready(dev)) {
+		printk("%s: device not ready.\n", dev->name);
+		return 0;
 	}
 
 	if (edac_notify_callback_set(dev, notification_callback)) {
 		LOG_ERR("Cannot set notification callback");
-		return;
+		return 0;
 	}
 
 	LOG_INF("EDAC shell application initialized");
+	return 0;
 }
 
 void thread_function(void)

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include "test_sched.h"
 
 #ifdef CONFIG_TIMESLICING
@@ -92,7 +92,7 @@ static void thread_time_slice(void *p1, void *p2, void *p3)
 	thread_idx = (thread_idx + 1) % NUM_THREAD;
 
 	/** TESTPOINT: timeslice should be reset for each preemptive thread */
-#ifndef CONFIG_COVERAGE
+#ifndef CONFIG_COVERAGE_GCOV
 	zassert_true(t >= expected_slice_min,
 		     "timeslice too small, expected %u got %u",
 		     expected_slice_min, t);
@@ -101,7 +101,7 @@ static void thread_time_slice(void *p1, void *p2, void *p3)
 		     expected_slice_max, t);
 #else
 	(void)t;
-#endif /* CONFIG_COVERAGE */
+#endif /* CONFIG_COVERAGE_GCOV */
 
 	/* Keep the current thread busy for more than one slice, even though,
 	 * when timeslice used up the next thread should be scheduled in.
@@ -124,7 +124,7 @@ static void thread_time_slice(void *p1, void *p2, void *p3)
  *
  * @ingroup kernel_sched_tests
  */
-void test_slice_reset(void)
+ZTEST(threads_scheduling, test_slice_reset)
 {
 	uint32_t t32;
 	k_tid_t tid[NUM_THREAD];
@@ -143,8 +143,13 @@ void test_slice_reset(void)
 	uint32_t slice_ticks = k_ms_to_ticks_ceil32(SLICE_SIZE);
 	uint32_t half_slice_cyc = k_ticks_to_cyc_ceil32(slice_ticks / 2);
 
-	__ASSERT(slice_ticks % 2 == 0,
-		 "timeslice in ticks much be divisible by two");
+	if (slice_ticks % 2 != 0) {
+		uint32_t deviation = k_ticks_to_cyc_ceil32(1);
+		/* slice_ticks can't be divisible by two, so we add the
+		 * (slice_ticks / 2) floating part back to half_slice_cyc.
+		 */
+		half_slice_cyc = half_slice_cyc + (deviation / 2);
+	}
 
 	for (int j = 0; j < 2; j++) {
 		k_sem_reset(&sema);
@@ -172,9 +177,7 @@ void test_slice_reset(void)
 		/* current thread (ztest native) consumed a half timeslice */
 		t32 = k_cycle_get_32();
 		while (k_cycle_get_32() - t32 < half_slice_cyc) {
-#if defined(CONFIG_ARCH_POSIX)
-			k_busy_wait(50);
-#endif
+			Z_SPIN_DELAY(50);
 		}
 
 		/* relinquish CPU and wait for each thread to complete */
@@ -194,7 +197,7 @@ void test_slice_reset(void)
 }
 
 #else /* CONFIG_TIMESLICING */
-void test_slice_reset(void)
+ZTEST(threads_scheduling, test_slice_reset)
 {
 	ztest_test_skip();
 }

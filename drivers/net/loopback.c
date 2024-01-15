@@ -14,15 +14,16 @@
 #define LOG_MODULE_NAME netlo
 #define LOG_LEVEL CONFIG_NET_LOOPBACK_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <net/net_pkt.h>
-#include <net/buf.h>
-#include <net/net_ip.h>
-#include <net/net_if.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/loopback.h>
 
-#include <net/dummy.h>
+#include <zephyr/net/dummy.h>
 
 int loopback_dev_init(const struct device *dev)
 {
@@ -41,12 +42,15 @@ static void loopback_init(struct net_if *iface)
 
 	if (IS_ENABLED(CONFIG_NET_IPV4)) {
 		struct in_addr ipv4_loopback = INADDR_LOOPBACK_INIT;
+		struct in_addr netmask = { { { 255, 0, 0, 0 } } };
 
 		ifaddr = net_if_ipv4_addr_add(iface, &ipv4_loopback,
 					      NET_ADDR_AUTOCONF, 0);
 		if (!ifaddr) {
 			LOG_ERR("Failed to register IPv4 loopback address");
 		}
+
+		net_if_ipv4_set_netmask(iface, &netmask);
 	}
 
 	if (IS_ENABLED(CONFIG_NET_IPV6)) {
@@ -60,6 +64,27 @@ static void loopback_init(struct net_if *iface)
 	}
 }
 
+#ifdef CONFIG_NET_LOOPBACK_SIMULATE_PACKET_DROP
+static float loopback_packet_drop_ratio = 0.0f;
+static float loopback_packet_drop_state = 0.0f;
+static int loopback_packet_dropped_count;
+
+int loopback_set_packet_drop_ratio(float ratio)
+{
+	if (ratio < 0.0f || ratio > 1.0f) {
+		return -EINVAL;
+	}
+	loopback_packet_drop_ratio = ratio;
+	return 0;
+}
+
+int loopback_get_num_dropped_packets(void)
+{
+	return loopback_packet_dropped_count;
+}
+
+#endif
+
 static int loopback_send(const struct device *dev, struct net_pkt *pkt)
 {
 	struct net_pkt *cloned;
@@ -67,29 +92,22 @@ static int loopback_send(const struct device *dev, struct net_pkt *pkt)
 
 	ARG_UNUSED(dev);
 
+#ifdef CONFIG_NET_LOOPBACK_SIMULATE_PACKET_DROP
+	/* Drop packets based on the loopback_packet_drop_ratio
+	 * a ratio of 0.2 will drop one every 5 packets
+	 */
+	loopback_packet_drop_state += loopback_packet_drop_ratio;
+	if (loopback_packet_drop_state >= 1.0f) {
+		/* Administrate we dropped a packet */
+		loopback_packet_drop_state -= 1.0f;
+		loopback_packet_dropped_count++;
+		return 0;
+	}
+#endif
+
 	if (!pkt->frags) {
 		LOG_ERR("No data to send");
 		return -ENODATA;
-	}
-
-	/* We need to swap the IP addresses because otherwise
-	 * the packet will be dropped.
-	 */
-
-	if (net_pkt_family(pkt) == AF_INET6) {
-		struct in6_addr addr;
-
-		net_ipaddr_copy(&addr, &NET_IPV6_HDR(pkt)->src);
-		net_ipaddr_copy(&NET_IPV6_HDR(pkt)->src,
-				&NET_IPV6_HDR(pkt)->dst);
-		net_ipaddr_copy(&NET_IPV6_HDR(pkt)->dst, &addr);
-	} else {
-		struct in_addr addr;
-
-		net_ipaddr_copy(&addr, &NET_IPV4_HDR(pkt)->src);
-		net_ipaddr_copy(&NET_IPV4_HDR(pkt)->src,
-				&NET_IPV4_HDR(pkt)->dst);
-		net_ipaddr_copy(&NET_IPV4_HDR(pkt)->dst, &addr);
 	}
 
 	/* We should simulate normal driver meaning that if the packet is
@@ -97,10 +115,25 @@ static int loopback_send(const struct device *dev, struct net_pkt *pkt)
 	 * must be dropped. This is very much needed for TCP packets where
 	 * the packet is reference counted in various stages of sending.
 	 */
-	cloned = net_pkt_clone(pkt, K_MSEC(100));
+	cloned = net_pkt_rx_clone(pkt, K_MSEC(100));
 	if (!cloned) {
 		res = -ENOMEM;
 		goto out;
+	}
+
+	/* We need to swap the IP addresses because otherwise
+	 * the packet will be dropped.
+	 */
+	if (net_pkt_family(pkt) == AF_INET6) {
+		net_ipv6_addr_copy_raw(NET_IPV6_HDR(cloned)->src,
+				       NET_IPV6_HDR(pkt)->dst);
+		net_ipv6_addr_copy_raw(NET_IPV6_HDR(cloned)->dst,
+				       NET_IPV6_HDR(pkt)->src);
+	} else {
+		net_ipv4_addr_copy_raw(NET_IPV4_HDR(cloned)->src,
+				       NET_IPV4_HDR(pkt)->dst);
+		net_ipv4_addr_copy_raw(NET_IPV4_HDR(cloned)->dst,
+				       NET_IPV4_HDR(pkt)->src);
 	}
 
 	res = net_recv_data(net_pkt_iface(cloned), cloned);
@@ -125,4 +158,4 @@ NET_DEVICE_INIT(loopback, "lo",
 		loopback_dev_init, NULL, NULL, NULL,
 		CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 		&loopback_api, DUMMY_L2,
-		NET_L2_GET_CTX_TYPE(DUMMY_L2), 536);
+		NET_L2_GET_CTX_TYPE(DUMMY_L2), CONFIG_NET_LOOPBACK_MTU);

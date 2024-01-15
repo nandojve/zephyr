@@ -15,12 +15,10 @@
 #ifndef _ATMEL_SAM4E_SOC_H_
 #define _ATMEL_SAM4E_SOC_H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifndef _ASMLANGUAGE
 
-/* Add include for DTS generated information */
-#include <devicetree.h>
 
 #define DONT_USE_CMSIS_INIT
 #define DONT_USE_PREDEFINED_CORE_HANDLERS
@@ -40,6 +38,7 @@
 
 #include "../common/soc_pmc.h"
 #include "../common/soc_gpio.h"
+#include "../common/soc_supc.h"
 #include "../common/atmel_sam_dt.h"
 
 /** Processor Clock (HCLK) Frequency */

@@ -16,20 +16,21 @@
 #define LOG_LEVEL LOG_LEVEL_NONE
 #endif
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <random/rand32.h>
-#include <net/ieee802154_radio.h>
+#include <zephyr/random/random.h>
+#include <zephyr/net/ieee802154_radio.h>
+#include <zephyr/irq.h>
 #if defined(CONFIG_NET_L2_OPENTHREAD)
-#include <net/openthread.h>
+#include <zephyr/net/openthread.h>
 #endif
 
 #include "ieee802154_b91.h"
 
 
 /* B91 data structure */
-static struct  b91_data data;
+static struct b91_data data;
 
 /* Set filter PAN ID */
 static int b91_set_pan_id(uint16_t pan_id)
@@ -168,14 +169,19 @@ static void b91_update_rssi_and_lqi(struct net_pkt *pkt)
 	lqi = b91_convert_rssi_to_lqi(rssi);
 
 	net_pkt_set_ieee802154_lqi(pkt, lqi);
-	net_pkt_set_ieee802154_rssi(pkt, rssi);
+	net_pkt_set_ieee802154_rssi_dbm(pkt, rssi);
 }
 
 /* Prepare TX buffer */
-static void b91_set_tx_payload(uint8_t *payload, uint8_t payload_len)
+static int b91_set_tx_payload(uint8_t *payload, uint8_t payload_len)
 {
 	unsigned char rf_data_len;
 	unsigned int rf_tx_dma_len;
+
+	/* See Telink SDK Dev Handbook, AN-21010600, section 21.5.2.2. */
+	if (payload_len > (B91_TRX_LENGTH - B91_PAYLOAD_OFFSET - IEEE802154_FCS_LENGTH)) {
+		return -EINVAL;
+	}
 
 	rf_data_len = payload_len + 1;
 	rf_tx_dma_len = rf_tx_packet_dma_len(rf_data_len);
@@ -183,8 +189,10 @@ static void b91_set_tx_payload(uint8_t *payload, uint8_t payload_len)
 	data.tx_buffer[1] = (rf_tx_dma_len >> 8) & 0xff;
 	data.tx_buffer[2] = (rf_tx_dma_len >> 16) & 0xff;
 	data.tx_buffer[3] = (rf_tx_dma_len >> 24) & 0xff;
-	data.tx_buffer[4] = payload_len + 2;
+	data.tx_buffer[4] = payload_len + IEEE802154_FCS_LENGTH;
 	memcpy(data.tx_buffer + B91_PAYLOAD_OFFSET, payload, payload_len);
+
+	return 0;
 }
 
 /* Enable ack handler */
@@ -205,8 +213,8 @@ static void b91_handle_ack(void)
 	struct net_pkt *ack_pkt;
 
 	/* allocate ack packet */
-	ack_pkt = net_pkt_alloc_with_buffer(data.iface, B91_ACK_FRAME_LEN,
-					    AF_UNSPEC, 0, K_NO_WAIT);
+	ack_pkt = net_pkt_rx_alloc_with_buffer(data.iface, B91_ACK_FRAME_LEN,
+					       AF_UNSPEC, 0, K_NO_WAIT);
 	if (!ack_pkt) {
 		LOG_ERR("No free packet available.");
 		return;
@@ -226,7 +234,7 @@ static void b91_handle_ack(void)
 	net_pkt_cursor_init(ack_pkt);
 
 	/* handle ack */
-	if (ieee802154_radio_handle_ack(data.iface, ack_pkt) != NET_OK) {
+	if (ieee802154_handle_ack(data.iface, ack_pkt) != NET_OK) {
 		LOG_INF("ACK packet not handled - releasing.");
 	}
 
@@ -242,9 +250,12 @@ static void b91_send_ack(uint8_t seq_num)
 {
 	uint8_t ack_buf[] = { B91_ACK_TYPE, 0, seq_num };
 
-	b91_set_tx_payload(ack_buf, sizeof(ack_buf));
+	if (b91_set_tx_payload(ack_buf, sizeof(ack_buf))) {
+		return;
+	}
+
 	rf_set_txmode();
-	delay_us(B91_SET_TRX_MODE_DELAY_US);
+	delay_us(CONFIG_IEEE802154_B91_SET_TXRX_DELAY_US);
 	rf_tx_pkt(data.tx_buffer);
 }
 
@@ -256,7 +267,7 @@ static void b91_rf_rx_isr(void)
 	uint8_t *payload;
 	struct net_pkt *pkt;
 
-	/* disable DMA and clread IRQ flag */
+	/* disable DMA and clear IRQ flag */
 	dma_chn_dis(DMA1);
 	rf_clr_irq_status(FLD_RF_IRQ_RX);
 
@@ -281,7 +292,7 @@ static void b91_rf_rx_isr(void)
 
 		/* handle acknowledge packet if enabled */
 		if ((length == (B91_ACK_FRAME_LEN + B91_FCS_LENGTH)) &&
-		    (payload[B91_FRAME_TYPE_OFFSET] == B91_ACK_TYPE)) {
+		    ((payload[B91_FRAME_TYPE_OFFSET] & B91_FRAME_TYPE_MASK) == B91_ACK_TYPE)) {
 			if (data.ack_handler_en) {
 				b91_handle_ack();
 			}
@@ -300,7 +311,7 @@ static void b91_rf_rx_isr(void)
 		}
 
 		/* get packet pointer from NET stack */
-		pkt = net_pkt_alloc_with_buffer(data.iface, length, AF_UNSPEC, 0, K_NO_WAIT);
+		pkt = net_pkt_rx_alloc_with_buffer(data.iface, length, AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No pkt available");
 			goto exit;
@@ -309,10 +320,11 @@ static void b91_rf_rx_isr(void)
 		/* update packet data */
 		if (net_pkt_write(pkt, payload, length)) {
 			LOG_ERR("Failed to write to a packet.");
+			net_pkt_unref(pkt);
 			goto exit;
 		}
 
-		/* update RSSI and LQI prameters */
+		/* update RSSI and LQI parameters */
 		b91_update_rssi_and_lqi(pkt);
 
 		/* transfer data to NET stack */
@@ -347,6 +359,8 @@ static void b91_rf_isr(void)
 		b91_rf_rx_isr();
 	} else if (rf_get_irq_status(FLD_RF_IRQ_TX)) {
 		b91_rf_tx_isr();
+	} else {
+		rf_clr_irq_status(FLD_RF_IRQ_ALL);
 	}
 }
 
@@ -375,6 +389,7 @@ static int b91_init(const struct device *dev)
 	/* init data variables */
 	data.is_started = true;
 	data.ack_handler_en = false;
+	data.current_channel = 0;
 
 	return 0;
 }
@@ -398,8 +413,8 @@ static enum ieee802154_hw_caps b91_get_capabilities(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	return IEEE802154_HW_FCS | IEEE802154_HW_2_4_GHZ |
-	       IEEE802154_HW_FILTER | IEEE802154_HW_TX_RX_ACK;
+	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER |
+	       IEEE802154_HW_TX_RX_ACK | IEEE802154_HW_RX_TX_ACK;
 }
 
 /* API implementation: cca */
@@ -410,7 +425,7 @@ static int b91_cca(const struct device *dev)
 	unsigned int t1 = stimer_get_tick();
 
 	while (!clock_time_exceed(t1, B91_CCA_TIME_MAX_US)) {
-		if (rf_get_rssi() < B91_CCA_RSSI_MIN) {
+		if (rf_get_rssi() < CONFIG_IEEE802154_B91_CCA_RSSI_THRESHOLD) {
 			return 0;
 		}
 	}
@@ -423,11 +438,19 @@ static int b91_set_channel(const struct device *dev, uint16_t channel)
 {
 	ARG_UNUSED(dev);
 
-	if (channel < 11 || channel > 26) {
+	if (channel > 26) {
 		return -EINVAL;
 	}
 
-	rf_set_chn(B91_LOGIC_CHANNEL_TO_PHYSICAL(channel));
+	if (channel < 11) {
+		return -ENOTSUP;
+	}
+
+	if (data.current_channel != channel) {
+		data.current_channel = channel;
+		rf_set_chn(B91_LOGIC_CHANNEL_TO_PHYSICAL(channel));
+		rf_set_rxmode();
+	}
 
 	return 0;
 }
@@ -479,7 +502,7 @@ static int b91_start(const struct device *dev)
 	/* check if RF is already started */
 	if (!data.is_started) {
 		rf_set_rxmode();
-		delay_us(B91_SET_TRX_MODE_DELAY_US);
+		delay_us(CONFIG_IEEE802154_B91_SET_TXRX_DELAY_US);
 		riscv_plic_irq_enable(DT_INST_IRQN(0));
 		data.is_started = true;
 	}
@@ -496,7 +519,7 @@ static int b91_stop(const struct device *dev)
 	if (data.is_started) {
 		riscv_plic_irq_disable(DT_INST_IRQN(0));
 		rf_set_tx_rx_off();
-		delay_us(B91_SET_TRX_MODE_DELAY_US);
+		delay_us(CONFIG_IEEE802154_B91_SET_TXRX_DELAY_US);
 		data.is_started = false;
 	}
 
@@ -521,7 +544,10 @@ static int b91_tx(const struct device *dev,
 	}
 
 	/* prepare tx buffer */
-	b91_set_tx_payload(frag->data, frag->len);
+	status = b91_set_tx_payload(frag->data, frag->len);
+	if (status) {
+		return status;
+	}
 
 	/* reset semaphores */
 	k_sem_reset(&b91->tx_wait);
@@ -529,7 +555,7 @@ static int b91_tx(const struct device *dev,
 
 	/* start transmission */
 	rf_set_txmode();
-	delay_us(B91_SET_TRX_MODE_DELAY_US);
+	delay_us(CONFIG_IEEE802154_B91_SET_TXRX_DELAY_US);
 	rf_tx_pkt(data.tx_buffer);
 
 	/* wait for tx done */
@@ -576,8 +602,22 @@ static int b91_configure(const struct device *dev,
 	return -ENOTSUP;
 }
 
+/* driver-allocated attribute memory - constant across all driver instances */
+IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 11, 26);
+
+/* API implementation: attr_get */
+static int b91_attr_get(const struct device *dev, enum ieee802154_attr attr,
+			struct ieee802154_attr_value *value)
+{
+	ARG_UNUSED(dev);
+
+	return ieee802154_attr_get_channel_page_and_range(
+		attr, IEEE802154_ATTR_PHY_CHANNEL_PAGE_ZERO_OQPSK_2450_BPSK_868_915,
+		&drv_attr.phy_supported_channels, value);
+}
+
 /* IEEE802154 driver APIs structure */
-static struct ieee802154_radio_api b91_radio_api = {
+static const struct ieee802154_radio_api b91_radio_api = {
 	.iface_api.init = b91_iface_init,
 	.get_capabilities = b91_get_capabilities,
 	.cca = b91_cca,
@@ -589,6 +629,7 @@ static struct ieee802154_radio_api b91_radio_api = {
 	.tx = b91_tx,
 	.ed_scan = b91_ed_scan,
 	.configure = b91_configure,
+	.attr_get = b91_attr_get,
 };
 
 
@@ -605,14 +646,11 @@ static struct ieee802154_radio_api b91_radio_api = {
 
 /* IEEE802154 driver registration */
 #if defined(CONFIG_NET_L2_IEEE802154) || defined(CONFIG_NET_L2_OPENTHREAD)
-NET_DEVICE_INIT(b91_154_radio, CONFIG_IEEE802154_B91_DRV_NAME,
-		b91_init, NULL, &data, NULL,
-		CONFIG_IEEE802154_B91_INIT_PRIO,
-		&b91_radio_api, L2,
-		L2_CTX_TYPE, MTU);
+NET_DEVICE_DT_INST_DEFINE(0, b91_init, NULL, &data, NULL,
+			  CONFIG_IEEE802154_B91_INIT_PRIO,
+			  &b91_radio_api, L2, L2_CTX_TYPE, MTU);
 #else
-DEVICE_DEFINE(b91_154_radio, CONFIG_IEEE802154_B91_DRV_NAME,
-	      b91_init, NULL, &data, NULL,
-	      POST_KERNEL, CONFIG_IEEE802154_B91_INIT_PRIO,
-	      &b91_radio_api);
+DEVICE_DT_INST_DEFINE(0, b91_init, NULL, &data, NULL,
+		      POST_KERNEL, CONFIG_IEEE802154_B91_INIT_PRIO,
+		      &b91_radio_api);
 #endif

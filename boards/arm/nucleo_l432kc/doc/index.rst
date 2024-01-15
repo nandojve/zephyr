@@ -22,9 +22,7 @@ some highlights of the Nucleo L432KC board:
 - One push-button: RESET
 
 .. image:: img/nucleo_l432kc.jpg
-  :width: 250px
   :align: center
-  :height: 188px
   :alt: Nucleo L432KC
 
 More information about the board can be found at the `Nucleo L432KC website`_.
@@ -135,10 +133,8 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_l432kc_arduino_nano.png
-   :width: 960px
+.. image:: img/nucleo_l432kc_arduino_nano.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo L432KC Arduino connectors
 
 For mode details please refer to `STM32 Nucleo-32 board User Manual`_.
@@ -221,13 +217,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _Nucleo L432KC website:
-   http://www.st.com/en/evaluation-tools/nucleo-l432kc.html
+   https://www.st.com/en/evaluation-tools/nucleo-l432kc.html
 
 .. _STM32 Nucleo-32 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00231744.pdf
+   https://www.st.com/resource/en/user_manual/dm00231744.pdf
 
 .. _STM32L432KC on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32l432kc.html
+   https://www.st.com/en/microcontrollers/stm32l432kc.html
 
 .. _STM32L432 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00151940.pdf
+   https://www.st.com/resource/en/reference_manual/dm00151940.pdf

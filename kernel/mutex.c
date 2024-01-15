@@ -26,17 +26,18 @@
  * unexpected priority levels (too high, or too low).
  */
 
-#include <kernel.h>
-#include <kernel_structs.h>
-#include <toolchain.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/toolchain.h>
 #include <ksched.h>
 #include <wait_q.h>
 #include <errno.h>
-#include <init.h>
-#include <syscall_handler.h>
-#include <tracing/tracing.h>
-#include <sys/check.h>
-#include <logging/log.h>
+#include <zephyr/init.h>
+#include <zephyr/internal/syscall_handler.h>
+#include <zephyr/tracing/tracing.h>
+#include <zephyr/sys/check.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/llext/symbol.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 /* We use a global spinlock here because some of the synchronization
@@ -46,6 +47,10 @@ LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
  */
 static struct k_spinlock lock;
 
+#ifdef CONFIG_OBJ_CORE_MUTEX
+static struct k_obj_type obj_type_mutex;
+#endif
+
 int z_impl_k_mutex_init(struct k_mutex *mutex)
 {
 	mutex->owner = NULL;
@@ -53,7 +58,11 @@ int z_impl_k_mutex_init(struct k_mutex *mutex)
 
 	z_waitq_init(&mutex->wait_q);
 
-	z_object_init(mutex);
+	k_object_init(mutex);
+
+#ifdef CONFIG_OBJ_CORE_MUTEX
+	k_obj_core_init_and_link(K_OBJ_CORE(mutex), &obj_type_mutex);
+#endif
 
 	SYS_PORT_TRACING_OBJ_INIT(k_mutex, mutex, 0);
 
@@ -63,7 +72,7 @@ int z_impl_k_mutex_init(struct k_mutex *mutex)
 #ifdef CONFIG_USERSPACE
 static inline int z_vrfy_k_mutex_init(struct k_mutex *mutex)
 {
-	Z_OOPS(Z_SYSCALL_OBJ_INIT(mutex, K_OBJ_MUTEX));
+	K_OOPS(K_SYSCALL_OBJ_INIT(mutex, K_OBJ_MUTEX));
 	return z_impl_k_mutex_init(mutex);
 }
 #include <syscalls/k_mutex_init_mrsh.c>
@@ -161,15 +170,21 @@ int z_impl_k_mutex_lock(struct k_mutex *mutex, k_timeout_t timeout)
 
 	key = k_spin_lock(&lock);
 
-	struct k_thread *waiter = z_waitq_head(&mutex->wait_q);
+	/*
+	 * Check if mutex was unlocked after this thread was unpended.
+	 * If so, skip adjusting owner's priority down.
+	 */
+	if (likely(mutex->owner != NULL)) {
+		struct k_thread *waiter = z_waitq_head(&mutex->wait_q);
 
-	new_prio = (waiter != NULL) ?
-		new_prio_for_inheritance(waiter->base.prio, mutex->owner_orig_prio) :
-		mutex->owner_orig_prio;
+		new_prio = (waiter != NULL) ?
+			new_prio_for_inheritance(waiter->base.prio, mutex->owner_orig_prio) :
+			mutex->owner_orig_prio;
 
-	LOG_DBG("adjusting prio down on mutex %p", mutex);
+		LOG_DBG("adjusting prio down on mutex %p", mutex);
 
-	resched = adjust_owner_prio(mutex, new_prio) || resched;
+		resched = adjust_owner_prio(mutex, new_prio) || resched;
+	}
 
 	if (resched) {
 		z_reschedule(&lock, key);
@@ -181,12 +196,13 @@ int z_impl_k_mutex_lock(struct k_mutex *mutex, k_timeout_t timeout)
 
 	return -EAGAIN;
 }
+EXPORT_SYSCALL(k_mutex_lock);
 
 #ifdef CONFIG_USERSPACE
 static inline int z_vrfy_k_mutex_lock(struct k_mutex *mutex,
 				      k_timeout_t timeout)
 {
-	Z_OOPS(Z_SYSCALL_OBJ(mutex, K_OBJ_MUTEX));
+	K_OOPS(K_SYSCALL_OBJ(mutex, K_OBJ_MUTEX));
 	return z_impl_k_mutex_lock(mutex, timeout);
 }
 #include <syscalls/k_mutex_lock_mrsh.c>
@@ -222,8 +238,6 @@ int z_impl_k_mutex_unlock(struct k_mutex *mutex)
 	 */
 	__ASSERT_NO_MSG(mutex->lock_count > 0U);
 
-	z_sched_lock();
-
 	LOG_DBG("mutex %p lock_count: %d", mutex, mutex->lock_count);
 
 	/*
@@ -251,7 +265,7 @@ int z_impl_k_mutex_unlock(struct k_mutex *mutex)
 		/*
 		 * new owner is already of higher or equal prio than first
 		 * waiter since the wait queue is priority-based: no need to
-		 * ajust its priority
+		 * adjust its priority
 		 */
 		mutex->owner_orig_prio = new_owner->base.prio;
 		arch_thread_return_value_set(new_owner, 0);
@@ -266,16 +280,36 @@ int z_impl_k_mutex_unlock(struct k_mutex *mutex)
 k_mutex_unlock_return:
 	SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_mutex, unlock, mutex, 0);
 
-	k_sched_unlock();
-
 	return 0;
 }
+EXPORT_SYSCALL(k_mutex_unlock);
 
 #ifdef CONFIG_USERSPACE
 static inline int z_vrfy_k_mutex_unlock(struct k_mutex *mutex)
 {
-	Z_OOPS(Z_SYSCALL_OBJ(mutex, K_OBJ_MUTEX));
+	K_OOPS(K_SYSCALL_OBJ(mutex, K_OBJ_MUTEX));
 	return z_impl_k_mutex_unlock(mutex);
 }
 #include <syscalls/k_mutex_unlock_mrsh.c>
+#endif
+
+#ifdef CONFIG_OBJ_CORE_MUTEX
+static int init_mutex_obj_core_list(void)
+{
+	/* Initialize mutex object type */
+
+	z_obj_type_init(&obj_type_mutex, K_OBJ_TYPE_MUTEX_ID,
+			offsetof(struct k_mutex, obj_core));
+
+	/* Initialize and link statically defined mutexs */
+
+	STRUCT_SECTION_FOREACH(k_mutex, mutex) {
+		k_obj_core_init_and_link(K_OBJ_CORE(mutex), &obj_type_mutex);
+	}
+
+	return 0;
+}
+
+SYS_INIT(init_mutex_obj_core_list, PRE_KERNEL_1,
+	 CONFIG_KERNEL_INIT_PRIORITY_OBJECTS);
 #endif

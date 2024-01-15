@@ -5,24 +5,13 @@
 
 menuconfig SDL_DISPLAY
 	bool "SDL based emulated display"
-	depends on BOARD_NATIVE_POSIX
+	default y
+	depends on DT_HAS_ZEPHYR_SDL_DC_ENABLED
 	select HAS_SDL
 	help
 	  Enable SDL based emulated display compliant with display driver API.
 
 if SDL_DISPLAY
-
-config SDL_DISPLAY_DEV_NAME
-	string "SDL display device name"
-	default "SDL_DISPLAY"
-
-config SDL_DISPLAY_X_RES
-	int "X resolution for SDL display"
-	default 320
-
-config SDL_DISPLAY_Y_RES
-	int "Y resolution for SDL display"
-	default 240
 
 choice SDL_DISPLAY_DEFAULT_PIXEL_FORMAT
 	prompt "Default pixel format"
@@ -49,5 +38,12 @@ choice SDL_DISPLAY_DEFAULT_PIXEL_FORMAT
 		bool "BGR 565"
 
 endchoice
+
+config SDL_DISPLAY_ZOOM_PCT
+	int "Default zoom percentage"
+	default 100
+	range 10 10000
+	help
+	  SDL window zoom percentage to adjust readability on small screens
 
 endif # SDL_DISPLAY

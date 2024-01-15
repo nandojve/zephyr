@@ -10,8 +10,7 @@ The Arduino Zero is a maker-friendly development board with
 Atmel’s Embedded Debugger (EDBG), which provides a full
 debug interface without the need for additional hardware.
 
-.. image:: img/arduino_zero.png
-     :width: 500px
+.. image:: img/arduino_zero.jpg
      :align: center
      :alt: Arduino Zero
 
@@ -100,7 +99,7 @@ USB Device Port
 
 The SAMD21 MCU has a USB device port that can be used to communicate
 with a host PC.  See the :ref:`usb-samples` sample applications for
-more, such as the :ref:`usb_cdc-acm` sample which sets up a virtual
+more, such as the :zephyr:code-sample:`usb-cdc-acm` sample which sets up a virtual
 serial port that echos characters back to the host PC.
 
 DAC
@@ -153,7 +152,7 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! arduino_zero" in your terminal.
 
 References
 **********

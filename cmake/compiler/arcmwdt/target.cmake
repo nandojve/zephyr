@@ -1,7 +1,7 @@
 # find the compilers for C, CPP, assembly
-find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}ccac PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
-find_program(CMAKE_CXX_COMPILER ${CROSS_COMPILE}ccac PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
-find_program(CMAKE_ASM_COMPILER ${CROSS_COMPILE}ccac PATH ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_C_COMPILER ${CROSS_COMPILE}ccac PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_CXX_COMPILER ${CROSS_COMPILE}ccac PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
+find_program(CMAKE_ASM_COMPILER ${CROSS_COMPILE}ccac PATHS ${TOOLCHAIN_HOME} NO_DEFAULT_PATH)
 # The CMAKE_REQUIRED_FLAGS variable is used by check_c_compiler_flag()
 # (and other commands which end up calling check_c_source_compiles())
 # to add additional compiler flags used during checking. These flags
@@ -22,23 +22,11 @@ list(APPEND CMAKE_REQUIRED_FLAGS
   )
 string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
 
-set(NOSTDINC "")
+set(NOSTDINC ${TOOLCHAIN_HOME}/arc/inc)
 
-list(APPEND NOSTDINC ${TOOLCHAIN_HOME}/arc/inc)
-
-if(CONFIG_ARCMWDT_LIBC AND CONFIG_LIB_CPLUSPLUS)
-  list(APPEND NOSTDINC ${TOOLCHAIN_HOME}/arc/lib/src/c++/inc)
-endif()
-
-# For CMake to be able to test if a compiler flag is supported by the
-# toolchain we need to give CMake the necessary flags to compile and
-# link a dummy C file.
-#
-# CMake checks compiler flags with check_c_compiler_flag() (Which we
-# wrap with target_cc_option() in extentions.cmake)
-foreach(isystem_include_dir ${NOSTDINC})
-  list(APPEND isystem_include_flags -isystem "\"${isystem_include_dir}\"")
-endforeach()
+# For CMake to be able to test if a compiler flag is supported by the toolchain
+# (check_c_compiler_flag function which we wrap with target_cc_option in extensions.cmake)
+# we rely on default MWDT header locations and don't manually specify headers directories.
 
 # common compile options, no copyright msg, little-endian, no small data,
 # no MWDT stack checking

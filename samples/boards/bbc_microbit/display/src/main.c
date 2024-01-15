@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <drivers/gpio.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/device.h>
 
-#include <display/mb_display.h>
+#include <zephyr/display/mb_display.h>
 
 static struct mb_image smiley = MB_IMAGE({ 0, 1, 0, 1, 0 },
 					 { 0, 1, 0, 1, 0 },
@@ -58,7 +58,7 @@ static const struct mb_image animation[] = {
 		 { 1, 1, 1, 1, 1 }),
 };
 
-void main(void)
+int main(void)
 {
 	struct mb_display *disp = mb_display_get();
 	int x, y;
@@ -104,4 +104,5 @@ void main(void)
 	/* Show some scrolling text ("Hello Zephyr!") */
 	mb_display_print(disp, MB_DISPLAY_MODE_DEFAULT | MB_DISPLAY_FLAG_LOOP,
 			 500, "Hello Zephyr!");
+	return 0;
 }

@@ -27,17 +27,16 @@
  * object attributes array in the phil_obj_abstract.h
  * header file.
  */
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <cmsis_os.h>
-#include <zephyr.h>
 
 #if defined(CONFIG_STDOUT_CONSOLE)
 #include <stdio.h>
 #else
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 #endif
 
-#include <sys/__assert.h>
+#include <zephyr/sys/__assert.h>
 
 #include "phil_obj_abstract.h"
 
@@ -72,6 +71,12 @@ osSemaphoreId forks[NUM_PHIL];
 
 #define fork(x) (forks[x])
 
+/*
+ * CMSIS limits the stack size, but qemu_x86_64, qemu_xtensa,
+ * qemu_leon3 and the boards such as up_squared, intel_ehl_crb,
+ * acrn_ehl_crb need 1024 to run this.
+ * For other arch and boards suggested stack size is 512.
+ */
 #define STACK_SIZE CONFIG_CMSIS_THREAD_MAX_STACK_SIZE
 
 #if DEBUG_PRINTF
@@ -95,19 +100,24 @@ static void print_phil_state(int id, const char *fmt, int32_t delay)
 	int prio = osThreadGetPriority(osThreadGetId());
 
 	set_phil_state_pos(id);
+#define STATE_LEN 80
+	char state[STATE_LEN];
+	int p = 0;
 
-	printk("Philosopher %d [%s:%s%d] ",
-	       id, prio < 0 ? "C" : "P",
-	       prio < 0 ? "" : " ",
-	       prio);
+	p += snprintk(state + p, STATE_LEN - p, "Philosopher %d [%s:%s%d] ",
+		     id, prio < 0 ? "C" : "P",
+		     prio < 0 ? "" : " ",
+		     prio);
 
 	if (delay) {
-		printk(fmt, delay < 1000 ? " " : "", delay);
+		p += snprintk(state + p, STATE_LEN - p, fmt,
+			      delay < 1000 ? " " : "", delay);
 	} else {
-		printk(fmt, "");
+		p += snprintk(state + p, STATE_LEN - p, fmt, "");
 	}
 
-	printk("\n");
+	p += snprintk(state + p, STATE_LEN - p, "\n");
+	printk("%s", state);
 }
 
 static int32_t get_random_delay(int id, int period_in_ms)
@@ -208,8 +218,9 @@ static void display_demo_description(void)
 #endif
 }
 
-void main(void)
+int main(void)
 {
 	display_demo_description();
 	start_threads();
+	return 0;
 }

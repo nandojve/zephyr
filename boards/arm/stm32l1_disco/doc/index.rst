@@ -24,8 +24,6 @@ configuration assumes only 128K flash and 16K RAM, so it builds and runs
 on both variants out of the box.
 
 .. image:: img/stm32l1_disco.jpg
-     :width: 564px
-     :height: 600px
      :align: center
      :alt: STM32LDISCOVERY
 
@@ -145,7 +143,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application
 -----------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -158,7 +156,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky

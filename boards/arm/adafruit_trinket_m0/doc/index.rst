@@ -10,8 +10,7 @@ The Adafruit Trinket M0 is a tiny (27 mm x 15 mm) ARM development
 board with an onboard RGB LED, USB port, and range of I/O broken out
 onto 5 pins.
 
-.. image:: img/adafruit_trinket_m0.png
-     :width: 500px
+.. image:: img/adafruit_trinket_m0.jpg
      :align: center
      :alt: Adafruit Trinket M0
 
@@ -100,7 +99,7 @@ USB Device Port
 
 The SAMD21 MCU has a USB device port that can be used to communicate
 with a host PC.  See the :ref:`usb-samples` sample applications for
-more, such as the :ref:`usb_cdc-acm` sample which sets up a virtual
+more, such as the :zephyr:code-sample:`usb-cdc-acm` sample which sets up a virtual
 serial port that echos characters back to the host PC.
 
 Programming and Debugging
@@ -154,7 +153,7 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! adafruit_trinket_m0" in your terminal.
 
 References
 **********

@@ -8,17 +8,21 @@
 
 #include <stdint.h>
 #include <kernel_arch_interface.h>
-#include <spinlock.h>
+#include <zephyr/spinlock.h>
 #include <mmu.h>
-#include <init.h>
+#include <zephyr/init.h>
 #include <kernel_internal.h>
-#include <syscall_handler.h>
-#include <toolchain.h>
-#include <linker/linker-defs.h>
-#include <sys/bitarray.h>
-#include <timing/timing.h>
-#include <logging/log.h>
+#include <zephyr/internal/syscall_handler.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/bitarray.h>
+#include <zephyr/timing/timing.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
+
+#ifdef CONFIG_DEMAND_PAGING
+#include <zephyr/kernel/mm/demand_paging.h>
+#endif
 
 /*
  * General terminology:
@@ -58,20 +62,21 @@ static bool page_frames_initialized;
 #define COLOR_PAGE_FRAMES	1
 
 #if COLOR_PAGE_FRAMES
-#define ANSI_DEFAULT "\x1B[0m"
-#define ANSI_RED     "\x1B[1;31m"
-#define ANSI_GREEN   "\x1B[1;32m"
-#define ANSI_YELLOW  "\x1B[1;33m"
-#define ANSI_BLUE    "\x1B[1;34m"
-#define ANSI_MAGENTA "\x1B[1;35m"
-#define ANSI_CYAN    "\x1B[1;36m"
-#define ANSI_GREY    "\x1B[1;90m"
+#define ANSI_DEFAULT "\x1B" "[0m"
+#define ANSI_RED     "\x1B" "[1;31m"
+#define ANSI_GREEN   "\x1B" "[1;32m"
+#define ANSI_YELLOW  "\x1B" "[1;33m"
+#define ANSI_BLUE    "\x1B" "[1;34m"
+#define ANSI_MAGENTA "\x1B" "[1;35m"
+#define ANSI_CYAN    "\x1B" "[1;36m"
+#define ANSI_GREY    "\x1B" "[1;90m"
 
 #define COLOR(x)	printk(_CONCAT(ANSI_, x))
 #else
-#define COLOR(x)	do { } while (0)
+#define COLOR(x)	do { } while (false)
 #endif
 
+/* LCOV_EXCL_START */
 static void page_frame_dump(struct z_page_frame *pf)
 {
 	if (z_page_frame_is_reserved(pf)) {
@@ -120,6 +125,7 @@ void z_page_frames_dump(void)
 		printk("\n");
 	}
 }
+/* LCOV_EXCL_STOP */
 
 #define VIRT_FOREACH(_base, _size, _pos) \
 	for (_pos = _base; \
@@ -179,8 +185,8 @@ void z_page_frames_dump(void)
  * Note that bit #0 is the highest address so that allocation is
  * done in reverse from highest address.
  */
-SYS_BITARRAY_DEFINE(virt_region_bitmap,
-		    CONFIG_KERNEL_VM_SIZE / CONFIG_MMU_PAGE_SIZE);
+SYS_BITARRAY_DEFINE_STATIC(virt_region_bitmap,
+			   CONFIG_KERNEL_VM_SIZE / CONFIG_MMU_PAGE_SIZE);
 
 static bool virt_region_inited;
 
@@ -235,17 +241,43 @@ static void virt_region_free(void *vaddr, size_t size)
 		virt_region_init();
 	}
 
+#ifndef CONFIG_KERNEL_DIRECT_MAP
+	/* Without the need to support K_MEM_DIRECT_MAP, the region must be
+	 * able to be represented in the bitmap. So this case is
+	 * simple.
+	 */
+
 	__ASSERT((vaddr_u8 >= Z_VIRT_REGION_START_ADDR)
-		 && ((vaddr_u8 + size) < Z_VIRT_REGION_END_ADDR),
+		 && ((vaddr_u8 + size - 1) < Z_VIRT_REGION_END_ADDR),
 		 "invalid virtual address region %p (%zu)", vaddr_u8, size);
 	if (!((vaddr_u8 >= Z_VIRT_REGION_START_ADDR)
-	      && ((vaddr_u8 + size) < Z_VIRT_REGION_END_ADDR))) {
+	      && ((vaddr_u8 + size - 1) < Z_VIRT_REGION_END_ADDR))) {
 		return;
 	}
 
 	offset = virt_to_bitmap_offset(vaddr, size);
 	num_bits = size / CONFIG_MMU_PAGE_SIZE;
 	(void)sys_bitarray_free(&virt_region_bitmap, num_bits, offset);
+#else /* !CONFIG_KERNEL_DIRECT_MAP */
+	/* With K_MEM_DIRECT_MAP, the region can be outside of the virtual
+	 * memory space, wholly within it, or overlap partially.
+	 * So additional processing is needed to make sure we only
+	 * mark the pages within the bitmap.
+	 */
+	if (((vaddr_u8 >= Z_VIRT_REGION_START_ADDR) &&
+	     (vaddr_u8 < Z_VIRT_REGION_END_ADDR)) ||
+	    (((vaddr_u8 + size - 1) >= Z_VIRT_REGION_START_ADDR) &&
+	     ((vaddr_u8 + size - 1) < Z_VIRT_REGION_END_ADDR))) {
+		uint8_t *adjusted_start = MAX(vaddr_u8, Z_VIRT_REGION_START_ADDR);
+		uint8_t *adjusted_end = MIN(vaddr_u8 + size,
+					    Z_VIRT_REGION_END_ADDR);
+		size_t adjusted_sz = adjusted_end - adjusted_start;
+
+		offset = virt_to_bitmap_offset(adjusted_start, adjusted_sz);
+		num_bits = adjusted_sz / CONFIG_MMU_PAGE_SIZE;
+		(void)sys_bitarray_free(&virt_region_bitmap, num_bits, offset);
+	}
+#endif /* !CONFIG_KERNEL_DIRECT_MAP */
 }
 
 static void *virt_region_alloc(size_t size, size_t align)
@@ -349,8 +381,10 @@ static void *virt_region_alloc(size_t size, size_t align)
  */
 static sys_slist_t free_page_frame_list;
 
-/* Number of unused and available free page frames */
-size_t z_free_page_count;
+/* Number of unused and available free page frames.
+ * This information may go stale immediately.
+ */
+static size_t z_free_page_count;
 
 #define PF_ASSERT(pf, expr, fmt, ...) \
 	__ASSERT(expr, "page frame 0x%lx: " fmt, z_page_frame_to_phys(pf), \
@@ -378,7 +412,10 @@ static void free_page_frame_list_put(struct z_page_frame *pf)
 {
 	PF_ASSERT(pf, z_page_frame_is_available(pf),
 		 "unavailable page put on free list");
-	sys_slist_append(&free_page_frame_list, &pf->node);
+	/* The structure is packed, which ensures that this is true */
+	void *node = pf;
+
+	sys_slist_append(&free_page_frame_list, node);
 	z_free_page_count++;
 }
 
@@ -417,6 +454,7 @@ static void frame_mapped_set(struct z_page_frame *pf, void *addr)
 	pf->addr = addr;
 }
 
+/* LCOV_EXCL_START */
 /* Go through page frames to find the physical address mapped
  * by a virtual address.
  *
@@ -437,7 +475,9 @@ static int virt_to_page_frame(void *virt, uintptr_t *phys)
 		if (z_page_frame_is_mapped(pf)) {
 			if (virt == pf->addr) {
 				ret = 0;
-				*phys = z_page_frame_to_phys(pf);
+				if (phys != NULL) {
+					*phys = z_page_frame_to_phys(pf);
+				}
 				break;
 			}
 		}
@@ -445,6 +485,8 @@ static int virt_to_page_frame(void *virt, uintptr_t *phys)
 
 	return ret;
 }
+/* LCOV_EXCL_STOP */
+
 __weak FUNC_ALIAS(virt_to_page_frame, arch_page_phys_get, int);
 
 #ifdef CONFIG_DEMAND_PAGING
@@ -713,7 +755,12 @@ void z_phys_map(uint8_t **virt_ptr, uintptr_t phys, size_t size, uint32_t flags)
 	size_t aligned_size, align_boundary;
 	k_spinlock_key_t key;
 	uint8_t *dest_addr;
+	size_t num_bits;
+	size_t offset;
 
+#ifndef CONFIG_KERNEL_DIRECT_MAP
+	__ASSERT(!(flags & K_MEM_DIRECT_MAP), "The direct-map is not enabled");
+#endif
 	addr_offset = k_mem_region_align(&aligned_phys, &aligned_size,
 					 phys, size,
 					 CONFIG_MMU_PAGE_SIZE);
@@ -725,10 +772,41 @@ void z_phys_map(uint8_t **virt_ptr, uintptr_t phys, size_t size, uint32_t flags)
 	align_boundary = arch_virt_region_align(aligned_phys, aligned_size);
 
 	key = k_spin_lock(&z_mm_lock);
-	/* Obtain an appropriately sized chunk of virtual memory */
-	dest_addr = virt_region_alloc(aligned_size, align_boundary);
-	if (!dest_addr) {
-		goto fail;
+
+	if (IS_ENABLED(CONFIG_KERNEL_DIRECT_MAP) &&
+	    (flags & K_MEM_DIRECT_MAP)) {
+		dest_addr = (uint8_t *)aligned_phys;
+
+		/* Mark the region of virtual memory bitmap as used
+		 * if the region overlaps the virtual memory space.
+		 *
+		 * Basically if either end of region is within
+		 * virtual memory space, we need to mark the bits.
+		 */
+
+		if (IN_RANGE(aligned_phys,
+			      (uintptr_t)Z_VIRT_RAM_START,
+			      (uintptr_t)(Z_VIRT_RAM_END - 1)) ||
+		    IN_RANGE(aligned_phys + aligned_size - 1,
+			      (uintptr_t)Z_VIRT_RAM_START,
+			      (uintptr_t)(Z_VIRT_RAM_END - 1))) {
+			uint8_t *adjusted_start = MAX(dest_addr, Z_VIRT_RAM_START);
+			uint8_t *adjusted_end = MIN(dest_addr + aligned_size,
+						    Z_VIRT_RAM_END);
+			size_t adjusted_sz = adjusted_end - adjusted_start;
+
+			num_bits = adjusted_sz / CONFIG_MMU_PAGE_SIZE;
+			offset = virt_to_bitmap_offset(adjusted_start, adjusted_sz);
+			if (sys_bitarray_test_and_set_region(
+			    &virt_region_bitmap, num_bits, offset, true))
+				goto fail;
+		}
+	} else {
+		/* Obtain an appropriately sized chunk of virtual memory */
+		dest_addr = virt_region_alloc(aligned_size, align_boundary);
+		if (!dest_addr) {
+			goto fail;
+		}
 	}
 
 	/* If this fails there's something amiss with virt_region_get */
@@ -773,8 +851,12 @@ void z_phys_unmap(uint8_t *virt, size_t size)
 		 aligned_virt, aligned_size);
 
 	key = k_spin_lock(&z_mm_lock);
+
+	LOG_DBG("arch_mem_unmap(0x%lx, %zu) offset %lu",
+		aligned_virt, aligned_size, addr_offset);
+
 	arch_mem_unmap(UINT_TO_POINTER(aligned_virt), aligned_size);
-	virt_region_free(virt, size);
+	virt_region_free(UINT_TO_POINTER(aligned_virt), aligned_size);
 	k_spin_unlock(&z_mm_lock, key);
 }
 
@@ -1470,7 +1552,7 @@ bool z_page_fault(void *addr)
 static void do_mem_unpin(void *addr)
 {
 	struct z_page_frame *pf;
-	int key;
+	unsigned int key;
 	uintptr_t flags, phys;
 
 	key = irq_lock();

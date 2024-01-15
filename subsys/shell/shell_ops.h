@@ -7,7 +7,7 @@
 #define SHELL_OPS_H__
 
 #include <stdbool.h>
-#include <shell/shell.h>
+#include <zephyr/shell/shell.h>
 #include "shell_vt100.h"
 #include "shell_utils.h"
 
@@ -185,6 +185,11 @@ static inline uint8_t z_flag_last_nl_get(const struct shell *sh)
 	return sh->ctx->ctx.flags.last_nl;
 }
 
+static inline int z_shell_get_return_value(const struct shell *sh)
+{
+	return sh->ctx->ret_val;
+}
+
 static inline void z_flag_last_nl_set(const struct shell *sh, uint8_t val)
 {
 	sh->ctx->ctx.flags.last_nl = val;
@@ -203,16 +208,16 @@ static inline bool z_flag_print_noinit_set(const struct shell *sh, bool val)
 	return ret;
 }
 
-static inline bool z_flag_panic_mode_get(const struct shell *sh)
+static inline bool z_flag_sync_mode_get(const struct shell *sh)
 {
-	return sh->ctx->ctx.flags.panic_mode == 1;
+	return sh->ctx->ctx.flags.sync_mode == 1;
 }
 
-static inline bool z_flag_panic_mode_set(const struct shell *sh, bool val)
+static inline bool z_flag_sync_mode_set(const struct shell *sh, bool val)
 {
 	bool ret;
 
-	Z_SHELL_SET_FLAG_ATOMIC(sh, ctx, panic_mode, val, ret);
+	Z_SHELL_SET_FLAG_ATOMIC(sh, ctx, sync_mode, val, ret);
 	return ret;
 }
 
@@ -301,14 +306,14 @@ void z_shell_cmd_line_erase(const struct shell *sh);
 /**
  * @brief Print command buffer.
  *
- * @param shell Shell instance.
+ * @param sh Shell instance.
  */
 void z_shell_print_cmd(const struct shell *sh);
 
 /**
  * @brief Print prompt followed by command buffer.
  *
- * @param shell Shell instance.
+ * @param sh Shell instance.
  */
 void z_shell_print_prompt_and_cmd(const struct shell *sh);
 

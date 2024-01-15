@@ -5,6 +5,8 @@
 
 config GPIO_EMUL
 	bool "Emulated GPIO driver"
+	default y
+	depends on DT_HAS_ZEPHYR_GPIO_EMUL_ENABLED
 	help
 	  Enable the emulated GPIO driver. Mainly used for testing, this
 	  driver allows for an arbitrary number of emulated GPIO controllers

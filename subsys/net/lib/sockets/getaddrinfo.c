@@ -11,17 +11,16 @@
 #include <ctype.h>
 
 /* Zephyr headers */
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_sock_addr, CONFIG_NET_SOCKETS_LOG_LEVEL);
 
-#include <kernel.h>
-#include <net/net_ip.h>
-#include <net/socket.h>
-#include <net/socket_offload.h>
-#include <syscall_handler.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/socket.h>
+#include <zephyr/net/socket_offload.h>
+#include <zephyr/internal/syscall_handler.h>
 
-#if defined(CONFIG_DNS_RESOLVER) || \
-	defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_IPV4)
+#if defined(CONFIG_DNS_RESOLVER) || defined(CONFIG_NET_IP)
 #define ANY_RESOLVER
 
 #if defined(CONFIG_DNS_RESOLVER_AI_MAX_ENTRIES)
@@ -51,6 +50,7 @@ struct getaddrinfo_state {
 	int status;
 	uint16_t idx;
 	uint16_t port;
+	uint16_t dns_id;
 	struct zsock_addrinfo *ai_arr;
 };
 
@@ -107,14 +107,41 @@ static int exec_query(const char *host, int family,
 		      struct getaddrinfo_state *ai_state)
 {
 	enum dns_query_type qtype = DNS_QUERY_TYPE_A;
+	int st, ret;
 
-	if (IS_ENABLED(CONFIG_NET_IPV6) && family == AF_INET6) {
+	if (family == AF_INET6) {
 		qtype = DNS_QUERY_TYPE_AAAA;
 	}
 
-	return dns_get_addr_info(host, qtype, NULL,
-				 dns_resolve_cb, ai_state,
-				 CONFIG_NET_SOCKETS_DNS_TIMEOUT);
+	ret = dns_get_addr_info(host, qtype, &ai_state->dns_id,
+				dns_resolve_cb, ai_state,
+				CONFIG_NET_SOCKETS_DNS_TIMEOUT);
+	if (ret == 0) {
+		/* If the DNS query for reason fails so that the
+		 * dns_resolve_cb() would not be called, then we want the
+		 * semaphore to timeout so that we will not hang forever.
+		 * So make the sem timeout longer than the DNS timeout so that
+		 * we do not need to start to cancel any pending DNS queries.
+		 */
+		ret = k_sem_take(&ai_state->sem, K_MSEC(CONFIG_NET_SOCKETS_DNS_TIMEOUT + 100));
+		if (ret == -EAGAIN) {
+			(void)dns_cancel_addr_info(ai_state->dns_id);
+			st = DNS_EAI_AGAIN;
+		} else {
+			st = ai_state->status;
+		}
+	} else if (ret == -EPFNOSUPPORT) {
+		/* If we are returned -EPFNOSUPPORT then that will indicate
+		 * wrong address family type queried. Check that and return
+		 * DNS_EAI_ADDRFAMILY.
+		 */
+		st = DNS_EAI_ADDRFAMILY;
+	} else {
+		errno = -ret;
+		st = DNS_EAI_SYSTEM;
+	}
+
+	return st;
 }
 
 static int getaddrinfo_null_host(int port, const struct zsock_addrinfo *hints,
@@ -162,12 +189,15 @@ int z_impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
 	long int port = 0;
 	int st1 = DNS_EAI_ADDRFAMILY, st2 = DNS_EAI_ADDRFAMILY;
 	struct sockaddr *ai_addr;
-	int ret;
 	struct getaddrinfo_state ai_state;
 
 	if (hints) {
 		family = hints->ai_family;
 		ai_flags = hints->ai_flags;
+
+		if ((family != AF_UNSPEC) && (family != AF_INET) && (family != AF_INET6)) {
+			return DNS_EAI_ADDRFAMILY;
+		}
 	}
 
 	if (ai_flags & AI_NUMERICHOST) {
@@ -198,61 +228,31 @@ int z_impl_z_zsock_getaddrinfo_internal(const char *host, const char *service,
 	ai_state.idx = 0U;
 	ai_state.port = htons(port);
 	ai_state.ai_arr = res;
+	ai_state.dns_id = 0;
 	k_sem_init(&ai_state.sem, 0, K_SEM_MAX_LIMIT);
 
-	/* If the family is AF_UNSPEC, then we query IPv4 address first */
-	ret = exec_query(host, family, &ai_state);
-	if (ret == 0) {
-		/* If the DNS query for reason fails so that the
-		 * dns_resolve_cb() would not be called, then we want the
-		 * semaphore to timeout so that we will not hang forever.
-		 * So make the sem timeout longer than the DNS timeout so that
-		 * we do not need to start to cancel any pending DNS queries.
-		 */
-		int ret = k_sem_take(&ai_state.sem,
-				     K_MSEC(CONFIG_NET_SOCKETS_DNS_TIMEOUT +
-					    100));
-		if (ret == -EAGAIN) {
-			return DNS_EAI_AGAIN;
-		}
-
-		st1 = ai_state.status;
-	} else {
-		/* If we are returned -EPFNOSUPPORT then that will indicate
-		 * wrong address family type queried. Check that and return
-		 * DNS_EAI_ADDRFAMILY and set errno to EINVAL.
-		 */
-		if (ret == -EPFNOSUPPORT) {
-			errno = EINVAL;
-			st1 = DNS_EAI_ADDRFAMILY;
-		} else {
-			errno = -ret;
-			st1 = DNS_EAI_SYSTEM;
+	/* If family is AF_UNSPEC, then we query IPv4 address first
+	 * if IPv4 is enabled in the config.
+	 */
+	if ((family != AF_INET6) && IS_ENABLED(CONFIG_NET_IPV4)) {
+		st1 = exec_query(host, AF_INET, &ai_state);
+		if (st1 == DNS_EAI_AGAIN) {
+			return st1;
 		}
 	}
 
 	/* If family is AF_UNSPEC, the IPv4 query has been already done
 	 * so we can do IPv6 query next if IPv6 is enabled in the config.
 	 */
-	if (family == AF_UNSPEC && IS_ENABLED(CONFIG_NET_IPV6)) {
-		ret = exec_query(host, AF_INET6, &ai_state);
-		if (ret == 0) {
-			int ret = k_sem_take(
-				&ai_state.sem,
-				K_MSEC(CONFIG_NET_SOCKETS_DNS_TIMEOUT + 100));
-			if (ret == -EAGAIN) {
-				return DNS_EAI_AGAIN;
-			}
-
-			st2 = ai_state.status;
-		} else {
-			errno = -ret;
-			st2 = DNS_EAI_SYSTEM;
+	if ((family != AF_INET) && IS_ENABLED(CONFIG_NET_IPV6)) {
+		st2 = exec_query(host, AF_INET6, &ai_state);
+		if (st2 == DNS_EAI_AGAIN) {
+			return st2;
 		}
 	}
 
-	if (ai_state.idx > 0) {
-		ai_addr = &ai_state.ai_arr[ai_state.idx - 1]._ai_addr;
+	for (uint16_t idx = 0; idx < ai_state.idx; idx++) {
+		ai_addr = &ai_state.ai_arr[idx]._ai_addr;
 		net_sin(ai_addr)->sin_port = htons(port);
 	}
 
@@ -281,13 +281,13 @@ static inline int z_vrfy_z_zsock_getaddrinfo_internal(const char *host,
 	uint32_t ret;
 
 	if (hints) {
-		Z_OOPS(z_user_from_copy(&hints_copy, (void *)hints,
+		K_OOPS(k_usermode_from_copy(&hints_copy, (void *)hints,
 					sizeof(hints_copy)));
 	}
-	Z_OOPS(Z_SYSCALL_MEMORY_ARRAY_WRITE(res, AI_ARR_MAX, sizeof(struct zsock_addrinfo)));
+	K_OOPS(K_SYSCALL_MEMORY_ARRAY_WRITE(res, AI_ARR_MAX, sizeof(struct zsock_addrinfo)));
 
 	if (service) {
-		service_copy = z_user_string_alloc_copy((char *)service, 64);
+		service_copy = k_usermode_string_alloc_copy((char *)service, 64);
 		if (!service_copy) {
 			ret = DNS_EAI_MEMORY;
 			goto out;
@@ -295,7 +295,7 @@ static inline int z_vrfy_z_zsock_getaddrinfo_internal(const char *host,
 	}
 
 	if (host) {
-		host_copy = z_user_string_alloc_copy((char *)host, 64);
+		host_copy = k_usermode_string_alloc_copy((char *)host, 64);
 		if (!host_copy) {
 			ret = DNS_EAI_MEMORY;
 			goto out;
@@ -316,7 +316,7 @@ out:
 
 #endif /* defined(CONFIG_DNS_RESOLVER) */
 
-#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_IPV4)
+#if defined(CONFIG_NET_IP)
 static int try_resolve_literal_addr(const char *host, const char *service,
 				    const struct zsock_addrinfo *hints,
 				    struct zsock_addrinfo *res)
@@ -392,7 +392,7 @@ static int try_resolve_literal_addr(const char *host, const char *service,
 
 	return 0;
 }
-#endif /* defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_IPV4) */
+#endif /* CONFIG_NET_IP */
 
 int zsock_getaddrinfo(const char *host, const char *service,
 		      const struct zsock_addrinfo *hints,
@@ -411,7 +411,7 @@ int zsock_getaddrinfo(const char *host, const char *service,
 	}
 #endif
 
-#if defined(CONFIG_NET_IPV6) || defined(CONFIG_NET_IPV4)
+#if defined(CONFIG_NET_IP)
 	/* Resolve literal address even if DNS is not available */
 	if (ret) {
 		ret = try_resolve_literal_addr(host, service, hints, *res);

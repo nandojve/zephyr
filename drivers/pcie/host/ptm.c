@@ -5,18 +5,20 @@
  */
 
 #define LOG_LEVEL CONFIG_PCIE_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(pcie);
 
 #include <errno.h>
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 
 #include <soc.h>
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
 
-#include <drivers/pcie/pcie.h>
+#define DT_DRV_COMPAT ptm_root
+
+#include <zephyr/drivers/pcie/pcie.h>
 #include "ptm.h"
 
 static int pcie_ptm_root_setup(const struct device *dev, uint32_t base)
@@ -25,18 +27,18 @@ static int pcie_ptm_root_setup(const struct device *dev, uint32_t base)
 	union ptm_cap_reg cap;
 	union ptm_ctrl_reg ctrl;
 
-	cap.raw = pcie_conf_read(config->bdf, base + PTM_CAP_REG_OFFSET);
+	cap.raw = pcie_conf_read(config->pcie->bdf, base + PTM_CAP_REG_OFFSET);
 	if ((cap.root == 0) || ((cap.root == 1) && (cap.responder == 0))) {
-		LOG_ERR("PTM root not supported on 0x%x", config->bdf);
+		LOG_ERR("PTM root not supported on 0x%x", config->pcie->bdf);
 		return -ENOTSUP;
 	}
 
 	ctrl.ptm_enable = 1;
 	ctrl.root_select = 1;
 
-	pcie_conf_write(config->bdf, base + PTM_CTRL_REG_OFFSET, ctrl.raw);
+	pcie_conf_write(config->pcie->bdf, base + PTM_CTRL_REG_OFFSET, ctrl.raw);
 
-	LOG_DBG("PTM root 0x%x enabled", config->bdf);
+	LOG_DBG("PTM root 0x%x enabled", config->pcie->bdf);
 
 	return 0;
 }
@@ -46,9 +48,9 @@ static int pcie_ptm_root_init(const struct device *dev)
 	const struct pcie_ptm_root_config *config = dev->config;
 	uint32_t reg;
 
-	reg = pcie_get_ext_cap(config->bdf, PCIE_EXT_CAP_ID_PTM);
+	reg = pcie_get_ext_cap(config->pcie->bdf, PCIE_EXT_CAP_ID_PTM);
 	if (reg == 0) {
-		LOG_ERR("PTM capability not exposed on 0x%x", config->bdf);
+		LOG_ERR("PTM capability not exposed on 0x%x", config->pcie->bdf);
 		return -ENODEV;
 	}
 
@@ -56,8 +58,9 @@ static int pcie_ptm_root_init(const struct device *dev)
 }
 
 #define PCIE_PTM_ROOT_INIT(index)					\
+	DEVICE_PCIE_INST_DECLARE(index);                                \
 	static const struct pcie_ptm_root_config ptm_config_##index = {	\
-		.bdf = DT_INST_REG_ADDR(index),				\
+		DEVICE_PCIE_INST_INIT(index, pcie),                     \
 	};								\
 	DEVICE_DT_INST_DEFINE(index, &pcie_ptm_root_init, NULL, NULL,	\
 			      &ptm_config_##index, PRE_KERNEL_1,	\

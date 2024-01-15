@@ -5,7 +5,7 @@
  */
 
 /*
- * This defines the required types for the ARMClang compiler when comiling with
+ * This defines the required types for the ARMClang compiler when compiling with
  * _AEABI_PORTABILITY_LEVEL = 1
  *
  * The types defined are according to:
@@ -14,6 +14,8 @@
  */
 #ifndef ZEPHYR_LIB_LIBC_ARMSTDC_INCLUDE_SYS_TYPES_H_
 #define ZEPHYR_LIB_LIBC_ARMSTDC_INCLUDE_SYS_TYPES_H_
+
+typedef unsigned int mode_t;
 
 #if !defined(__ssize_t_defined)
 #define __ssize_t_defined

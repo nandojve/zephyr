@@ -5,27 +5,20 @@ description: LPC11U6X clock controller node
 
 compatible: "nxp,lpc11u6x-syscon"
 
-include: [clock-controller.yaml, base.yaml]
+include: [clock-controller.yaml, pinctrl-device.yaml, base.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    label:
-      required: true
+  pinctrl-0:
+    required: true
 
-    pinmuxs:
-      type: phandle-array
-      required: true
-      description: system oscillator pinmux configuration
+  pinctrl-names:
+    required: true
 
-    pinmux-names:
-      type: string-array
-      required: false
-      description: system oscillator pins names
-
-    "#clock-cells":
-      const: 1
+  "#clock-cells":
+    const: 1
 
 clock-cells:
   - clkid

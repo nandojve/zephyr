@@ -10,8 +10,7 @@ The XMC4500 Relax Kit is designed to evaluate the capabilities of the XMC4500
 Microcontroller. It is based on High performance ARM Cortex-M4F which can run
 up to 120MHz.
 
-.. image:: ./xmc45_relax_kit.jpeg
-   :width: 720px
+.. image:: xmc45_relax_kit.jpg
    :align: center
    :alt: XMC45-RELAX-KIT
 
@@ -43,6 +42,20 @@ The Relax Kit development board configuration supports the following hardware fe
 | SYSTICK   | on-chip    | system clock          |
 +-----------+------------+-----------------------+
 | UART      | on-chip    | serial port           |
++-----------+------------+-----------------------+
+| SPI       | on-chip    | spi                   |
++-----------+------------+-----------------------+
+| GPIO      | on-chip    | gpio                  |
++-----------+------------+-----------------------+
+| FLASH     | on-chip    | flash                 |
++-----------+------------+-----------------------+
+| ADC       | on-chip    | adc                   |
++-----------+------------+-----------------------+
+| DMA       | on-chip    | dma                   |
++-----------+------------+-----------------------+
+| PWM       | on-chip    | pwm                   |
++-----------+------------+-----------------------+
+| WATCHDOG  | on-chip    | watchdog              |
 +-----------+------------+-----------------------+
 
 More details about the supported peripherals are available in `XMC4500 TRM`_

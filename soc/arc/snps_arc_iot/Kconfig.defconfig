@@ -34,8 +34,4 @@ config HARVARD
 config ARC_FIRQ
 	default y
 
-config UART_NS16550
-	default y
-	depends on SERIAL
-
 endif # ARC_IOT

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <logging/log_ctrl.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log_ctrl.h>
+#include <zephyr/logging/log.h>
 
 #include "tfm_ns_interface.h"
 #include "psa_attestation.h"
@@ -21,7 +21,7 @@ LOG_MODULE_DECLARE(app, CONFIG_LOG_DEFAULT_LEVEL);
 /* Create an instance of the system config struct for the application. */
 static struct cfg_data cfg;
 
-void main(void)
+int main(void)
 {
 	/* Initialise the logger subsys and dump the current buffer. */
 	log_init();
@@ -38,6 +38,11 @@ void main(void)
 	crp_test();
 	crp_test_rng();
 
+	/* Generate Certificate Signing Request using Mbed TLS */
+	crp_generate_csr();
+
 	/* Dump any queued log messages, and wait for system events. */
 	al_dump_log();
+
+	return 0;
 }

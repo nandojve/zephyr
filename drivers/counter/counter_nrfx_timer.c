@@ -3,16 +3,19 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <drivers/counter.h>
+#include <zephyr/drivers/counter.h>
 #include <hal/nrf_timer.h>
-#include <sys/atomic.h>
+#include <zephyr/sys/atomic.h>
 
 #define LOG_LEVEL CONFIG_COUNTER_LOG_LEVEL
 #define LOG_MODULE_NAME counter_timer
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, LOG_LEVEL);
 
-#define TIMER_CLOCK 16000000
+#define DT_DRV_COMPAT nordic_nrf_timer
+
+#define TIMER_CLOCK(timer_instance) NRF_TIMER_BASE_FREQUENCY_GET(timer_instance)
 
 #define CC_TO_ID(cc_num) (cc_num - 2)
 
@@ -47,44 +50,38 @@ struct counter_nrfx_config {
 struct counter_timer_config {
 	nrf_timer_bit_width_t bit_width;
 	nrf_timer_mode_t mode;
-	nrf_timer_frequency_t freq;
+	uint32_t prescaler;
 };
-
-static inline struct counter_nrfx_data *get_dev_data(const struct device *dev)
-{
-	return dev->data;
-}
-
-static inline const struct counter_nrfx_config *get_nrfx_config(const struct device *dev)
-{
-	return CONTAINER_OF(dev->config,
-				struct counter_nrfx_config, info);
-}
 
 static int start(const struct device *dev)
 {
-	nrf_timer_task_trigger(get_nrfx_config(dev)->timer,
-			       NRF_TIMER_TASK_START);
+	const struct counter_nrfx_config *config = dev->config;
+
+	nrf_timer_task_trigger(config->timer, NRF_TIMER_TASK_START);
 
 	return 0;
 }
 
 static int stop(const struct device *dev)
 {
-	nrf_timer_task_trigger(get_nrfx_config(dev)->timer,
-				NRF_TIMER_TASK_SHUTDOWN);
+	const struct counter_nrfx_config *config = dev->config;
+
+	nrf_timer_task_trigger(config->timer, NRF_TIMER_TASK_SHUTDOWN);
 
 	return 0;
 }
 
 static uint32_t get_top_value(const struct device *dev)
 {
-	return nrf_timer_cc_get(get_nrfx_config(dev)->timer, TOP_CH);
+	const struct counter_nrfx_config *config = dev->config;
+
+	return nrf_timer_cc_get(config->timer, TOP_CH);
 }
 
 static uint32_t read(const struct device *dev)
 {
-	NRF_TIMER_Type *timer = get_nrfx_config(dev)->timer;
+	const struct counter_nrfx_config *config = dev->config;
+	NRF_TIMER_Type *timer = config->timer;
 
 	nrf_timer_task_trigger(timer,
 			       nrf_timer_capture_task_get(COUNTER_READ_CC));
@@ -98,17 +95,11 @@ static int get_value(const struct device *dev, uint32_t *ticks)
 	return 0;
 }
 
-/* Return true if value equals 2^n - 1 */
-static inline bool is_bit_mask(uint32_t val)
-{
-	return !(val & (val + 1));
-}
-
 static uint32_t ticks_add(uint32_t val1, uint32_t val2, uint32_t top)
 {
 	uint32_t to_top;
 
-	if (likely(is_bit_mask(top))) {
+	if (likely(IS_BIT_MASK(top))) {
 		return (val1 + val2) & top;
 	}
 
@@ -119,7 +110,7 @@ static uint32_t ticks_add(uint32_t val1, uint32_t val2, uint32_t top)
 
 static uint32_t ticks_sub(uint32_t val, uint32_t old, uint32_t top)
 {
-	if (likely(is_bit_mask(top))) {
+	if (likely(IS_BIT_MASK(top))) {
 		return (val - old) & top;
 	}
 
@@ -129,17 +120,23 @@ static uint32_t ticks_sub(uint32_t val, uint32_t old, uint32_t top)
 
 static void set_cc_int_pending(const struct device *dev, uint8_t chan)
 {
-	atomic_or(&get_dev_data(dev)->cc_int_pending, BIT(chan));
-	NRFX_IRQ_PENDING_SET(NRFX_IRQ_NUMBER_GET(get_nrfx_config(dev)->timer));
+	const struct counter_nrfx_config *config = dev->config;
+	struct counter_nrfx_data *data = dev->data;
+
+	atomic_or(&data->cc_int_pending, BIT(chan));
+	NRFX_IRQ_PENDING_SET(NRFX_IRQ_NUMBER_GET(config->timer));
 }
 
 static int set_cc(const struct device *dev, uint8_t id, uint32_t val,
 		  uint32_t flags)
 {
-	__ASSERT_NO_MSG(get_dev_data(dev)->guard_period < get_top_value(dev));
+	const struct counter_nrfx_config *config = dev->config;
+	struct counter_nrfx_data *data = dev->data;
+
+	__ASSERT_NO_MSG(data->guard_period < get_top_value(dev));
 	bool absolute = flags & COUNTER_ALARM_CFG_ABSOLUTE;
 	bool irq_on_late;
-	NRF_TIMER_Type  *reg = get_nrfx_config(dev)->timer;
+	NRF_TIMER_Type  *reg = config->timer;
 	uint8_t chan = ID_TO_CC(id);
 	nrf_timer_event_t evt = nrf_timer_compare_event_get(chan);
 	uint32_t top = get_top_value(dev);
@@ -154,7 +151,7 @@ static int set_cc(const struct device *dev, uint8_t id, uint32_t val,
 				"Expected that CC interrupt is disabled.");
 
 	/* First take care of a risk of an event coming from CC being set to
-	 * next tick. Reconfigure CC to future (now tick is the furtherest
+	 * next tick. Reconfigure CC to future (now tick is the furthest
 	 * future).
 	 */
 	now = read(dev);
@@ -163,7 +160,7 @@ static int set_cc(const struct device *dev, uint8_t id, uint32_t val,
 	nrf_timer_event_clear(reg, evt);
 
 	if (absolute) {
-		max_rel_val = top - get_dev_data(dev)->guard_period;
+		max_rel_val = top - data->guard_period;
 		irq_on_late = flags & COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE;
 	} else {
 		/* If relative value is smaller than half of the counter range
@@ -198,7 +195,7 @@ static int set_cc(const struct device *dev, uint8_t id, uint32_t val,
 		if (irq_on_late) {
 			set_cc_int_pending(dev, chan);
 		} else {
-			get_nrfx_config(dev)->ch_data[id].callback = NULL;
+			config->ch_data[id].callback = NULL;
 		}
 	} else {
 		nrf_timer_int_enable(reg, nrf_timer_compare_int_get(chan));
@@ -210,7 +207,7 @@ static int set_cc(const struct device *dev, uint8_t id, uint32_t val,
 static int set_alarm(const struct device *dev, uint8_t chan,
 			const struct counter_alarm_cfg *alarm_cfg)
 {
-	const struct counter_nrfx_config *nrfx_config = get_nrfx_config(dev);
+	const struct counter_nrfx_config *nrfx_config = dev->config;
 	struct counter_nrfx_ch_data *chdata = &nrfx_config->ch_data[chan];
 
 	if (alarm_cfg->ticks >  get_top_value(dev)) {
@@ -229,7 +226,7 @@ static int set_alarm(const struct device *dev, uint8_t chan,
 
 static int cancel_alarm(const struct device *dev, uint8_t chan_id)
 {
-	const struct counter_nrfx_config *config = get_nrfx_config(dev);
+	const struct counter_nrfx_config *config = dev->config;
 	uint32_t int_mask =  nrf_timer_compare_int_get(ID_TO_CC(chan_id));
 
 	nrf_timer_int_disable(config->timer, int_mask);
@@ -241,11 +238,10 @@ static int cancel_alarm(const struct device *dev, uint8_t chan_id)
 static int set_top_value(const struct device *dev,
 			 const struct counter_top_cfg *cfg)
 {
-	const struct counter_nrfx_config *nrfx_config = get_nrfx_config(dev);
-	NRF_TIMER_Type *timer = get_nrfx_config(dev)->timer;
-	struct counter_nrfx_data *data = get_dev_data(dev);
+	const struct counter_nrfx_config *nrfx_config = dev->config;
+	NRF_TIMER_Type *timer = nrfx_config->timer;
+	struct counter_nrfx_data *data = dev->data;
 	int err = 0;
-
 	for (int i = 0; i < counter_get_num_of_channels(dev); i++) {
 		/* Overflow can be changed only when all alarms are
 		 * disables.
@@ -257,6 +253,7 @@ static int set_top_value(const struct device *dev,
 
 	nrf_timer_int_disable(timer, COUNTER_TOP_INT_MASK);
 	nrf_timer_cc_set(timer, TOP_CH, cfg->ticks);
+	nrf_timer_event_clear(timer, COUNTER_TOP_EVT);
 	nrf_timer_shorts_enable(timer, COUNTER_OVERFLOW_SHORT);
 
 	data->top_cb = cfg->callback;
@@ -286,11 +283,12 @@ static uint32_t get_pending_int(const struct device *dev)
 static int init_timer(const struct device *dev,
 		      const struct counter_timer_config *config)
 {
-	NRF_TIMER_Type *reg = get_nrfx_config(dev)->timer;
+	const struct counter_nrfx_config *nrfx_config = dev->config;
+	NRF_TIMER_Type *reg = nrfx_config->timer;
 
 	nrf_timer_bit_width_set(reg, config->bit_width);
 	nrf_timer_mode_set(reg, config->mode);
-	nrf_timer_frequency_set(reg, config->freq);
+	nrf_timer_prescaler_set(reg, config->prescaler);
 
 	nrf_timer_cc_set(reg, TOP_CH, counter_get_max_top_value(dev));
 
@@ -301,50 +299,60 @@ static int init_timer(const struct device *dev,
 
 static uint32_t get_guard_period(const struct device *dev, uint32_t flags)
 {
-	return get_dev_data(dev)->guard_period;
+	struct counter_nrfx_data *data = dev->data;
+
+	return data->guard_period;
 }
 
 static int set_guard_period(const struct device *dev, uint32_t guard,
 			    uint32_t flags)
 {
+	struct counter_nrfx_data *data = dev->data;
+
 	__ASSERT_NO_MSG(guard < get_top_value(dev));
 
-	get_dev_data(dev)->guard_period = guard;
+	data->guard_period = guard;
 	return 0;
 }
 
 static void top_irq_handle(const struct device *dev)
 {
-	NRF_TIMER_Type *reg = get_nrfx_config(dev)->timer;
-	counter_top_callback_t cb = get_dev_data(dev)->top_cb;
+	const struct counter_nrfx_config *config = dev->config;
+	struct counter_nrfx_data *data = dev->data;
+
+	NRF_TIMER_Type *reg = config->timer;
+	counter_top_callback_t cb = data->top_cb;
 
 	if (nrf_timer_event_check(reg, COUNTER_TOP_EVT) &&
 		nrf_timer_int_enable_check(reg, COUNTER_TOP_INT_MASK)) {
 		nrf_timer_event_clear(reg, COUNTER_TOP_EVT);
 		__ASSERT(cb != NULL, "top event enabled - expecting callback");
-		cb(dev, get_dev_data(dev)->top_user_data);
+		cb(dev, data->top_user_data);
 	}
 }
 
 static void alarm_irq_handle(const struct device *dev, uint32_t id)
 {
+	const struct counter_nrfx_config *config = dev->config;
+	struct counter_nrfx_data *data = dev->data;
+
 	uint32_t cc = ID_TO_CC(id);
-	NRF_TIMER_Type *reg = get_nrfx_config(dev)->timer;
+	NRF_TIMER_Type *reg = config->timer;
 	uint32_t int_mask = nrf_timer_compare_int_get(cc);
 	nrf_timer_event_t evt = nrf_timer_compare_event_get(cc);
 	bool hw_irq_pending = nrf_timer_event_check(reg, evt) &&
 			      nrf_timer_int_enable_check(reg, int_mask);
-	bool sw_irq_pending = get_dev_data(dev)->cc_int_pending & BIT(cc);
+	bool sw_irq_pending = data->cc_int_pending & BIT(cc);
 
 	if (hw_irq_pending || sw_irq_pending) {
 		struct counter_nrfx_ch_data *chdata;
 		counter_alarm_callback_t cb;
 
 		nrf_timer_event_clear(reg, evt);
-		atomic_and(&get_dev_data(dev)->cc_int_pending, ~BIT(cc));
+		atomic_and(&data->cc_int_pending, ~BIT(cc));
 		nrf_timer_int_disable(reg, int_mask);
 
-		chdata = &get_nrfx_config(dev)->ch_data[id];
+		chdata = &config->ch_data[id];
 		cb = chdata->callback;
 		chdata->callback = NULL;
 
@@ -384,83 +392,60 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
  * are indexed by peripheral number, so DT_INST APIs won't work.
  */
 
-#define TIMER(idx)		DT_NODELABEL(timer##idx)
-#define TIMER_PROP(idx, prop)	DT_PROP(TIMER(idx), prop)
-
-#define TIMER_IRQ_CONNECT(idx)						       \
-	COND_CODE_1(CONFIG_COUNTER_TIMER##idx##_ZLI,			       \
-		(IRQ_DIRECT_CONNECT(DT_IRQN(TIMER(idx)),		       \
-				    DT_IRQ(TIMER(idx), priority),	       \
-				    counter_timer##idx##_isr_wrapper,	       \
-				    IRQ_ZERO_LATENCY)),			       \
-		(IRQ_CONNECT(DT_IRQN(TIMER(idx)), DT_IRQ(TIMER(idx), priority),\
-			    irq_handler, DEVICE_DT_GET(TIMER(idx)), 0))	       \
+#define TIMER_IRQ_CONNECT(idx)							\
+	COND_CODE_1(DT_INST_PROP(idx, zli),					\
+		(IRQ_DIRECT_CONNECT(DT_INST_IRQN(idx),				\
+				    DT_INST_IRQ(idx, priority),			\
+				    counter_timer##idx##_isr_wrapper,		\
+				    IRQ_ZERO_LATENCY)),				\
+		(IRQ_CONNECT(DT_INST_IRQN(idx), DT_INST_IRQ(idx, priority),	\
+			    irq_handler, DEVICE_DT_INST_GET(idx), 0))		\
 	)
 
-#define COUNTER_NRFX_TIMER_DEVICE(idx)					       \
-	BUILD_ASSERT(TIMER_PROP(idx, prescaler) <=			       \
-			TIMER_PRESCALER_PRESCALER_Msk,			       \
-		     "TIMER prescaler out of range");			       \
-	COND_CODE_1(CONFIG_COUNTER_TIMER##idx##_ZLI, (			       \
-		ISR_DIRECT_DECLARE(counter_timer##idx##_isr_wrapper)	       \
-		{							       \
-			irq_handler(DEVICE_DT_GET(TIMER(idx)));		       \
-			/* No rescheduling, it shall not access zephyr primitives. */ \
-			return 0;					       \
-		}), ())							       \
-	static int counter_##idx##_init(const struct device *dev)	       \
-	{								       \
-		TIMER_IRQ_CONNECT(idx);					       \
-		static const struct counter_timer_config config = {	       \
-			.freq = TIMER_PROP(idx, prescaler),		       \
-			.mode = NRF_TIMER_MODE_TIMER,			       \
-			.bit_width = (TIMER##idx##_MAX_SIZE == 32) ?	       \
-					NRF_TIMER_BIT_WIDTH_32 :	       \
-					NRF_TIMER_BIT_WIDTH_16,		       \
-		};							       \
-		return init_timer(dev, &config);			       \
-	}								       \
-	static struct counter_nrfx_data counter_##idx##_data;		       \
-	static struct counter_nrfx_ch_data				       \
-		counter##idx##_ch_data[CC_TO_ID(TIMER##idx##_CC_NUM)];	       \
-	LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, idx, CONFIG_COUNTER_LOG_LEVEL); \
-	static const struct counter_nrfx_config nrfx_counter_##idx##_config = {\
-		.info = {						       \
-			.max_top_value = (TIMER##idx##_MAX_SIZE == 32) ?       \
-					0xffffffff : 0x0000ffff,	       \
-			.freq = TIMER_CLOCK /				       \
-					(1 << TIMER_PROP(idx, prescaler)),     \
-			.flags = COUNTER_CONFIG_INFO_COUNT_UP,		       \
-			.channels = CC_TO_ID(TIMER##idx##_CC_NUM),	       \
-		},							       \
-		.ch_data = counter##idx##_ch_data,			       \
-		.timer = (NRF_TIMER_Type *)DT_REG_ADDR(TIMER(idx)),	       \
-		LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, idx)	       \
-	};								       \
-	DEVICE_DT_DEFINE(TIMER(idx),					       \
-			    counter_##idx##_init,			       \
-			    NULL,					       \
-			    &counter_##idx##_data,			       \
-			    &nrfx_counter_##idx##_config.info,		       \
-			    PRE_KERNEL_1, CONFIG_COUNTER_INIT_PRIORITY,	       \
-			    &counter_nrfx_driver_api)
+#define COUNTER_NRFX_TIMER_DEVICE(idx)								\
+	BUILD_ASSERT(DT_INST_PROP(idx, prescaler) <=						\
+			TIMER_PRESCALER_PRESCALER_Msk,						\
+		     "TIMER prescaler out of range");						\
+	COND_CODE_1(DT_INST_PROP(idx, zli), (							\
+		ISR_DIRECT_DECLARE(counter_timer##idx##_isr_wrapper)				\
+		{										\
+			irq_handler(DEVICE_DT_INST_GET(idx));					\
+			/* No rescheduling, it shall not access zephyr primitives. */		\
+			return 0;								\
+		}), ())										\
+	static int counter_##idx##_init(const struct device *dev)				\
+	{											\
+		TIMER_IRQ_CONNECT(idx);								\
+		static const struct counter_timer_config config = {				\
+			.prescaler = DT_INST_PROP(idx, prescaler),				\
+			.mode = NRF_TIMER_MODE_TIMER,						\
+			.bit_width = (DT_INST_PROP(idx, max_bit_width) == 32) ?			\
+					NRF_TIMER_BIT_WIDTH_32 : NRF_TIMER_BIT_WIDTH_16,	\
+		};										\
+		return init_timer(dev, &config);						\
+	}											\
+	static struct counter_nrfx_data counter_##idx##_data;					\
+	static struct counter_nrfx_ch_data							\
+		counter##idx##_ch_data[CC_TO_ID(DT_INST_PROP(idx, cc_num))];			\
+	LOG_INSTANCE_REGISTER(LOG_MODULE_NAME, idx, CONFIG_COUNTER_LOG_LEVEL);			\
+	static const struct counter_nrfx_config nrfx_counter_##idx##_config = {			\
+		.info = {									\
+			.max_top_value = (uint32_t)BIT64_MASK(DT_INST_PROP(idx, max_bit_width)),\
+			.freq = TIMER_CLOCK((NRF_TIMER_Type *)DT_INST_REG_ADDR(idx)) /		\
+				BIT(DT_INST_PROP(idx, prescaler)),				\
+			.flags = COUNTER_CONFIG_INFO_COUNT_UP,					\
+			.channels = CC_TO_ID(DT_INST_PROP(idx, cc_num)),			\
+		},										\
+		.ch_data = counter##idx##_ch_data,						\
+		.timer = (NRF_TIMER_Type *)DT_INST_REG_ADDR(idx),				\
+		LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, idx)				\
+	};											\
+	DEVICE_DT_INST_DEFINE(idx,								\
+			    counter_##idx##_init,						\
+			    NULL,								\
+			    &counter_##idx##_data,						\
+			    &nrfx_counter_##idx##_config.info,					\
+			    PRE_KERNEL_1, CONFIG_COUNTER_INIT_PRIORITY,				\
+			    &counter_nrfx_driver_api);
 
-#ifdef CONFIG_COUNTER_TIMER0
-COUNTER_NRFX_TIMER_DEVICE(0);
-#endif
-
-#ifdef CONFIG_COUNTER_TIMER1
-COUNTER_NRFX_TIMER_DEVICE(1);
-#endif
-
-#ifdef CONFIG_COUNTER_TIMER2
-COUNTER_NRFX_TIMER_DEVICE(2);
-#endif
-
-#ifdef CONFIG_COUNTER_TIMER3
-COUNTER_NRFX_TIMER_DEVICE(3);
-#endif
-
-#ifdef CONFIG_COUNTER_TIMER4
-COUNTER_NRFX_TIMER_DEVICE(4);
-#endif
+DT_INST_FOREACH_STATUS_OKAY(COUNTER_NRFX_TIMER_DEVICE)

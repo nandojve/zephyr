@@ -12,14 +12,15 @@
 
 #define DT_DRV_COMPAT microchip_xec_ecia
 
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
-#include <device.h>
+#include <zephyr/arch/cpu.h>
+#include <cmsis_core.h>
+#include <zephyr/device.h>
 #include <soc.h>
-#include <sys/__assert.h>
-#include <drivers/clock_control/mchp_xec_clock_control.h>
-#include <drivers/interrupt_controller/intc_mchp_xec_ecia.h>
-#include <dt-bindings/interrupt-controller/mchp-xec-ecia.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/drivers/clock_control/mchp_xec_clock_control.h>
+#include <zephyr/drivers/interrupt_controller/intc_mchp_xec_ecia.h>
+#include <zephyr/dt-bindings/interrupt-controller/mchp-xec-ecia.h>
+#include <zephyr/irq.h>
 
 /* defined at the SoC layer */
 #define MCHP_FIRST_GIRQ			MCHP_FIRST_GIRQ_NOS
@@ -46,7 +47,8 @@
 
 #define ECIA_XEC_PCR_INFO						\
 	MCHP_XEC_PCR_SCR_ENCODE(DT_INST_CLOCKS_CELL(0, regidx),		\
-				DT_INST_CLOCKS_CELL(0, bitpos))
+				DT_INST_CLOCKS_CELL(0, bitpos),		\
+				DT_INST_CLOCKS_CELL(0, domain))
 
 struct xec_girq_config {
 	uintptr_t base;
@@ -76,7 +78,7 @@ struct xec_girq_src_data {
 	((struct xec_girq_src_data *const)(girq_dev)->data)
 
 /*
- * Enable/disable specified GIRQ's aggregated output. Aggrated output is the
+ * Enable/disable specified GIRQ's aggregated output. Aggregated output is the
  * bit-wise or of all the GIRQ's result bits.
  */
 void mchp_xec_ecia_girq_aggr_en(uint8_t girq_num, uint8_t enable)
@@ -229,7 +231,7 @@ uint32_t mchp_xec_ecia_info_girq_result(int ecia_info)
 
 /*
  * Clear NVIC pending status given GIRQ source information encoded by macro
- * MCHP_XEC_ECIA. For aggregated only sources the ecoding sets direct NVIC
+ * MCHP_XEC_ECIA. For aggregated only sources the encoding sets direct NVIC
  * number equal to aggregated NVIC number.
  */
 void mchp_xec_ecia_info_nvic_clr_pend(int ecia_info)
@@ -515,8 +517,12 @@ static int xec_ecia_init(const struct device *dev)
 	uint32_t n = 0, nr = 0;
 	int ret;
 
+	if (!device_is_ready(clk_dev)) {
+		return -ENODEV;
+	}
+
 	ret = clock_control_on(clk_dev,
-			       (clock_control_subsys_t *)&cfg->clk_ctrl);
+			       (clock_control_subsys_t)&cfg->clk_ctrl);
 	if (ret < 0) {
 		return ret;
 	}
@@ -568,7 +574,7 @@ static int xec_ecia_init(const struct device *dev)
 									\
 	DEVICE_DT_DEFINE(n, xec_girq_init_##n,				\
 		 NULL, &xec_data_girq_##n, &xec_config_girq_##n,	\
-		 PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,	\
+		 PRE_KERNEL_1, CONFIG_XEC_GIRQ_INIT_PRIORITY,		\
 		 NULL);							\
 									\
 	static int xec_girq_init_##n(const struct device *dev)		\
@@ -606,7 +612,7 @@ static const struct xec_ecia_config xec_config_ecia = {
 
 DEVICE_DT_DEFINE(DT_NODELABEL(ecia), xec_ecia_init,
 		 NULL, NULL, &xec_config_ecia,
-		 PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
+		 PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY,
 		 NULL);
 
 /* look up GIRQ node handle from ECIA configuration */

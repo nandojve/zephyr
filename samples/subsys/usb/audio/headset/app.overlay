@@ -6,7 +6,6 @@
 
 &zephyr_udc0 {
 	hs_0 {
-		label = "HEADSET";
 		compatible = "usb-audio-hs";
 		mic-feature-mute;
 		mic-channel-l;
@@ -15,5 +14,10 @@
 		hp-feature-mute;
 		hp-channel-l;
 		hp-channel-r;
+
+		hp-feature-volume;
+		volume-max = <0x0500>;
+		volume-min = <0xBA00>;
+		volume-res = <0x100>;
 	};
 };

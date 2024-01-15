@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 
 #ifdef CONFIG_LIS2DW12_TRIGGER
 static int lis2dw12_trig_cnt;
@@ -23,28 +23,12 @@ static void lis2dw12_trigger_handler(const struct device *dev,
 
 #ifdef CONFIG_LSM6DSO_TRIGGER
 static int lsm6dso_acc_trig_cnt;
-static int lsm6dso_gyr_trig_cnt;
-static int lsm6dso_temp_trig_cnt;
 
 static void lsm6dso_acc_trig_handler(const struct device *dev,
 				     const struct sensor_trigger *trig)
 {
-	sensor_sample_fetch_chan(dev, SENSOR_CHAN_ACCEL_XYZ);
+	sensor_sample_fetch(dev);
 	lsm6dso_acc_trig_cnt++;
-}
-
-static void lsm6dso_gyr_trig_handler(const struct device *dev,
-				     const struct sensor_trigger *trig)
-{
-	sensor_sample_fetch_chan(dev, SENSOR_CHAN_GYRO_XYZ);
-	lsm6dso_gyr_trig_cnt++;
-}
-
-static void lsm6dso_temp_trig_handler(const struct device *dev,
-				      const struct sensor_trigger *trig)
-{
-	sensor_sample_fetch_chan(dev, SENSOR_CHAN_DIE_TEMP);
-	lsm6dso_temp_trig_cnt++;
 }
 #endif
 
@@ -154,18 +138,10 @@ static void lsm6dso_config(const struct device *lsm6dso)
 	trig.type = SENSOR_TRIG_DATA_READY;
 	trig.chan = SENSOR_CHAN_ACCEL_XYZ;
 	sensor_trigger_set(lsm6dso, &trig, lsm6dso_acc_trig_handler);
-
-	trig.type = SENSOR_TRIG_DATA_READY;
-	trig.chan = SENSOR_CHAN_GYRO_XYZ;
-	sensor_trigger_set(lsm6dso, &trig, lsm6dso_gyr_trig_handler);
-
-	trig.type = SENSOR_TRIG_DATA_READY;
-	trig.chan = SENSOR_CHAN_DIE_TEMP;
-	sensor_trigger_set(lsm6dso, &trig, lsm6dso_temp_trig_handler);
 #endif
 }
 
-void main(void)
+int main(void)
 {
 #ifdef CONFIG_LSM6DSO_EXT_LPS22HH
 	struct sensor_value temp2, press;
@@ -179,17 +155,17 @@ void main(void)
 	struct sensor_value accel1[3], accel2[3];
 	struct sensor_value gyro[3];
 	struct sensor_value magn[3];
-	const struct device *lis2dw12 = device_get_binding(DT_LABEL(DT_INST(0, st_lis2dw12)));
-	const struct device *lsm6dso = device_get_binding(DT_LABEL(DT_INST(0, st_lsm6dso)));
+	const struct device *const lis2dw12 = DEVICE_DT_GET_ONE(st_lis2dw12);
+	const struct device *const lsm6dso = DEVICE_DT_GET_ONE(st_lsm6dso);
 	int cnt = 1;
 
-	if (lis2dw12 == NULL) {
-		printf("Could not get LIS2DW12 device\n");
-		return;
+	if (!device_is_ready(lis2dw12)) {
+		printk("%s: device not ready.\n", lis2dw12->name);
+		return 0;
 	}
-	if (lsm6dso == NULL) {
-		printf("Could not get LSM6DSO device\n");
-		return;
+	if (!device_is_ready(lsm6dso)) {
+		printk("%s: device not ready.\n", lsm6dso->name);
+		return 0;
 	}
 
 	lis2dw12_config(lis2dw12);
@@ -201,13 +177,13 @@ void main(void)
 #ifndef CONFIG_LIS2DW12_TRIGGER
 		if (sensor_sample_fetch(lis2dw12) < 0) {
 			printf("LIS2DW12 Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 #ifndef CONFIG_LSM6DSO_TRIGGER
 		if (sensor_sample_fetch(lsm6dso) < 0) {
 			printf("LSM6DSO Sensor sample update error\n");
-			return;
+			return 0;
 		}
 #endif
 
@@ -284,9 +260,6 @@ void main(void)
 
 #ifdef CONFIG_LSM6DSO_TRIGGER
 		printk("%d:: lsm6dso acc trig %d\n", cnt, lsm6dso_acc_trig_cnt);
-		printk("%d:: lsm6dso gyr trig %d\n", cnt, lsm6dso_gyr_trig_cnt);
-		printk("%d:: lsm6dso temp trig %d\n", cnt,
-			lsm6dso_temp_trig_cnt);
 #endif
 
 		cnt++;

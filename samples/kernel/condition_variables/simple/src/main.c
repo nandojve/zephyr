@@ -4,14 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <arch/cpu.h>
-#include <sys/arch_interface.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/sys/arch_interface.h>
 
 #define NUM_THREADS 20
-#define STACK_SIZE (1024 + CONFIG_TEST_EXTRA_STACKSIZE)
+#define STACK_SIZE (1024)
 
-K_THREAD_STACK_EXTERN(tstack);
 K_THREAD_STACK_ARRAY_DEFINE(tstacks, NUM_THREADS, STACK_SIZE);
 
 static struct k_thread t[NUM_THREADS];
@@ -46,7 +45,7 @@ void worker_thread(void *p1, void *p2, void *p3)
 	k_mutex_unlock(&mutex);
 }
 
-void main(void)
+int main(void)
 {
 	k_tid_t tid[NUM_THREADS];
 
@@ -84,4 +83,5 @@ void main(void)
 		__func__, (int)NUM_THREADS);
 
 	k_mutex_unlock(&mutex);
+	return 0;
 }

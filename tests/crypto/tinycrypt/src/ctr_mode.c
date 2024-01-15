@@ -39,19 +39,18 @@
 
 #include <tinycrypt/ctr_mode.h>
 #include <tinycrypt/constants.h>
-#include <test_utils.h>
+#include <zephyr/test_utils.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 /*
  * NIST SP 800-38a CTR Test for encryption and decryption.
  */
 void test_ctr_sp_800_38a_encrypt_decrypt(void)
 {
-	TC_START("Performing AES128-CTR mode tests:");
 
 	TC_PRINT("Performing CTR tests:\n");
 

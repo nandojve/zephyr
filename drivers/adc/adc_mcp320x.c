@@ -9,14 +9,13 @@
  * @brief ADC driver for the MCP3204/MCP3208 ADCs.
  */
 
-#include <drivers/adc.h>
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
-#include <kernel.h>
-#include <logging/log.h>
-#include <sys/byteorder.h>
-#include <sys/util.h>
-#include <zephyr.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(adc_mcp320x, CONFIG_ADC_LOG_LEVEL);
 
@@ -233,8 +232,12 @@ static int mcp320x_read_channel(const struct device *dev, uint8_t channel,
 	return 0;
 }
 
-static void mcp320x_acquisition_thread(struct mcp320x_data *data)
+static void mcp320x_acquisition_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct mcp320x_data *data = p1;
 	uint16_t result = 0;
 	uint8_t channel;
 	int err;
@@ -275,14 +278,14 @@ static int mcp320x_init(const struct device *dev)
 
 	k_sem_init(&data->sem, 0, 1);
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI bus is not ready");
 		return -ENODEV;
 	}
 
 	k_thread_create(&data->thread, data->stack,
 			CONFIG_ADC_MCP320X_ACQUISITION_THREAD_STACK_SIZE,
-			(k_thread_entry_t)mcp320x_acquisition_thread,
+			mcp320x_acquisition_thread,
 			data, NULL, NULL,
 			CONFIG_ADC_MCP320X_ACQUISITION_THREAD_PRIO,
 			0, K_NO_WAIT);
@@ -331,11 +334,11 @@ static const struct adc_driver_api mcp320x_adc_api = {
  */
 #define MCP3208_DEVICE(n) MCP320X_DEVICE(3208, n, 8)
 
-#define CALL_WITH_ARG(arg, expr) expr(arg);
+#define CALL_WITH_ARG(arg, expr) expr(arg)
 
-#define INST_DT_MCP320X_FOREACH(t, inst_expr)				\
-	UTIL_LISTIFY(DT_NUM_INST_STATUS_OKAY(microchip_mcp##t),	\
-		     CALL_WITH_ARG, inst_expr)
+#define INST_DT_MCP320X_FOREACH(t, inst_expr)			\
+	LISTIFY(DT_NUM_INST_STATUS_OKAY(microchip_mcp##t),	\
+		CALL_WITH_ARG, (;), inst_expr)
 
 INST_DT_MCP320X_FOREACH(3204, MCP3204_DEVICE);
 INST_DT_MCP320X_FOREACH(3208, MCP3208_DEVICE);

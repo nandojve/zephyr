@@ -9,9 +9,7 @@ Overview
 The STEVAL-FCU001V1 is a Cortex M4 MCU-based flight controller unit for toy quad-copter drones.
 
 .. figure:: img/steval_fcu001v1.jpg
-     :width: 753px
      :align: center
-     :height: 699px
      :alt: STM32 Flight Controller Unit
 
 Hardware
@@ -157,4 +155,4 @@ You can debug an application in the usual way. Here is an example for the
    https://www.st.com/en/microcontrollers-microprocessors/stm32f401cc.html
 
 .. _STM32F401 reference manual:
-    http://www.st.com/resource/en/reference_manual/dm00096844.pdf
+    https://www.st.com/resource/en/reference_manual/dm00096844.pdf

@@ -14,6 +14,7 @@ supported:
   - arduino_i2c
   - arduino_spi
   - counter
+  - dma
   - gpio
   - i2c
   - nvs
@@ -21,3 +22,4 @@ supported:
   - spi
   - usb_device
   - watchdog
+vendor: nxp

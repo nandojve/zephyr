@@ -10,19 +10,19 @@
  */
 
 #include <errno.h>
-#include <init.h>
-#include <sys/__assert.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/__assert.h>
 #include <stdbool.h>
 #include <zephyr/types.h>
 
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/conn.h>
-#include <bluetooth/gatt.h>
-#include <bluetooth/uuid.h>
-#include <bluetooth/services/bas.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/services/bas.h>
 
 #define LOG_LEVEL CONFIG_BT_BAS_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bas);
 
 static uint8_t battery_level = 100U;
@@ -47,6 +47,17 @@ static ssize_t read_blvl(struct bt_conn *conn,
 				 sizeof(lvl8));
 }
 
+/* Constant values from the Assigned Numbers specification:
+ * https://www.bluetooth.com/wp-content/uploads/Files/Specification/Assigned_Numbers.pdf?id=89
+ */
+static const struct bt_gatt_cpf level_cpf = {
+	.format = 0x04,        /* uint8 */
+	.exponent = 0x0,
+	.unit = 0x27AD,        /* Percentage */
+	.name_space = 0x01,    /* Bluetooth SIG */
+	.description = 0x0106, /* "main" */
+};
+
 BT_GATT_SERVICE_DEFINE(bas,
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_BAS),
 	BT_GATT_CHARACTERISTIC(BT_UUID_BAS_BATTERY_LEVEL,
@@ -55,11 +66,11 @@ BT_GATT_SERVICE_DEFINE(bas,
 			       &battery_level),
 	BT_GATT_CCC(blvl_ccc_cfg_changed,
 		    BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+	BT_GATT_CPF(&level_cpf),
 );
 
-static int bas_init(const struct device *dev)
+static int bas_init(void)
 {
-	ARG_UNUSED(dev);
 
 	return 0;
 }

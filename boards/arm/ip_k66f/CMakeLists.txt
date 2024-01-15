@@ -1,6 +1,3 @@
 # SPDX-License-Identifier: Apache-2.0
 
-if(CONFIG_PINMUX_MCUX)
-  zephyr_library()
-  zephyr_library_sources(pinmux.c)
-endif()
+set(BOARD_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld CACHE INTERNAL "Board linker script, ${BOARD}")

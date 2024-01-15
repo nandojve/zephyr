@@ -8,12 +8,9 @@
  * https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmp388-ds001.pdf
  */
 
-#define DT_DRV_COMPAT bosch_bmp388
-
-#include <logging/log.h>
-#include <sys/byteorder.h>
-#include <drivers/i2c.h>
-#include <drivers/sensor.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/pm/device.h>
 
 #include "bmp388.h"
 
@@ -44,156 +41,27 @@ static const struct {
 };
 #endif
 
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-static int bmp388_transceive(const struct device *dev,
-			     void *data, size_t length)
+static inline int bmp388_bus_check(const struct device *dev)
 {
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-	const struct spi_buf buf = { .buf = data, .len = length };
-	const struct spi_buf_set s = { .buffers = &buf, .count = 1 };
+	const struct bmp388_config *cfg = dev->config;
 
-	return spi_transceive_dt(&cfg->spi_bus, &s, &s);
+	return cfg->bus_io->check(&cfg->bus);
 }
 
-static int bmp388_read_spi(const struct device *dev,
-			   uint8_t reg,
-			   void *data,
-			   size_t length)
+static inline int bmp388_reg_read(const struct device *dev,
+				  uint8_t start, uint8_t *buf, int size)
 {
-	const struct bmp388_config *cfg = DEV_CFG(dev);
+	const struct bmp388_config *cfg = dev->config;
 
-	/* Reads must clock out a dummy byte after sending the address. */
-	uint8_t reg_buf[2] = { reg | BIT(7), 0 };
-	const struct spi_buf buf[2] = {
-		{ .buf = reg_buf, .len = 2 },
-		{ .buf = data, .len = length }
-	};
-	const struct spi_buf_set tx = { .buffers = buf, .count = 1 };
-	const struct spi_buf_set rx = { .buffers = buf, .count = 2 };
-
-	return spi_transceive_dt(&cfg->spi_bus, &tx, &rx);
+	return cfg->bus_io->read(&cfg->bus, start, buf, size);
 }
 
-static int bmp388_byte_read_spi(const struct device *dev,
-				uint8_t reg,
-				uint8_t *byte)
+static inline int bmp388_reg_write(const struct device *dev, uint8_t reg,
+				   uint8_t val)
 {
-	/* Reads must clock out a dummy byte after sending the address. */
-	uint8_t data[] = { reg | BIT(7), 0, 0 };
-	int ret;
+	const struct bmp388_config *cfg = dev->config;
 
-	ret = bmp388_transceive(dev, data, sizeof(data));
-
-	*byte = data[2];
-
-	return ret;
-}
-
-static int bmp388_byte_write_spi(const struct device *dev,
-				 uint8_t reg,
-				 uint8_t byte)
-{
-	uint8_t data[] = { reg, byte };
-
-	return bmp388_transceive(dev, data, sizeof(data));
-}
-
-int bmp388_reg_field_update_spi(const struct device *dev,
-				uint8_t reg,
-				uint8_t mask,
-				uint8_t val)
-{
-	uint8_t old_val;
-
-	if (bmp388_byte_read_spi(dev, reg, &old_val) < 0) {
-		return -EIO;
-	}
-
-	return bmp388_byte_write_spi(dev, reg, (old_val & ~mask) | (val & mask));
-}
-
-static const struct bmp388_io_ops bmp388_spi_ops = {
-	.read = bmp388_read_spi,
-	.byte_read = bmp388_byte_read_spi,
-	.byte_write = bmp388_byte_write_spi,
-	.reg_field_update = bmp388_reg_field_update_spi,
-};
-#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
-
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
-static int bmp388_read_i2c(const struct device *dev,
-			   uint8_t reg,
-			   void *data,
-			   size_t length)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return i2c_burst_read(cfg->bus, cfg->bus_addr, reg, data, length);
-}
-
-static int bmp388_byte_read_i2c(const struct device *dev,
-				uint8_t reg,
-				uint8_t *byte)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return i2c_reg_read_byte(cfg->bus, cfg->bus_addr, reg, byte);
-}
-
-static int bmp388_byte_write_i2c(const struct device *dev,
-				 uint8_t reg,
-				 uint8_t byte)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return i2c_reg_write_byte(cfg->bus, cfg->bus_addr, reg, byte);
-}
-
-int bmp388_reg_field_update_i2c(const struct device *dev,
-				uint8_t reg,
-				uint8_t mask,
-				uint8_t val)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return i2c_reg_update_byte(cfg->bus, cfg->bus_addr, reg, mask, val);
-}
-
-static const struct bmp388_io_ops bmp388_i2c_ops = {
-	.read = bmp388_read_i2c,
-	.byte_read = bmp388_byte_read_i2c,
-	.byte_write = bmp388_byte_write_i2c,
-	.reg_field_update = bmp388_reg_field_update_i2c,
-};
-#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
-
-
-static int bmp388_read(const struct device *dev,
-		       uint8_t reg,
-		       void *data,
-		       size_t length)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return cfg->ops->read(dev, reg, data, length);
-}
-
-static int bmp388_byte_read(const struct device *dev,
-			    uint8_t reg,
-			    uint8_t *byte)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return cfg->ops->byte_read(dev, reg, byte);
-}
-
-static int bmp388_byte_write(const struct device *dev,
-			     uint8_t reg,
-			     uint8_t byte)
-{
-	const struct bmp388_config *cfg = DEV_CFG(dev);
-
-	return cfg->ops->byte_write(dev, reg, byte);
+	return cfg->bus_io->write(&cfg->bus, reg, val);
 }
 
 int bmp388_reg_field_update(const struct device *dev,
@@ -201,9 +69,21 @@ int bmp388_reg_field_update(const struct device *dev,
 			    uint8_t mask,
 			    uint8_t val)
 {
-	const struct bmp388_config *cfg = DEV_CFG(dev);
+	int rc = 0;
+	uint8_t old_value, new_value;
+	const struct bmp388_config *cfg = dev->config;
 
-	return cfg->ops->reg_field_update(dev, reg, mask, val);
+	rc = cfg->bus_io->read(&cfg->bus, reg, &old_value, 1);
+	if (rc != 0) {
+		return rc;
+	}
+
+	new_value = (old_value & ~mask) | (val & mask);
+	if (new_value == old_value) {
+		return 0;
+	}
+
+	return cfg->bus_io->write(&cfg->bus, reg, new_value);
 }
 
 #ifdef CONFIG_BMP388_ODR_RUNTIME
@@ -232,7 +112,7 @@ static int bmp388_attr_set_odr(const struct device *dev,
 			       uint16_t freq_milli)
 {
 	int err;
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 	int odr = bmp388_freq_to_odr_val(freq_int, freq_milli);
 
 	if (odr < 0) {
@@ -260,7 +140,7 @@ static int bmp388_attr_set_oversampling(const struct device *dev,
 	uint32_t pos, mask;
 	int err;
 
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 
 	/* Value must be a positive power of 2 <= 32. */
 	if ((val <= 0) || (val > 32) || ((val & (val - 1)) != 0)) {
@@ -342,7 +222,7 @@ static int bmp388_attr_set(const struct device *dev,
 static int bmp388_sample_fetch(const struct device *dev,
 			       enum sensor_channel chan)
 {
-	struct bmp388_data *bmp388 = DEV_DATA(dev);
+	struct bmp388_data *bmp388 = dev->data;
 	uint8_t raw[BMP388_SAMPLE_BUFFER_SIZE];
 	int ret = 0;
 
@@ -362,13 +242,13 @@ static int bmp388_sample_fetch(const struct device *dev,
 	/* Wait for status to indicate that data is ready. */
 	raw[0] = 0U;
 	while ((raw[0] & BMP388_STATUS_DRDY_PRESS) == 0U) {
-		ret = bmp388_byte_read(dev, BMP388_REG_STATUS, raw);
+		ret = bmp388_reg_read(dev, BMP388_REG_STATUS, raw, 1);
 		if (ret < 0) {
 			goto error;
 		}
 	}
 
-	ret = bmp388_read(dev,
+	ret = bmp388_reg_read(dev,
 			  BMP388_REG_DATA0,
 			  raw,
 			  BMP388_SAMPLE_BUFFER_SIZE);
@@ -417,7 +297,7 @@ static void bmp388_compensate_temp(struct bmp388_data *data)
 static int bmp388_temp_channel_get(const struct device *dev,
 				   struct sensor_value *val)
 {
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 
 	if (data->sample.comp_temp == 0) {
 		bmp388_compensate_temp(data);
@@ -482,14 +362,14 @@ static uint64_t bmp388_compensate_press(struct bmp388_data *data)
 
 	comp_press = (((uint64_t)partial_data4 * 25) / (uint64_t)1099511627776);
 
-	/* returned value is in hundreths of Pa. */
+	/* returned value is in hundredths of Pa. */
 	return comp_press;
 }
 
 static int bmp388_press_channel_get(const struct device *dev,
 				    struct sensor_value *val)
 {
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 
 	if (data->sample.comp_temp == 0) {
 		bmp388_compensate_temp(data);
@@ -497,7 +377,7 @@ static int bmp388_press_channel_get(const struct device *dev,
 
 	uint64_t tmp = bmp388_compensate_press(data);
 
-	/* tmp is in hundreths of Pa. Convert to kPa as specified in sensor
+	/* tmp is in hundredths of Pa. Convert to kPa as specified in sensor
 	 * interface.
 	 */
 	val->val1 = tmp / 100000;
@@ -530,10 +410,10 @@ static int bmp388_channel_get(const struct device *dev,
 
 static int bmp388_get_calibration_data(const struct device *dev)
 {
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 	struct bmp388_cal_data *cal = &data->cal;
 
-	if (bmp388_read(dev, BMP388_REG_CALIB0, cal, sizeof(*cal)) < 0) {
+	if (bmp388_reg_read(dev, BMP388_REG_CALIB0, (uint8_t *)cal, sizeof(*cal)) < 0) {
 		return -EIO;
 	}
 
@@ -588,49 +468,24 @@ static const struct sensor_driver_api bmp388_api = {
 
 static int bmp388_init(const struct device *dev)
 {
-	struct bmp388_data *bmp388 = DEV_DATA(dev);
-	const struct bmp388_config *cfg = DEV_CFG(dev);
+	struct bmp388_data *bmp388 = dev->data;
+	const struct bmp388_config *cfg = dev->config;
 	uint8_t val = 0U;
 
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-	bool is_spi = (cfg->ops == &bmp388_spi_ops);
-#endif
-
-	if (!device_is_ready(cfg->bus)) {
-		LOG_ERR("Bus device is not ready");
-		return -EINVAL;
+	if (bmp388_bus_check(dev) < 0) {
+		LOG_DBG("bus check failed");
+		return -ENODEV;
 	}
-
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-	/* Verify the SPI bus */
-	if (is_spi) {
-		if (!spi_is_ready(&cfg->spi_bus)) {
-			LOG_ERR("SPI bus is not ready");
-			return -ENODEV;
-		}
-	}
-#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 
 	/* reboot the chip */
-	if (bmp388_byte_write(dev, BMP388_REG_CMD, BMP388_CMD_SOFT_RESET) < 0) {
+	if (bmp388_reg_write(dev, BMP388_REG_CMD, BMP388_CMD_SOFT_RESET) < 0) {
 		LOG_ERR("Cannot reboot chip.");
 		return -EIO;
 	}
 
 	k_busy_wait(2000);
 
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
-	if (is_spi) {
-		/* do a dummy read from 0x7F to activate SPI */
-		if (bmp388_byte_read(dev, 0x7F, &val) < 0) {
-			return -EIO;
-		}
-
-		k_busy_wait(100);
-	}
-#endif
-
-	if (bmp388_byte_read(dev, BMP388_REG_CHIPID, &val) < 0) {
+	if (bmp388_reg_read(dev, BMP388_REG_CHIPID, &val, 1) < 0) {
 		LOG_ERR("Failed to read chip id.");
 		return -EIO;
 	}
@@ -658,28 +513,40 @@ static int bmp388_init(const struct device *dev)
 	/* Set OSR */
 	val = (bmp388->osr_pressure << BMP388_OSR_PRESSURE_POS);
 	val |= (bmp388->osr_temp << BMP388_OSR_TEMP_POS);
-	if (bmp388_byte_write(dev, BMP388_REG_OSR, val) < 0) {
+	if (bmp388_reg_write(dev, BMP388_REG_OSR, val) < 0) {
 		LOG_ERR("Failed to set OSR.");
 		return -EIO;
 	}
 
 	/* Set IIR filter coefficient */
 	val = (cfg->iir_filter << BMP388_IIR_FILTER_POS) & BMP388_IIR_FILTER_MASK;
-	if (bmp388_byte_write(dev, BMP388_REG_CONFIG, val) < 0) {
+	if (bmp388_reg_write(dev, BMP388_REG_CONFIG, val) < 0) {
 		LOG_ERR("Failed to set IIR coefficient.");
 		return -EIO;
 	}
 
 	/* Enable sensors and normal mode*/
-	if (bmp388_byte_write(dev,
-			      BMP388_REG_PWR_CTRL,
-			      BMP388_PWR_CTRL_ON) < 0) {
+	if (bmp388_reg_write(dev,
+			     BMP388_REG_PWR_CTRL,
+			     BMP388_PWR_CTRL_ON) < 0) {
 		LOG_ERR("Failed to enable sensors.");
 		return -EIO;
 	}
 
+	/* Read error register */
+	if (bmp388_reg_read(dev, BMP388_REG_ERR_REG, &val, 1) < 0) {
+		LOG_ERR("Failed get sensors error register.");
+		return -EIO;
+	}
+
+	/* OSR and ODR config not proper */
+	if (val & BMP388_STATUS_CONF_ERR) {
+		LOG_ERR("OSR and ODR configuration is not proper");
+		return -EINVAL;
+	}
+
 #ifdef CONFIG_BMP388_TRIGGER
-	if (bmp388_trigger_mode_init(dev) < 0) {
+	if (cfg->gpio_int.port != NULL && bmp388_trigger_mode_init(dev) < 0) {
 		LOG_ERR("Cannot set up trigger mode.");
 		return -EINVAL;
 	}
@@ -688,42 +555,44 @@ static int bmp388_init(const struct device *dev)
 	return 0;
 }
 
-#define BMP388_BUS_CFG_I2C(inst) \
-	.ops = &bmp388_i2c_ops,	 \
-	.bus_addr = DT_INST_REG_ADDR(inst)
+/* Initializes a struct bmp388_config for an instance on a SPI bus. */
+#define BMP388_CONFIG_SPI(inst)				\
+	.bus.spi = SPI_DT_SPEC_INST_GET(inst, BMP388_SPI_OPERATION, 0),	\
+	.bus_io = &bmp388_bus_io_spi,
 
-#define BMP388_BUS_CFG_SPI(inst) \
-	.ops = &bmp388_spi_ops,	 \
-	.spi_bus = SPI_DT_SPEC_INST_GET(inst, SPI_OP_MODE_MASTER | SPI_WORD_SET(8), 0)
+/* Initializes a struct bmp388_config for an instance on an I2C bus. */
+#define BMP388_CONFIG_I2C(inst)			       \
+	.bus.i2c = I2C_DT_SPEC_INST_GET(inst),	       \
+	.bus_io = &bmp388_bus_io_i2c,
 
 #define BMP388_BUS_CFG(inst)			\
 	COND_CODE_1(DT_INST_ON_BUS(inst, i2c),	\
-		    (BMP388_BUS_CFG_I2C(inst)),	\
-		    (BMP388_BUS_CFG_SPI(inst)))
+		    (BMP388_CONFIG_I2C(inst)),	\
+		    (BMP388_CONFIG_SPI(inst)))
 
 #if defined(CONFIG_BMP388_TRIGGER)
 #define BMP388_INT_CFG(inst) \
-	.gpio_int = GPIO_DT_SPEC_INST_GET(inst, int_gpios),
+	.gpio_int = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {0}),
 #else
 #define BMP388_INT_CFG(inst)
 #endif
 
 #define BMP388_INST(inst)						   \
 	static struct bmp388_data bmp388_data_##inst = {		   \
-		.odr = DT_ENUM_IDX(DT_DRV_INST(inst), odr),		   \
-		.osr_pressure = DT_ENUM_IDX(DT_DRV_INST(inst), osr_press), \
-		.osr_temp = DT_ENUM_IDX(DT_DRV_INST(inst), osr_temp),	   \
+		.odr = DT_INST_ENUM_IDX(inst, odr),			   \
+		.osr_pressure = DT_INST_ENUM_IDX(inst, osr_press),	   \
+		.osr_temp = DT_INST_ENUM_IDX(inst, osr_temp),		   \
 	};								   \
 	static const struct bmp388_config bmp388_config_##inst = {	   \
-		.bus = DEVICE_DT_GET(DT_INST_BUS(inst)),		   \
-		BMP388_BUS_CFG(inst),					   \
+		BMP388_BUS_CFG(inst)					   \
 		BMP388_INT_CFG(inst)					   \
-		.iir_filter = DT_ENUM_IDX(DT_DRV_INST(inst), iir_filter),  \
+		.iir_filter = DT_INST_ENUM_IDX(inst, iir_filter),	   \
 	};								   \
-	DEVICE_DT_INST_DEFINE(						   \
+	PM_DEVICE_DT_INST_DEFINE(inst, bmp388_pm_action);		   \
+	SENSOR_DEVICE_DT_INST_DEFINE(					   \
 		inst,							   \
 		bmp388_init,						   \
-		bmp388_pm_action,					   \
+		PM_DEVICE_DT_INST_GET(inst),				   \
 		&bmp388_data_##inst,					   \
 		&bmp388_config_##inst,					   \
 		POST_KERNEL,						   \

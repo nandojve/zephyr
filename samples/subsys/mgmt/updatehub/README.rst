@@ -1,7 +1,8 @@
-.. _updatehub_fota_sample:
+.. zephyr:code-sample:: updatehub-fota
+   :name: UpdateHub embedded Firmware Over-The-Air (FOTA) update
+   :relevant-api: updatehub
 
-UpdateHub embedded Firmware Over-The-Air (FOTA) sample
-######################################################
+   Perform Firmware Over-The-Air (FOTA) updates using UpdateHub.
 
 Overview
 ********
@@ -28,11 +29,11 @@ You can access the sample source code at
 Caveats
 *******
 
-* The Zephyr port of ``UpdateHub`` was initialy developed to run on a
+* The Zephyr port of ``UpdateHub`` was initially developed to run on a
   :ref:`Freedom-K64F <frdm_k64f>` kit using the ethernet connectivity.  The
   application should build and run for other platforms with same connectivity.
 
-* The sample provides overlay files to enable other tecnologies like WIFI,
+* The sample provides overlay files to enable other technologies like WIFI,
   modem, BLE IPSP, 802.15.4 or OpenThread.  These technologies depends on
   hardware resources and the correspondent overlay was designed to be generic
   instead full optimized.
@@ -56,7 +57,7 @@ Building and Running
 
 The below steps describe how to build and run the ``UpdateHub`` sample in
 Zephyr.  Open a terminal ``terminal 1`` and navigate to your Zephyr project
-directory.  This allows contruct and run everything from a common place.
+directory.  This allows to construct and run everything from a common place.
 
 .. code-block:: console
 
@@ -87,7 +88,7 @@ Step 2.1: UpdateHub-CE (Community Edition)
 The Zephyr sample application is configured by default to use the UpdateHub-CE
 server edition.  This version implies you need run your own server.  The
 UpdateHub-CE is distributed as a docker container and can be on your local
-network or even instaled on a service provider like Digital Ocean, Vultr etc.
+network or even installed on a service provider like Digital Ocean, Vultr etc.
 To start using the UpdateHub-CE simple execute the docker command with the
 following parameters on another terminal ``terminal 2``.
 
@@ -130,7 +131,7 @@ directory.
 .. note::
 
     When using UpdateHub Cloud server it is necessary update your own
-    ``overlay-prj.conf`` with option :kconfig:`CONFIG_UPDATEHUB_CE` equal ``n``.
+    ``overlay-prj.conf`` with option :kconfig:option:`CONFIG_UPDATEHUB_CE` equal ``n``.
 
 
 Step 3: Configure UpdateHub Sample
@@ -139,18 +140,18 @@ Step 3: Configure UpdateHub Sample
 The updatehub have several Kconfig options that are necessary configure to
 make it work or tune communication.
 
-Set :kconfig:`CONFIG_UPDATEHUB_CE` select between UpdateHub edition.  The ``y``
+Set :kconfig:option:`CONFIG_UPDATEHUB_CE` select between UpdateHub edition.  The ``y``
 value will select UpdateHub-CE otherwise ``n`` selects UpdateHub Cloud.
 
-Set :kconfig:`CONFIG_UPDATEHUB_SERVER` with your local IP address that runs the
+Set :kconfig:option:`CONFIG_UPDATEHUB_SERVER` with your local IP address that runs the
 UpdateHub-CE server edition.  If your are using a service provider a DNS name
 is a valid option too.  This option is only valid when using UpdateHub-CE.
 
-Set :kconfig:`CONFIG_UPDATEHUB_POLL_INTERVAL` with the polling period of your
+Set :kconfig:option:`CONFIG_UPDATEHUB_POLL_INTERVAL` with the polling period of your
 preference, remembering that the limit is between 0 and 43200 minutes
 (30 days).  The default value is 1440 minutes (24h).
 
-Set :kconfig:`CONFIG_UPDATEHUB_PRODUCT_UID` with your product ID.  When using
+Set :kconfig:option:`CONFIG_UPDATEHUB_PRODUCT_UID` with your product ID.  When using
 UpdateHub-CE the valid is available at ``overlay-prj.conf.example`` file.
 
 
@@ -174,7 +175,7 @@ The ethernet depends only from base configuration.
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: [ frdm_k64f | nucleo_f767zi ]
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG=overlay-prj.conf
+    :gen-args: -DEXTRA_CONF_FILE=overlay-prj.conf
     :goals: build
     :compact:
 
@@ -189,7 +190,7 @@ for details.
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: [ frdm_k64f | nrf52840dk_nrf52840 | nucleo_f767zi ]
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG="overlay-wifi.conf;overlay-prj.conf"
+    :gen-args: -DEXTRA_CONF_FILE="overlay-wifi.conf;overlay-prj.conf"
     :shield: esp_8266_arduino
     :goals: build
     :compact:
@@ -203,13 +204,13 @@ Step 4.3: Build for Modem
 
 Modem needs add ``overlay-modem.conf``.  Now, a DTC overlay file is used to
 configure the glue between the modem and an arduino headers.  The modem config
-uses PPP over GSM modem, see :ref:`gsm-modem-sample`.
+uses PPP over GSM modem, see :zephyr:code-sample:`gsm-modem` sample application.
 
 .. zephyr-app-commands::
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: [ frdm_k64f | nrf52840dk_nrf52840 | nucleo_f767zi ]
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG="overlay-modem.conf;overlay-prj.conf" \
+    :gen-args: -DEXTRA_CONF_FILE="overlay-modem.conf;overlay-prj.conf" \
       -DDTC_OVERLAY_FILE=arduino.overlay
     :goals: build
     :compact:
@@ -220,7 +221,7 @@ Step 4.4: Build for IEEE 802.15.4 [experimental]
 For IEEE 802.15.4 needs add ``overlay-802154.conf``.  This requires two nodes:
 one will be the host and the second one will be the device under test.  The
 validation needs a Linux kernel >= 4.9 with all 6loWPAN support.  The start
-point is try reproduce the Zephyr :ref:`wpanusb-sample`. It is out of scope
+point is try reproduce the Zephyr :zephyr:code-sample:`wpan-usb`. It is out of scope
 at this moment provide support since it is experimental.  The gateway was
 tested with both native linux driver and ``atusb`` and with ``wpanusb`` sample.
 
@@ -228,7 +229,7 @@ tested with both native linux driver and ``atusb`` and with ``wpanusb`` sample.
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: nrf52840dk_nrf52840
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG="overlay-802154.conf;overlay-prj.conf"
+    :gen-args: -DEXTRA_CONF_FILE="overlay-802154.conf;overlay-prj.conf"
     :goals: build
     :compact:
 
@@ -236,7 +237,7 @@ tested with both native linux driver and ``atusb`` and with ``wpanusb`` sample.
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: [ frdm_k64f | nucleo_f767zi ]
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG="overlay-802154.conf;overlay-prj.conf"
+    :gen-args: -DEXTRA_CONF_FILE="overlay-802154.conf;overlay-prj.conf"
     :shield: atmel_rf2xx_arduino
     :goals: build
     :compact:
@@ -256,14 +257,14 @@ tested with native linux driver and an USB dongle.
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: nrf52840dk_nrf52840
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG="overlay-ipsp.conf;overlay-prj.conf"
+    :gen-args: -DEXTRA_CONF_FILE="overlay-ipsp.conf;overlay-prj.conf"
     :goals: build
     :compact:
 
 Step 4.6: Build for OpenThread Network [experimental]
 -----------------------------------------------------
 
-The OpenThread requries the ``overlay-ot.conf``.  It requires two nodes:
+The OpenThread requires the ``overlay-ot.conf``.  It requires two nodes:
 one will be the host NCP and the second one will be the device under test.  The
 validation needs a Linux kernel >= 4.9 with optional NAT-64 support.  The
 start point is try reproduce the `OpenThread Router`_. It is
@@ -274,7 +275,7 @@ gateway was tested using two boards with OpenThread 1.1.1 on NCP mode.
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
     :board: nrf52840dk_nrf52840
     :build-dir: app
-    :gen-args: -DOVERLAY_CONFIG="overlay-ot.conf;overlay-prj.conf"
+    :gen-args: -DEXTRA_CONF_FILE="overlay-ot.conf;overlay-prj.conf"
     :goals: build
     :compact:
 
@@ -406,7 +407,7 @@ following command:
 If everything is alright, it will print on the screen ``No update available``.
 
 For ``Polling`` mode, the system will automatically register your device after
-:kconfig:`CONFIG_UPDATEHUB_POLL_INTERVAL` minutes.  The ``updatehub run`` can
+:kconfig:option:`CONFIG_UPDATEHUB_POLL_INTERVAL` minutes.  The ``updatehub run`` can
 be used to speed-up.
 
 .. note::

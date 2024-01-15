@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-#include <drivers/misc/ft8xx/ft8xx.h>
-#include <drivers/misc/ft8xx/ft8xx_copro.h>
-#include <drivers/misc/ft8xx/ft8xx_dl.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_copro.h>
+#include <zephyr/drivers/misc/ft8xx/ft8xx_dl.h>
 
 /**
  * @file Display a counter using FT800.
@@ -28,7 +28,7 @@ static void touch_irq(void)
 	process_touch = true;
 }
 
-void main(void)
+int main(void)
 {
 	int cnt;
 	int val;
@@ -93,4 +93,5 @@ void main(void)
 		/* Wait a while */
 		k_msleep(SLEEPTIME);
 	}
+	return 0;
 }

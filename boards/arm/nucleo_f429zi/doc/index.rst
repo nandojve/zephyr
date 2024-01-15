@@ -31,10 +31,8 @@ some highlights of the Nucleo F429ZI board:
 - Three user LEDs
 - Two push-buttons: USER and RESET
 
-.. image:: img/nucleo_f429zi.png
-   :width: 720px
+.. image:: img/nucleo_f429zi.jpg
    :align: center
-   :height: 720px
    :alt: Nucleo F429ZI
 
 More information about the board can be found at the `Nucleo F429ZI website`_.
@@ -111,6 +109,8 @@ The Zephyr nucleo_f429zi board configuration supports the following hardware fea
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | Direct Memory Access                |
 +-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
++-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
 
@@ -126,25 +126,17 @@ input/output, pull-up, etc.
 
 Available pins:
 ---------------
-.. image:: img/nucleo_f429zi_cn8.png
-   :width: 720px
+.. image:: img/nucleo_f429zi_cn8.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F429ZI ZIO connectors (left)
-.. image:: img/nucleo_f429zi_cn7.png
-   :width: 720px
+.. image:: img/nucleo_f429zi_cn7.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F429ZI ZIO connectors (right)
-.. image:: img/nucleo_f429zi_cn11.png
-   :width: 720px
+.. image:: img/nucleo_f429zi_cn11.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F429ZI Morpho connectors (left)
-.. image:: img/nucleo_f429zi_cn12.png
-   :width: 720px
+.. image:: img/nucleo_f429zi_cn12.jpg
    :align: center
-   :height: 540px
    :alt: Nucleo F429ZI Morpho connectors (right)
 
 For mode details please refer to `STM32 Nucleo-144 board User Manual`_.
@@ -207,19 +199,19 @@ A specific application can adjust each partition size based on its needs.
 
 
 .. _Nucleo F429ZI website:
-   http://www.st.com/en/evaluation-tools/nucleo-f429zi.html
+   https://www.st.com/en/evaluation-tools/nucleo-f429zi.html
 
 .. _STM32 Nucleo-144 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00244518.pdf
+   https://www.st.com/resource/en/user_manual/dm00244518.pdf
 
 .. _STM32F429ZI on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f429zi.html
+   https://www.st.com/en/microcontrollers/stm32f429zi.html
 
 .. _STM32F429 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00031020.pdf
+   https://www.st.com/resource/en/reference_manual/dm00031020.pdf
 
 .. _STM32F429 datasheet:
-   http://www.st.com/resource/en/datasheet/DM00071990.pdf
+   https://www.st.com/resource/en/datasheet/DM00071990.pdf
 
 .. _MCUBoot:
    https://github.com/JuulLabs-OSS/mcuboot/blob/master/README.md

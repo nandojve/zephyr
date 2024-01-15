@@ -7,11 +7,11 @@
 #define LOG_MODULE_NAME net_lwm2m_obj_location
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdint.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -42,7 +42,7 @@ static double longitude;
 static double altitude;
 static double radius;
 static double speed;
-static int32_t timestamp;
+static time_t timestamp;
 
 static struct lwm2m_engine_obj location;
 static struct lwm2m_engine_obj_field fields[] = {
@@ -93,7 +93,7 @@ static struct lwm2m_engine_obj_inst *location_create(uint16_t obj_inst_id)
 	return &inst;
 }
 
-static int ipso_location_init(const struct device *dev)
+static int ipso_location_init(void)
 {
 	int ret;
 	struct lwm2m_engine_obj_inst *obj_inst = NULL;

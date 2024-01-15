@@ -11,3 +11,6 @@ flash: 192
 supported:
   - counter
   - pwm
+  - netif:openthread
+  - gpio
+vendor: nordic

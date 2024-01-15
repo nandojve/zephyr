@@ -12,7 +12,6 @@ polymer batteries, charging status indicator and user LEDs, native USB
 connector, 20 I/O pins, and a small prototyping area.
 
 .. image:: img/adafruit_feather_m0_basic_proto.jpg
-     :width: 640px
      :align: center
      :alt: Adafruit Feather M0 Basic Proto
 
@@ -98,7 +97,7 @@ USB Device Port
 
 The SAMD21 MCU has a USB device port that can be used to communicate
 with a host PC.  See the :ref:`usb-samples` sample applications for
-more, such as the :ref:`usb_cdc-acm` sample which sets up a virtual
+more, such as the :zephyr:code-sample:`usb-cdc-acm` sample which sets up a virtual
 serial port that echos characters back to the host PC.
 
 Programming and Debugging
@@ -151,7 +150,7 @@ Flashing
       :goals: flash
       :compact:
 
-   You should see "Hello World! arm" in your terminal.
+   You should see "Hello World! adafruit_feather_m0_basic_proto" in your terminal.
 
 References
 **********

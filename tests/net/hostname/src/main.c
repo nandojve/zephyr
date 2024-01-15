@@ -8,7 +8,7 @@
 
 #define NET_LOG_LEVEL CONFIG_NET_HOSTNAME_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 #include <zephyr/types.h>
@@ -16,16 +16,16 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #include <stddef.h>
 #include <string.h>
 #include <errno.h>
-#include <random/rand32.h>
-#include <sys/printk.h>
-#include <linker/sections.h>
+#include <zephyr/random/random.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/linker/sections.h>
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <net/ethernet.h>
-#include <net/buf.h>
-#include <net/net_ip.h>
-#include <net/net_if.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
 
 #define NET_LOG_ENABLED 1
 #include "net_private.h"
@@ -54,18 +54,22 @@ static struct net_if *iface1;
 static bool test_started;
 static struct k_sem wait_data;
 
+#ifdef CONFIG_NET_MGMT_EVENT
+static struct k_sem wait_hostname;
+static struct net_mgmt_event_callback hostname_cb;
+#endif
+
 #define WAIT_TIME 250
+
+#define EVENT_HANDLER_INIT_PRIO 55
+
+BUILD_ASSERT(EVENT_HANDLER_INIT_PRIO < CONFIG_NET_INIT_PRIO);
 
 struct net_if_test {
 	uint8_t idx;
 	uint8_t mac_addr[sizeof(struct net_eth_addr)];
 	struct net_linkaddr ll_addr;
 };
-
-static int net_iface_dev_init(const struct device *dev)
-{
-	return 0;
-}
 
 static uint8_t *net_iface_get_mac(const struct device *dev)
 {
@@ -95,6 +99,24 @@ static void net_iface_init(struct net_if *iface)
 			     NET_LINK_ETHERNET);
 }
 
+#ifdef CONFIG_NET_MGMT_EVENT
+static void hostname_changed(struct net_mgmt_event_callback *cb,
+			     uint32_t mgmt_event, struct net_if *iface)
+{
+	if (mgmt_event == NET_EVENT_HOSTNAME_CHANGED) {
+#ifdef CONFIG_NET_MGMT_EVENT_INFO
+		const struct net_event_l4_hostname *info = cb->info;
+
+		if (strncmp(net_hostname_get(), info->hostname, sizeof(info->hostname))) {
+			/** Invalid value - do not give the semaphore **/
+			return;
+		}
+#endif
+		k_sem_give(&wait_hostname);
+	}
+}
+#endif
+
 static int sender_iface(const struct device *dev, struct net_pkt *pkt)
 {
 	if (!pkt->buffer) {
@@ -120,7 +142,7 @@ static struct ethernet_api net_iface_api = {
 NET_DEVICE_INIT_INSTANCE(net_iface1_test,
 			 "iface1",
 			 iface1,
-			 net_iface_dev_init,
+			 NULL,
 			 NULL,
 			 &net_iface1_data,
 			 NULL,
@@ -216,7 +238,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	}
 }
 
-static void test_iface_setup(void)
+static void *test_iface_setup(void)
 {
 	struct net_if_mcast_addr *maddr;
 	struct net_if_addr *ifaddr;
@@ -252,7 +274,7 @@ static void test_iface_setup(void)
 		zassert_not_null(ifaddr, "ipv4 addr1");
 	}
 
-	/* For testing purposes we need to set the adddresses preferred */
+	/* For testing purposes we need to set the addresses preferred */
 	ifaddr->addr_state = NET_ADDR_PREFERRED;
 
 	ifaddr = net_if_ipv6_addr_add(iface1, &ll_addr,
@@ -277,6 +299,8 @@ static void test_iface_setup(void)
 	net_if_up(iface1);
 
 	test_started = true;
+
+	return NULL;
 }
 
 static int bytes_from_hostname_unique(uint8_t *buf, int buf_len, const char *src)
@@ -313,7 +337,20 @@ static int bytes_from_hostname_unique(uint8_t *buf, int buf_len, const char *src
 	return 0;
 }
 
-static void test_hostname_get(void)
+#ifdef CONFIG_NET_MGMT_EVENT
+static int init_event_handler(void)
+{
+	k_sem_init(&wait_hostname, 0, K_SEM_MAX_LIMIT);
+
+	net_mgmt_init_event_callback(&hostname_cb, hostname_changed,
+				NET_EVENT_HOSTNAME_CHANGED);
+	net_mgmt_add_event_callback(&hostname_cb);
+
+	return 0;
+}
+#endif
+
+ZTEST(net_hostname, test_hostname_get)
 {
 	const char *hostname;
 	const char *config_hostname = CONFIG_NET_HOSTNAME;
@@ -330,13 +367,12 @@ static void test_hostname_get(void)
 		ret = bytes_from_hostname_unique(mac, sizeof(mac),
 				 hostname + sizeof(CONFIG_NET_HOSTNAME) - 1);
 		zassert_equal(ret, 0, "");
-
 		zassert_mem_equal(mac, net_if_get_link_addr(iface1)->addr,
 				  net_if_get_link_addr(iface1)->len, "");
 	}
 }
 
-static void test_hostname_set(void)
+ZTEST(net_hostname, test_hostname_set)
 {
 	if (IS_ENABLED(CONFIG_NET_HOSTNAME_UNIQUE)) {
 		int ret;
@@ -347,13 +383,24 @@ static void test_hostname_set(void)
 	}
 }
 
-void test_main(void)
+#ifdef CONFIG_NET_MGMT_EVENT
+ZTEST(net_hostname, test_hostname_event)
 {
-	ztest_test_suite(net_hostname_test,
-			 ztest_unit_test(test_iface_setup),
-			 ztest_unit_test(test_hostname_get),
-			 ztest_unit_test(test_hostname_set)
-		);
+	if (IS_ENABLED(CONFIG_NET_MGMT_EVENT)) {
+		int ret;
 
-	ztest_run_test_suite(net_hostname_test);
+		ret = k_sem_take(&wait_hostname, K_NO_WAIT);
+		zassert_equal(ret, 0, "");
+
+		if (IS_ENABLED(CONFIG_NET_HOSTNAME_UNIQUE)) {
+			ret = k_sem_take(&wait_hostname, K_NO_WAIT);
+			zassert_equal(ret, 0, "");
+		}
+	}
 }
+
+/** Make sure that hostname related events are caught from the beginning  **/
+SYS_INIT(init_event_handler, POST_KERNEL, EVENT_HANDLER_INIT_PRIO);
+#endif
+
+ZTEST_SUITE(net_hostname, NULL, test_iface_setup, NULL, NULL, NULL);

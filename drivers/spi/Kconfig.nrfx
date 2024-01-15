@@ -5,13 +5,56 @@ menuconfig SPI_NRFX
 	bool "nRF SPI nrfx drivers"
 	default y
 	depends on SOC_FAMILY_NRF
+	depends on MULTITHREADING
+	select PINCTRL
 	help
 	  Enable support for nrfx SPI drivers for nRF MCU series.
 
 if SPI_NRFX
 
+config SPI_NRFX_SPI
+	def_bool y
+	depends on DT_HAS_NORDIC_NRF_SPI_ENABLED
+	select NRFX_SPI0 if HAS_HW_NRF_SPI0
+	select NRFX_SPI1 if HAS_HW_NRF_SPI1
+	select NRFX_SPI2 if HAS_HW_NRF_SPI2
+
+config SPI_NRFX_SPIM
+	def_bool y
+	depends on DT_HAS_NORDIC_NRF_SPIM_ENABLED
+	select NRFX_SPIM0 if HAS_HW_NRF_SPIM0
+	select NRFX_SPIM1 if HAS_HW_NRF_SPIM1
+	select NRFX_SPIM2 if HAS_HW_NRF_SPIM2
+	select NRFX_SPIM3 if HAS_HW_NRF_SPIM3
+	select NRFX_SPIM4 if HAS_HW_NRF_SPIM4
+	select NRFX_SPIM00 if HAS_HW_NRF_SPIM00
+	select NRFX_SPIM20 if HAS_HW_NRF_SPIM20
+	select NRFX_SPIM21 if HAS_HW_NRF_SPIM21
+	select NRFX_SPIM22 if HAS_HW_NRF_SPIM22
+	select NRFX_SPIM30 if HAS_HW_NRF_SPIM30
+	select NRFX_SPIM120 if HAS_HW_NRF_SPIM120
+	select NRFX_SPIM121 if HAS_HW_NRF_SPIM121
+	select NRFX_SPIM130 if HAS_HW_NRF_SPIM130
+	select NRFX_SPIM131 if HAS_HW_NRF_SPIM131
+	select NRFX_SPIM132 if HAS_HW_NRF_SPIM132
+	select NRFX_SPIM133 if HAS_HW_NRF_SPIM133
+	select NRFX_SPIM134 if HAS_HW_NRF_SPIM134
+	select NRFX_SPIM135 if HAS_HW_NRF_SPIM135
+	select NRFX_SPIM136 if HAS_HW_NRF_SPIM136
+	select NRFX_SPIM137 if HAS_HW_NRF_SPIM137
+
+config SPI_NRFX_SPIS
+	def_bool y
+	depends on DT_HAS_NORDIC_NRF_SPIS_ENABLED
+	select SPI_SLAVE
+	select NRFX_SPIS0 if HAS_HW_NRF_SPIS0
+	select NRFX_SPIS1 if HAS_HW_NRF_SPIS1
+	select NRFX_SPIS2 if HAS_HW_NRF_SPIS2
+	select NRFX_SPIS3 if HAS_HW_NRF_SPIS3
+
 config SOC_NRF52832_ALLOW_SPIM_DESPITE_PAN_58
 	depends on SOC_NRF52832
+	select NRFX_PPI
 	bool "Allow enabling the SPIM driver despite PAN 58"
 	help
 	  Allow enabling the nRF SPI Master with EasyDMA, despite
@@ -19,188 +62,41 @@ config SOC_NRF52832_ALLOW_SPIM_DESPITE_PAN_58
 	  clocked out when RXD.MAXCNT == 1 and TXD.MAXCNT <= 1).
 	  Without this override, the SPI Master is only available
 	  without EasyDMA. Note that the 'SPIM' and 'SPIS' drivers
-	  use EasyDMA, while the 'SPI' driver does not. Use this
-	  option ONLY if you are certain that transactions with
-	  RXD.MAXCNT == 1 and TXD.MAXCNT <= 1 will NOT be executed.
-
-# Workaround for not being able to have commas in macro arguments
-DT_COMPAT_NORDIC_NRF_SPI  := nordic,nrf-spi
-DT_COMPAT_NORDIC_NRF_SPIM := nordic,nrf-spim
-DT_COMPAT_NORDIC_NRF_SPIS := nordic,nrf-spis
-
-config SPI_0_NRF_SPI
-	def_bool $(dt_nodelabel_has_compat,spi0,$(DT_COMPAT_NORDIC_NRF_SPI))
-	select NRFX_SPI0
-	help
-	  Enable nRF SPI Master without EasyDMA on port 0.
-
-config SPI_0_NRF_SPIM
-	def_bool $(dt_nodelabel_has_compat,spi0,$(DT_COMPAT_NORDIC_NRF_SPIM))
-	# This driver is not available for nRF52832 because of Product Anomaly 58
-	# (SPIM: An additional byte is clocked out when RXD.MAXCNT == 1 and TXD.MAXCNT <= 1)
-	# Allow the 'EasyDMA' driver only if this automatic safety-disable is overridden
-	depends on (!SOC_NRF52832 || SOC_NRF52832_ALLOW_SPIM_DESPITE_PAN_58)
-	select NRFX_SPIM0
-	help
-	  Enable nRF SPI Master with EasyDMA on port 0.
-
-config SPI_0_NRF_SPIS
-	def_bool $(dt_nodelabel_has_compat,spi0,$(DT_COMPAT_NORDIC_NRF_SPIS))
-	depends on SPI_SLAVE
-	select NRFX_SPIS0
-	help
-	  Enable nRF SPI Slave with EasyDMA on port 0.
-	  Due to hardware limitations the implementation supports only simple
-	  buffers (consisting of one part) located in RAM.
-
-config SPI_0_NRF_ORC
-	hex "SPI Port 0 over-read character"
-	depends on SPI_0_NRF_SPI || SPI_0_NRF_SPIM || SPI_0_NRF_SPIS
-	range 0x00 0xff
-	default 0xff
-	help
-	  Over-read character. Character clocked out after an over-read
-	  of the transmit buffer.
-
-config SPI_1_NRF_SPI
-	def_bool $(dt_nodelabel_has_compat,spi1,$(DT_COMPAT_NORDIC_NRF_SPI))
-	select NRFX_SPI1
-	help
-	  Enable nRF SPI Master without EasyDMA on port 1.
-
-config SPI_1_NRF_SPIM
-	def_bool $(dt_nodelabel_has_compat,spi1,$(DT_COMPAT_NORDIC_NRF_SPIM))
-	# This driver is not available for nRF52832 because of Product Anomaly 58
-	# (SPIM: An additional byte is clocked out when RXD.MAXCNT == 1 and TXD.MAXCNT <= 1)
-	# Allow the 'EasyDMA' driver only if this automatic safety-disable is overridden
-	depends on (!SOC_NRF52832 || SOC_NRF52832_ALLOW_SPIM_DESPITE_PAN_58)
-	select NRFX_SPIM1
-	help
-	  Enable nRF SPI Master with EasyDMA on port 1.
-
-config SPI_1_NRF_SPIS
-	def_bool $(dt_nodelabel_has_compat,spi1,$(DT_COMPAT_NORDIC_NRF_SPIS))
-	depends on SPI_SLAVE
-	select NRFX_SPIS1
-	help
-	  Enable nRF SPI Slave with EasyDMA on port 1.
-	  Due to hardware limitations the implementation supports only simple
-	  buffers (consisting of one part) located in RAM.
-
-config SPI_1_NRF_ORC
-	hex "SPI Port 1 over-read character"
-	depends on SPI_1_NRF_SPI || SPI_1_NRF_SPIM || SPI_1_NRF_SPIS
-	range 0x00 0xff
-	default 0xff
-	help
-	  Over-read character. Character clocked out after an over-read
-	  of the transmit buffer.
-
-config SPI_2_NRF_SPI
-	def_bool $(dt_nodelabel_has_compat,spi2,$(DT_COMPAT_NORDIC_NRF_SPI))
-	select NRFX_SPI2
-	help
-	  Enable nRF SPI Master without EasyDMA on port 2.
-
-config SPI_2_NRF_SPIM
-	def_bool $(dt_nodelabel_has_compat,spi2,$(DT_COMPAT_NORDIC_NRF_SPIM))
-	# This driver is not available for nRF52832 because of Product Anomaly 58
-	# (SPIM: An additional byte is clocked out when RXD.MAXCNT == 1 and TXD.MAXCNT <= 1)
-	# Allow the 'EasyDMA' driver only if this automatic safety-disable is overridden
-	depends on (!SOC_NRF52832 || SOC_NRF52832_ALLOW_SPIM_DESPITE_PAN_58)
-	select NRFX_SPIM2
-	help
-	  Enable nRF SPI Master with EasyDMA on port 2.
-
-config SPI_2_NRF_SPIS
-	def_bool $(dt_nodelabel_has_compat,spi2,$(DT_COMPAT_NORDIC_NRF_SPIS))
-	depends on SPI_SLAVE
-	select NRFX_SPIS2
-	help
-	  Enable nRF SPI Slave with EasyDMA on port 2.
-	  Due to hardware limitations the implementation supports only simple
-	  buffers (consisting of one part) located in RAM.
-
-config SPI_2_NRF_ORC
-	hex "SPI Port 2 over-read character"
-	depends on SPI_2_NRF_SPI || SPI_2_NRF_SPIM || SPI_2_NRF_SPIS
-	range 0x00 0xff
-	default 0xff
-	help
-	  Over-read character. Character clocked out after an over-read
-	  of the transmit buffer.
-
-config SPI_3_NRF_SPIM
-	def_bool $(dt_nodelabel_has_compat,spi3,$(DT_COMPAT_NORDIC_NRF_SPIM))
-	select NRFX_SPIM3
-	help
-	  Enable nRF SPI Master with EasyDMA on port 3.
-
-config SPI_3_NRF_SPIS
-	def_bool $(dt_nodelabel_has_compat,spi3,$(DT_COMPAT_NORDIC_NRF_SPIS))
-	depends on SPI_SLAVE
-	select NRFX_SPIS3
-	help
-	  Enable nRF SPI Slave with EasyDMA on port 3.
-	  Due to hardware limitations the implementation supports only simple
-	  buffers (consisting of one part) located in RAM.
-
-config SPI_3_NRF_ORC
-	hex "SPI Port 3 over-read character"
-	depends on SPI_3_NRF_SPIM || SPI_3_NRF_SPIS
-	range 0x00 0xff
-	default 0xff
-	help
-	  Over-read character. Character clocked out after an over-read
-	  of the transmit buffer.
-
-config SPI_3_NRF_RX_DELAY
-	int "SPIM3 MISO sampling delay"
-	depends on SPI_3_NRF_SPIM && (SOC_NRF52833 || SOC_NRF52840)
-	range 0 7
-	default 2
-	help
-	  Number of 64 MHz clock cycles (15.625 ns) delay from the sampling
-	  edge of SCK (leading or trailing, depending on the CPHA setting used)
-	  until the input serial data on MISO is actually sampled.
-
-config SPI_4_NRF_SPIM
-	def_bool $(dt_nodelabel_has_compat,spi4,$(DT_COMPAT_NORDIC_NRF_SPIM))
-	select NRFX_SPIM4
-	help
-	  Enable nRF SPI Master with EasyDMA on port 4.
-
-config SPI_4_NRF_ORC
-	hex "SPI Port 4 over-read character"
-	depends on SPI_4_NRF_SPIM
-	range 0x00 0xff
-	default 0xff
-	help
-	  Over-read character. Character clocked out after an over-read
-	  of the transmit buffer.
-
-config SPI_4_NRF_RX_DELAY
-	int "SPIM4 MISO sampling delay"
-	depends on SPI_4_NRF_SPIM && SOC_NRF5340_CPUAPP
-	range 0 7
-	default 2
-	help
-	  Number of 64 MHz clock cycles (15.625 ns) delay from the sampling
-	  edge of SCK (leading or trailing, depending on the CPHA setting used)
-	  until the input serial data on MISO is actually sampled.
+	  use EasyDMA, while the 'SPI' driver does not.
+	  When used in conjunction with nRF SPIM Devicetree property
+	  'anomaly-58-workaround' a workaround can be enabled per SPIM
+	  instance.  If you are certain that transactions with
+	  RXD.MAXCNT == 1 and TXD.MAXCNT <= 1 will NOT be executed
+	  then nRF52832 PPI and GPIOTE resources can be saved by not
+	  enabling 'anomaly-58-workaround' via the Devicetree.
 
 config SPI_NRFX_RAM_BUFFER_SIZE
 	int "Size of RAM buffers for SPIM peripherals"
 	default 8
-	depends on NRFX_SPIM
+	depends on SPI_NRFX_SPIM
 	help
-	  SPIM peripherals cannot transmit data directly from flash. Therefore,
-	  a buffer in RAM needs to be provided for each instance of SPI driver
-	  using SPIM peripheral, so that the driver can copy there a chunk of
-	  data from flash and transmit it.
-	  The size is specified in bytes. A size of 0 means that this feature
-	  should be disabled, and the application must then take care of not
-	  supplying buffers located in flash to the driver, otherwise such
-	  transfers will fail.
+	  Because of using EasyDMA, SPIM peripherals cannot use transmit and
+	  receive buffers from all memory locations. They are restricted to
+	  buffers located in certain RAM memories only. Therefore, each SPIM
+	  driver instance needs to use an intermediate local RAM buffer,
+	  to transfer data in chunks not exceeding the size of that buffer,
+	  and to copy those chunks between the local buffer and the one
+	  specified in the transfer request if the latter is not accessible
+	  by EasyDMA.
+
+	  This option specifies the size in bytes of such local RAM buffers
+	  for both TX and RX paths. A size of 0 means that this feature should
+	  be disabled and the driver user must take care of not making transfer
+	  requests with buffers not accessible by EasyDMA since such transfers
+	  will fail.
+
+config SPI_NRFX_WAKE_TIMEOUT_US
+	int "Maximum time to wait for SPI slave to wake up"
+	default 200
+	help
+	  Maximum amount of time (in microseconds) that SPI master should wait
+	  for SPI slave to wake up after the WAKE line is asserted. Used only
+	  by instances that have the WAKE line configured (see the wake-gpios
+	  devicetree property).
 
 endif # SPI_NRFX

@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018 Savoir-Faire Linux.
  * Copyright (c) 2020 Peter Bigot Consulting, LLC
+ * Copyright (c) 2023 Intercreate, Inc.
  *
  * This driver is heavily inspired from the spi_flash_w25qxxdv.c SPI NOR driver.
  *
@@ -10,11 +11,14 @@
 #define DT_DRV_COMPAT jedec_spi_nor
 
 #include <errno.h>
-#include <drivers/flash.h>
-#include <drivers/spi.h>
-#include <init.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/init.h>
 #include <string.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys_clock.h>
+#include <zephyr/pm/device.h>
 
 #include "spi_nor.h"
 #include "jesd216.h"
@@ -31,7 +35,7 @@ LOG_MODULE_REGISTER(spi_nor, CONFIG_FLASH_LOG_LEVEL);
  * * Some devices support a Deep Power-Down mode which reduces current
  *   to as little as 0.1% of standby.
  *
- * The power reduction from DPD is sufficent to warrant allowing its
+ * The power reduction from DPD is sufficient to warrant allowing its
  * use even in cases where Zephyr's device power management is not
  * available.  This is selected through the SPI_NOR_IDLE_IN_DPD
  * Kconfig option.
@@ -44,30 +48,38 @@ LOG_MODULE_REGISTER(spi_nor, CONFIG_FLASH_LOG_LEVEL);
 
 #define SPI_NOR_MAX_ADDR_WIDTH 4
 
-#ifndef NSEC_PER_MSEC
-#define NSEC_PER_MSEC (NSEC_PER_USEC * USEC_PER_MSEC)
-#endif
-
 #if DT_INST_NODE_HAS_PROP(0, t_enter_dpd)
-#define T_DP_MS ceiling_fraction(DT_INST_PROP(0, t_enter_dpd), NSEC_PER_MSEC)
+#define T_DP_MS DIV_ROUND_UP(DT_INST_PROP(0, t_enter_dpd), NSEC_PER_MSEC)
 #else /* T_ENTER_DPD */
 #define T_DP_MS 0
 #endif /* T_ENTER_DPD */
 #if DT_INST_NODE_HAS_PROP(0, t_exit_dpd)
-#define T_RES1_MS ceiling_fraction(DT_INST_PROP(0, t_exit_dpd), NSEC_PER_MSEC)
+#define T_RES1_MS DIV_ROUND_UP(DT_INST_PROP(0, t_exit_dpd), NSEC_PER_MSEC)
 #endif /* T_EXIT_DPD */
 #if DT_INST_NODE_HAS_PROP(0, dpd_wakeup_sequence)
-#define T_DPDD_MS ceiling_fraction(DT_PROP_BY_IDX(DT_DRV_INST(0), dpd_wakeup_sequence, 0), NSEC_PER_MSEC)
-#define T_CRDP_MS ceiling_fraction(DT_PROP_BY_IDX(DT_DRV_INST(0), dpd_wakeup_sequence, 1), NSEC_PER_MSEC)
-#define T_RDP_MS ceiling_fraction(DT_PROP_BY_IDX(DT_DRV_INST(0), dpd_wakeup_sequence, 2), NSEC_PER_MSEC)
+#define T_DPDD_MS DIV_ROUND_UP(DT_INST_PROP_BY_IDX(0, dpd_wakeup_sequence, 0), NSEC_PER_MSEC)
+#define T_CRDP_MS DIV_ROUND_UP(DT_INST_PROP_BY_IDX(0, dpd_wakeup_sequence, 1), NSEC_PER_MSEC)
+#define T_RDP_MS DIV_ROUND_UP(DT_INST_PROP_BY_IDX(0, dpd_wakeup_sequence, 2), NSEC_PER_MSEC)
 #else /* DPD_WAKEUP_SEQUENCE */
 #define T_DPDD_MS 0
 #endif /* DPD_WAKEUP_SEQUENCE */
+
+#define _INST_HAS_WP_OR(inst) DT_INST_NODE_HAS_PROP(inst, wp_gpios) ||
+#define ANY_INST_HAS_WP_GPIOS DT_INST_FOREACH_STATUS_OKAY(_INST_HAS_WP_OR) 0
+
+#define _INST_HAS_HOLD_OR(inst) DT_INST_NODE_HAS_PROP(inst, hold_gpios) ||
+#define ANY_INST_HAS_HOLD_GPIOS DT_INST_FOREACH_STATUS_OKAY(_INST_HAS_HOLD_OR) 0
+
+#define DEV_CFG(_dev_) ((const struct spi_nor_config * const) (_dev_)->config)
 
 /* Build-time data associated with the device. */
 struct spi_nor_config {
 	/* Devicetree SPI configuration */
 	struct spi_dt_spec spi;
+
+#if DT_INST_NODE_HAS_PROP(0, reset_gpios)
+	const struct gpio_dt_spec reset;
+#endif
 
 	/* Runtime SFDP stores no static configuration. */
 
@@ -104,6 +116,15 @@ struct spi_nor_config {
 	 * This information cannot be derived from SFDP.
 	 */
 	uint8_t has_lock;
+
+#if ANY_INST_HAS_WP_GPIOS
+	/* The write-protect GPIO (wp-gpios) */
+	const struct gpio_dt_spec *wp;
+#endif
+#if ANY_INST_HAS_HOLD_GPIOS
+	/* The hold GPIO (hold-gpios) */
+	const struct gpio_dt_spec *hold;
+#endif
 };
 
 /**
@@ -205,7 +226,7 @@ static inline uint32_t dev_flash_size(const struct device *dev)
 static inline uint16_t dev_page_size(const struct device *dev)
 {
 #ifdef CONFIG_SPI_NOR_SFDP_MINIMAL
-	return 256;
+	return DT_INST_PROP_OR(0, page_size, 256);
 #else /* CONFIG_SPI_NOR_SFDP_MINIMAL */
 	const struct spi_nor_data *data = dev->data;
 
@@ -543,6 +564,125 @@ static int spi_nor_wrsr(const struct device *dev,
 	return ret;
 }
 
+#if DT_INST_NODE_HAS_PROP(0, mxicy_mx25r_power_mode)
+
+/**
+ * @brief Read the configuration register.
+ *
+ * @note The device must be externally acquired before invoking this
+ * function.
+ *
+ * @param dev Device struct
+ *
+ * @return the non-negative value of the configuration register, or an error code.
+ */
+static int mxicy_rdcr(const struct device *dev)
+{
+	uint16_t cr;
+	enum { CMD_RDCR = 0x15 };
+	int ret = spi_nor_cmd_read(dev, CMD_RDCR, &cr, sizeof(cr));
+
+	if (ret < 0) {
+		return ret;
+	}
+
+	return cr;
+}
+
+/**
+ * @brief Write the configuration register.
+ *
+ * @note The device must be externally acquired before invoking this
+ * function.
+ *
+ * @param dev Device struct
+ * @param cr  The new value of the configuration register
+ *
+ * @return 0 on success or a negative error code.
+ */
+static int mxicy_wrcr(const struct device *dev,
+			uint16_t cr)
+{
+	/* The configuration register bytes on the Macronix MX25R devices are
+	 * written using the Write Status Register command where the configuration
+	 * register bytes are written as two extra bytes after the status register.
+	 * First read out the current status register to preserve the value.
+	 */
+	int sr = spi_nor_rdsr(dev);
+
+	if (sr < 0) {
+		LOG_ERR("Read status register failed: %d", sr);
+		return sr;
+	}
+
+	int ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_WREN);
+
+	if (ret == 0) {
+		uint8_t data[] = {
+			sr,
+			cr & 0xFF,	/* Configuration register 1 */
+			cr >> 8		/* Configuration register 2 */
+		};
+
+		ret = spi_nor_access(dev, SPI_NOR_CMD_WRSR, NOR_ACCESS_WRITE, 0, data,
+			sizeof(data));
+		spi_nor_wait_until_ready(dev);
+	}
+
+	return ret;
+}
+
+static int mxicy_configure(const struct device *dev, const uint8_t *jedec_id)
+{
+	/* Low-power/high perf mode is second bit in configuration register 2 */
+	enum { LH_SWITCH_BIT = 9 };
+	const uint8_t JEDEC_MACRONIX_ID = 0xc2;
+	const uint8_t JEDEC_MX25R_TYPE_ID = 0x28;
+	int current_cr, new_cr, ret;
+	/* lh_switch enum index:
+	 * 0: Ultra low power
+	 * 1: High performance mode
+	 */
+	const bool use_high_perf = DT_INST_ENUM_IDX(0, mxicy_mx25r_power_mode);
+
+	/* Only supported on Macronix MX25R Ultra Low Power series. */
+	if (jedec_id[0] != JEDEC_MACRONIX_ID || jedec_id[1] != JEDEC_MX25R_TYPE_ID) {
+		LOG_WRN("L/H switch not supported for device id: %02x %02x %02x", jedec_id[0],
+			jedec_id[1], jedec_id[2]);
+		/* Do not return an error here because the flash still functions */
+		return 0;
+	}
+
+	acquire_device(dev);
+
+	/* Read current configuration register */
+
+	ret = mxicy_rdcr(dev);
+	if (ret < 0) {
+		return ret;
+	}
+	current_cr = ret;
+
+	LOG_DBG("Use high performance mode? %d", use_high_perf);
+	new_cr = current_cr;
+	WRITE_BIT(new_cr, LH_SWITCH_BIT, use_high_perf);
+	if (new_cr != current_cr) {
+		ret = mxicy_wrcr(dev, new_cr);
+	} else {
+		ret = 0;
+	}
+
+	if (ret < 0) {
+		LOG_ERR("Enable high performace mode failed: %d", ret);
+	}
+
+	release_device(dev);
+
+	return ret;
+}
+
+#endif /* DT_INST_NODE_HAS_PROP(0, mxicy_mx25r_power_mode) */
+
 static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 			size_t size)
 {
@@ -561,6 +701,34 @@ static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 	release_device(dev);
 	return ret;
 }
+
+#if defined(CONFIG_FLASH_EX_OP_ENABLED)
+static int flash_spi_nor_ex_op(const struct device *dev, uint16_t code,
+			const uintptr_t in, void *out)
+{
+	int ret;
+
+	ARG_UNUSED(in);
+	ARG_UNUSED(out);
+
+	acquire_device(dev);
+
+	switch (code) {
+	case FLASH_EX_OP_RESET:
+		ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_RESET_EN);
+		if (ret == 0) {
+			ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_RESET_MEM);
+		}
+		break;
+	default:
+		ret = -ENOTSUP;
+		break;
+	}
+
+	release_device(dev);
+	return ret;
+}
+#endif
 
 static int spi_nor_write(const struct device *dev, off_t addr,
 			 const void *src,
@@ -624,7 +792,7 @@ static int spi_nor_erase(const struct device *dev, off_t addr, size_t size)
 
 	/* erase area must be subregion of device */
 	if ((addr < 0) || ((size + addr) > flash_size)) {
-		return -ENODEV;
+		return -EINVAL;
 	}
 
 	/* address must be sector-aligned */
@@ -658,7 +826,7 @@ static int spi_nor_erase(const struct device *dev, off_t addr, size_t size)
 
 				if ((etp->exp != 0)
 				    && SPI_NOR_IS_ALIGNED(addr, etp->exp)
-				    && SPI_NOR_IS_ALIGNED(size, etp->exp)
+				    && (size >= BIT(etp->exp))
 				    && ((bet == NULL)
 					|| (etp->exp > bet->exp))) {
 					bet = etp;
@@ -707,6 +875,12 @@ static int spi_nor_write_protection_set(const struct device *dev,
 {
 	int ret;
 
+#if ANY_INST_HAS_WP_GPIOS
+	if (DEV_CFG(dev)->wp && write_protect == false) {
+		gpio_pin_set_dt(DEV_CFG(dev)->wp, 0);
+	}
+#endif
+
 	ret = spi_nor_cmd_write(dev, (write_protect) ?
 	      SPI_NOR_CMD_WRDI : SPI_NOR_CMD_WREN);
 
@@ -716,10 +890,16 @@ static int spi_nor_write_protection_set(const struct device *dev,
 		ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_ULBPR);
 	}
 
+#if ANY_INST_HAS_WP_GPIOS
+	if (DEV_CFG(dev)->wp && write_protect == true) {
+		gpio_pin_set_dt(DEV_CFG(dev)->wp, 1);
+	}
+#endif
+
 	return ret;
 }
 
-#if defined(CONFIG_FLASH_JESD216_API)
+#if defined(CONFIG_FLASH_JESD216_API) || defined(CONFIG_SPI_NOR_SFDP_RUNTIME)
 
 static int spi_nor_sfdp_read(const struct device *dev, off_t addr,
 			     void *dest, size_t size)
@@ -733,7 +913,7 @@ static int spi_nor_sfdp_read(const struct device *dev, off_t addr,
 	return ret;
 }
 
-#endif /* CONFIG_FLASH_JESD216_API */
+#endif /* CONFIG_FLASH_JESD216_API || CONFIG_SPI_NOR_SFDP_RUNTIME */
 
 static int spi_nor_read_jedec_id(const struct device *dev,
 				 uint8_t *id)
@@ -877,10 +1057,10 @@ static int spi_nor_process_sfdp(const struct device *dev)
 		/* We only process BFP so use one parameter block */
 		uint8_t raw[JESD216_SFDP_SIZE(decl_nph)];
 		struct jesd216_sfdp_header sfdp;
-	} u;
-	const struct jesd216_sfdp_header *hp = &u.sfdp;
+	} u_header;
+	const struct jesd216_sfdp_header *hp = &u_header.sfdp;
 
-	rc = read_sfdp(dev, 0, u.raw, sizeof(u.raw));
+	rc = spi_nor_sfdp_read(dev, 0, u_header.raw, sizeof(u_header.raw));
 	if (rc != 0) {
 		LOG_ERR("SFDP read failed: %d", rc);
 		return rc;
@@ -910,10 +1090,11 @@ static int spi_nor_process_sfdp(const struct device *dev)
 			union {
 				uint32_t dw[MIN(php->len_dw, 20)];
 				struct jesd216_bfp bfp;
-			} u;
-			const struct jesd216_bfp *bfp = &u.bfp;
+			} u_param;
+			const struct jesd216_bfp *bfp = &u_param.bfp;
 
-			rc = read_sfdp(dev, jesd216_param_addr(php), u.dw, sizeof(u.dw));
+			rc = spi_nor_sfdp_read(dev, jesd216_param_addr(php),
+				u_param.dw, sizeof(u_param.dw));
 			if (rc == 0) {
 				rc = spi_nor_process_bfp(dev, php, bfp);
 			}
@@ -1023,12 +1204,42 @@ static int spi_nor_configure(const struct device *dev)
 	int rc;
 
 	/* Validate bus and CS is ready */
-	if (!spi_is_ready(&cfg->spi)) {
+	if (!spi_is_ready_dt(&cfg->spi)) {
 		return -ENODEV;
 	}
 
-	/* Might be in DPD if system restarted without power cycle. */
-	exit_dpd(dev);
+#if DT_INST_NODE_HAS_PROP(0, reset_gpios)
+	if (!gpio_is_ready_dt(&cfg->reset)) {
+		LOG_ERR("Reset pin not ready");
+		return -ENODEV;
+	}
+	if (gpio_pin_configure_dt(&cfg->reset, GPIO_OUTPUT_ACTIVE)) {
+		LOG_ERR("Couldn't configure reset pin");
+		return -ENODEV;
+	}
+	rc = gpio_pin_set_dt(&cfg->reset, 0);
+	if (rc) {
+		return rc;
+	}
+#endif
+
+	/* After a soft-reset the flash might be in DPD or busy writing/erasing.
+	 * Exit DPD and wait until flash is ready.
+	 */
+	acquire_device(dev);
+
+	rc = exit_dpd(dev);
+	if (rc < 0) {
+		LOG_ERR("Failed to exit DPD (%d)", rc);
+		return -ENODEV;
+	}
+
+	rc = spi_nor_rdsr(dev);
+	if (rc > 0 && (rc & SPI_NOR_WIP_BIT)) {
+		LOG_WRN("Waiting until flash is ready");
+		spi_nor_wait_until_ready(dev);
+	}
+	release_device(dev);
 
 	/* now the spi bus is configured, we can verify SPI
 	 * connectivity by reading the JEDEC ID.
@@ -1109,6 +1320,11 @@ static int spi_nor_configure(const struct device *dev)
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 #endif /* CONFIG_SPI_NOR_SFDP_MINIMAL */
 
+#if DT_INST_NODE_HAS_PROP(0, mxicy_mx25r_power_mode)
+	/* Do not fail init if setting configuration register fails */
+	(void) mxicy_configure(dev, jedec_id);
+#endif /* DT_INST_NODE_HAS_PROP(0, mxicy_mx25r_power_mode) */
+
 	if (IS_ENABLED(CONFIG_SPI_NOR_IDLE_IN_DPD)
 	    && (enter_dpd(dev) != 0)) {
 		return -ENODEV;
@@ -1116,6 +1332,54 @@ static int spi_nor_configure(const struct device *dev)
 
 	return 0;
 }
+
+#ifdef CONFIG_PM_DEVICE
+
+static int spi_nor_pm_control(const struct device *dev, enum pm_device_action action)
+{
+	int rc = 0;
+
+	switch (action) {
+#ifdef CONFIG_SPI_NOR_IDLE_IN_DPD
+	case PM_DEVICE_ACTION_SUSPEND:
+	case PM_DEVICE_ACTION_RESUME:
+		break;
+#else
+	case PM_DEVICE_ACTION_SUSPEND:
+		acquire_device(dev);
+		rc = enter_dpd(dev);
+		release_device(dev);
+		break;
+	case PM_DEVICE_ACTION_RESUME:
+		acquire_device(dev);
+		rc = exit_dpd(dev);
+		release_device(dev);
+		break;
+#endif /* CONFIG_SPI_NOR_IDLE_IN_DPD */
+	case PM_DEVICE_ACTION_TURN_ON:
+		/* Coming out of power off */
+		rc = spi_nor_configure(dev);
+#ifndef CONFIG_SPI_NOR_IDLE_IN_DPD
+		if (rc == 0) {
+			/* Move to DPD, the correct device state
+			 * for PM_DEVICE_STATE_SUSPENDED
+			 */
+			acquire_device(dev);
+			rc = enter_dpd(dev);
+			release_device(dev);
+		}
+#endif /* CONFIG_SPI_NOR_IDLE_IN_DPD */
+		break;
+	case PM_DEVICE_ACTION_TURN_OFF:
+		break;
+	default:
+		rc = -ENOSYS;
+	}
+
+	return rc;
+}
+
+#endif /* CONFIG_PM_DEVICE */
 
 /**
  * @brief Initialize and configure the flash
@@ -1130,6 +1394,31 @@ static int spi_nor_init(const struct device *dev)
 
 		k_sem_init(&driver_data->sem, 1, K_SEM_MAX_LIMIT);
 	}
+
+#if ANY_INST_HAS_WP_GPIOS
+	if (DEV_CFG(dev)->wp) {
+		if (!device_is_ready(DEV_CFG(dev)->wp->port)) {
+			LOG_ERR("Write-protect pin not ready");
+			return -ENODEV;
+		}
+		if (gpio_pin_configure_dt(DEV_CFG(dev)->wp, GPIO_OUTPUT_ACTIVE)) {
+			LOG_ERR("Write-protect pin failed to set active");
+			return -ENODEV;
+		}
+	}
+#endif /* ANY_INST_HAS_WP_GPIOS */
+#if ANY_INST_HAS_HOLD_GPIOS
+	if (DEV_CFG(dev)->hold) {
+		if (!device_is_ready(DEV_CFG(dev)->hold->port)) {
+			LOG_ERR("Hold pin not ready");
+			return -ENODEV;
+		}
+		if (gpio_pin_configure_dt(DEV_CFG(dev)->hold, GPIO_OUTPUT_INACTIVE)) {
+			LOG_ERR("Hold pin failed to set inactive");
+			return -ENODEV;
+		}
+	}
+#endif /* ANY_INST_HAS_HOLD_GPIOS */
 
 	return spi_nor_configure(dev);
 }
@@ -1175,6 +1464,9 @@ static const struct flash_driver_api spi_nor_api = {
 #if defined(CONFIG_FLASH_JESD216_API)
 	.sfdp_read = spi_nor_sfdp_read,
 	.read_jedec_id = spi_nor_read_jedec_id,
+#endif
+#if defined(CONFIG_FLASH_EX_OP_ENABLED)
+	.ex_op = flash_spi_nor_ex_op,
 #endif
 };
 
@@ -1227,9 +1519,28 @@ BUILD_ASSERT(DT_INST_PROP(0, has_lock) == (DT_INST_PROP(0, has_lock) & 0xFF),
 	     "Need support for lock clear beyond SR1");
 #endif
 
+#define INST_HAS_WP_GPIO(idx) DT_INST_NODE_HAS_PROP(idx, wp_gpios)
+
+#define INST_WP_GPIO_SPEC(idx)                                                                     \
+	IF_ENABLED(INST_HAS_WP_GPIO(idx), (static const struct gpio_dt_spec wp_##idx =             \
+						   GPIO_DT_SPEC_INST_GET(idx, wp_gpios);))
+
+#define INST_HAS_HOLD_GPIO(idx) DT_INST_NODE_HAS_PROP(idx, hold_gpios)
+
+#define INST_HOLD_GPIO_SPEC(idx)                                                                   \
+	IF_ENABLED(INST_HAS_HOLD_GPIO(idx), (static const struct gpio_dt_spec hold_##idx =         \
+						     GPIO_DT_SPEC_INST_GET(idx, hold_gpios);))
+
+INST_WP_GPIO_SPEC(0)
+INST_HOLD_GPIO_SPEC(0)
+
 static const struct spi_nor_config spi_nor_config_0 = {
 	.spi = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8),
 				    CONFIG_SPI_NOR_CS_WAIT_DELAY),
+#if DT_INST_NODE_HAS_PROP(0, reset_gpios)
+	.reset = GPIO_DT_SPEC_INST_GET(0, reset_gpios),
+#endif
+
 #if !defined(CONFIG_SPI_NOR_SFDP_RUNTIME)
 
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
@@ -1256,11 +1567,20 @@ static const struct spi_nor_config spi_nor_config_0 = {
 #endif /* CONFIG_SPI_NOR_SFDP_DEVICETREE */
 
 #endif /* CONFIG_SPI_NOR_SFDP_RUNTIME */
+
+#if DT_INST_NODE_HAS_PROP(0, wp_gpios)
+	.wp = &wp_0,
+#endif
+
+#if DT_INST_NODE_HAS_PROP(0, hold_gpios)
+	.hold = &hold_0,
+#endif
 };
 
 static struct spi_nor_data spi_nor_data_0;
 
-DEVICE_DT_INST_DEFINE(0, &spi_nor_init, NULL,
+PM_DEVICE_DT_INST_DEFINE(0, spi_nor_pm_control);
+DEVICE_DT_INST_DEFINE(0, &spi_nor_init, PM_DEVICE_DT_INST_GET(0),
 		 &spi_nor_data_0, &spi_nor_config_0,
 		 POST_KERNEL, CONFIG_SPI_NOR_INIT_PRIORITY,
 		 &spi_nor_api);

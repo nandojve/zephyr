@@ -19,59 +19,72 @@
 #include <string.h>
 
 struct fs_file_system_t null_fs = {NULL};
-static struct test_fs_data test_data;
 
+static struct test_fs_data test_data;
 static struct fs_mount_t test_fs_mnt_1 = {
 		.type = TEST_FS_1,
 		.mnt_point = TEST_FS_MNTP,
 		.fs_data = &test_data,
 };
 
+static struct fs_mount_t test_fs_mnt_already_mounted_same_data = {
+		.type = TEST_FS_2,
+		.mnt_point = "/OTHER",
+		.fs_data = &test_data,
+};
+
+static struct test_fs_data test_data1;
 static struct fs_mount_t test_fs_mnt_unsupported_fs = {
 		.type = FS_TYPE_EXTERNAL_BASE,
 		.mnt_point = "/MMCBLOCK:",
-		.fs_data = &test_data,
+		.fs_data = &test_data1,
 };
 
 /* invalid name of mount point, not start with '/' */
+static struct test_fs_data test_data2;
 static struct fs_mount_t test_fs_mnt_invalid_root_1 = {
 		.type = TEST_FS_2,
 		.mnt_point = "SDA:",
-		.fs_data = &test_data,
+		.fs_data = &test_data2,
 };
 
 /* length of the name of mount point is too short */
+static struct test_fs_data test_data3;
 static struct fs_mount_t test_fs_mnt_invalid_root_2 = {
 		.type = TEST_FS_2,
 		.mnt_point = "/",
-		.fs_data = &test_data,
+		.fs_data = &test_data3,
 };
 
 /* NULL mount point */
+static struct test_fs_data test_data4;
 static struct fs_mount_t test_fs_mnt_invalid_root_3 = {
 		.type = TEST_FS_2,
 		.mnt_point = NULL,
-		.fs_data = &test_data,
+		.fs_data = &test_data4,
 };
 
+static struct test_fs_data test_data5;
 static struct fs_mount_t test_fs_mnt_already_mounted = {
 		.type = TEST_FS_2,
 		.mnt_point = TEST_FS_MNTP,
-		.fs_data = &test_data,
+		.fs_data = &test_data5,
 };
 
 /* for test_fs, name of mount point must end with ':' */
+static struct test_fs_data test_data6;
 static struct fs_mount_t test_fs_mnt_invalid_mntp = {
 		.type = TEST_FS_2,
 		.mnt_point = "/SDA",
-		.fs_data = &test_data,
+		.fs_data = &test_data6,
 };
 
 #define NOOP_MNTP "/SDCD:"
+static struct test_fs_data test_data7;
 static struct fs_mount_t test_fs_mnt_no_op = {
 		.type = TEST_FS_2,
 		.mnt_point = NOOP_MNTP,
-		.fs_data = &test_data,
+		.fs_data = &test_data7,
 };
 
 static struct fs_file_t filep;
@@ -81,7 +94,7 @@ static const char test_str[] = "hello world!";
 /**
  * @brief Test fs_file_t_init initializer
  */
-void test_fs_file_t_init(void)
+ZTEST(fs_api_dir_file, test_fs_file_t_init)
 {
 	struct fs_file_t fst;
 
@@ -96,7 +109,7 @@ void test_fs_file_t_init(void)
 /**
  * @brief Test fs_dir_t_init initializer
  */
-void test_fs_dir_t_init(void)
+ZTEST(fs_api_dir_file, test_fs_dir_t_init)
 {
 	struct fs_dir_t dirp;
 
@@ -148,14 +161,19 @@ void test_mount(void)
 	ret = fs_mount(&test_fs_mnt_already_mounted);
 	zassert_not_equal(ret, 0, "Mount to a mounted dir");
 
+	TC_PRINT("Mount using same private data as already mounted system\n");
+	ret = fs_mount(&test_fs_mnt_already_mounted_same_data);
+	zassert_equal(ret, -EBUSY, "Re-mount using same data should have failed");
+
 	fs_unregister(TEST_FS_2, &temp_fs);
+	memset(&null_fs, 0, sizeof(null_fs));
 	fs_register(TEST_FS_2, &null_fs);
 
 	TC_PRINT("Mount a file system has no interface implemented\n");
 	ret = fs_mount(&test_fs_mnt_no_op);
 	zassert_not_equal(ret, 0, "Mount to a fs without op interface");
 
-	/* mount an file system has no unmmount functionality */
+	/* mount an file system has no unmount functionality */
 	null_fs.mount = temp_fs.mount;
 	ret = fs_mount(&test_fs_mnt_no_op);
 	zassert_equal(ret, 0, "fs has no unmount functionality can be mounted");
@@ -190,7 +208,11 @@ void test_unmount(void)
 
 	TC_PRINT("unmount a file system has no unmount functionality\n");
 	ret = fs_unmount(&test_fs_mnt_no_op);
-	zassert_not_equal(ret, 0, "Unmount a fs has no unmount fuctionality");
+	zassert_not_equal(ret, 0, "Unmount a fs has no unmount functionality");
+	/* assign a unmount interface to null_fs to unmount it */
+	null_fs.unmount = temp_fs.unmount;
+	ret = fs_unmount(&test_fs_mnt_no_op);
+	zassert_equal(ret, 0, "file system should be unmounted");
 	/* TEST_FS_2 is registered in test_mount(), unregister it here */
 	fs_unregister(TEST_FS_2, &null_fs);
 }
@@ -200,7 +222,7 @@ void test_unmount(void)
  *
  * @ingroup filesystem_api
  */
-void test_file_statvfs(void)
+ZTEST(fs_api_dir_file, test_file_statvfs)
 {
 	struct fs_statvfs stat;
 	int ret;
@@ -219,12 +241,12 @@ void test_file_statvfs(void)
 	ret = fs_statvfs("/SDCARD:", &stat);
 	zassert_not_equal(ret, 0, "Get volume info by no-exist path");
 
-	/* It's ok if there is no stat interface */
+	/* System with no statvfs interface */
 	ret = fs_statvfs(NOOP_MNTP, &stat);
-	zassert_equal(ret, 0, "fs has no statvfs functionality");
+	zassert_equal(ret, -ENOTSUP, "fs has no statvfs functionality");
 
 	ret = fs_statvfs(TEST_FS_MNTP, &stat);
-	zassert_equal(ret, 0, "Error getting voluem stats");
+	zassert_equal(ret, 0, "Error getting volume stats");
 	TC_PRINT("\n");
 	TC_PRINT("Optimal transfer block size   = %lu\n", stat.f_bsize);
 	TC_PRINT("Allocation unit size          = %lu\n", stat.f_frsize);
@@ -256,7 +278,7 @@ void test_mkdir(void)
 	zassert_not_equal(ret, 0, "Create dir in no fs mounted dir");
 
 	ret = fs_mkdir(TEST_FS_MNTP);
-	zassert_not_equal(ret, 0, "Shoult not create root dir");
+	zassert_not_equal(ret, 0, "Should not create root dir");
 
 	ret = fs_mkdir(NOOP_MNTP"/testdir");
 	zassert_not_equal(ret, 0, "Filesystem has no mkdir interface");
@@ -455,10 +477,10 @@ static int _test_lsdir(const char *path)
  */
 void test_lsdir(void)
 {
-	zassert_true(_test_lsdir(NULL) == TC_FAIL, NULL);
-	zassert_true(_test_lsdir("/") == TC_PASS, NULL);
-	zassert_true(_test_lsdir("/test") == TC_FAIL, NULL);
-	zassert_true(_test_lsdir(TEST_DIR) == TC_PASS, NULL);
+	zassert_true(_test_lsdir(NULL) == TC_FAIL);
+	zassert_true(_test_lsdir("/") == TC_PASS);
+	zassert_true(_test_lsdir("/test") == TC_FAIL);
+	zassert_true(_test_lsdir(TEST_DIR) == TC_PASS);
 }
 
 /**
@@ -502,7 +524,7 @@ void test_file_open(void)
 
 	TC_PRINT("\nReopen the same file");
 	ret = fs_open(&filep, TEST_FILE, FS_O_READ);
-	zassert_not_equal(ret, 0, "Reopen an opend file");
+	zassert_not_equal(ret, 0, "Reopen an opened file");
 
 	TC_PRINT("Opened file %s\n", TEST_FILE);
 }
@@ -569,7 +591,7 @@ static int _test_file_write(void)
  */
 void test_file_write(void)
 {
-	zassert_true(_test_file_write() == TC_PASS, NULL);
+	zassert_true(_test_file_write() == TC_PASS);
 }
 
 static int _test_file_sync(void)
@@ -640,9 +662,9 @@ static int _test_file_sync(void)
  *
  * @ingroup filesystem_api
  */
-void test_file_sync(void)
+ZTEST(fs_api_dir_file, test_file_sync)
 {
-	zassert_true(_test_file_sync() == TC_PASS, NULL);
+	zassert_true(_test_file_sync() == TC_PASS);
 }
 
 /**
@@ -864,7 +886,7 @@ static int _test_file_truncate(void)
  */
 void test_file_truncate(void)
 {
-	zassert_true(_test_file_truncate() == TC_PASS, NULL);
+	zassert_true(_test_file_truncate() == TC_PASS);
 }
 
 /**
@@ -910,7 +932,7 @@ void test_file_close(void)
  *
  * @ingroup filesystem_api
  */
-void test_file_rename(void)
+ZTEST(fs_api_dir_file, test_file_rename)
 {
 	int ret = TC_FAIL;
 
@@ -955,7 +977,7 @@ void test_file_rename(void)
  *
  * @ingroup filesystem_api
  */
-void test_file_stat(void)
+ZTEST(fs_api_dir_file, test_file_stat)
 {
 	int ret;
 	struct fs_dirent entry;
@@ -992,7 +1014,7 @@ void test_file_stat(void)
  *
  * @ingroup filesystem_api
  */
-void test_file_unlink(void)
+ZTEST(fs_api_dir_file, test_file_unlink)
 {
 	int ret;
 
@@ -1031,3 +1053,53 @@ void test_file_unlink(void)
 
 	TC_PRINT("File (%s) deleted successfully!\n", TEST_FILE_RN);
 }
+
+static void *fs_api_setup(void)
+{
+	fs_register(TEST_FS_1, &temp_fs);
+	fs_mount(&test_fs_mnt_1);
+	memset(&null_fs, 0, sizeof(null_fs));
+	null_fs.mount = temp_fs.mount;
+	null_fs.unmount = temp_fs.unmount;
+	fs_register(TEST_FS_2, &null_fs);
+	fs_mount(&test_fs_mnt_no_op);
+	return NULL;
+}
+
+static void fs_api_teardown(void *fixtrue)
+{
+	fs_unmount(&test_fs_mnt_no_op);
+	fs_unregister(TEST_FS_2, &null_fs);
+	fs_unmount(&test_fs_mnt_1);
+	fs_unregister(TEST_FS_1, &temp_fs);
+}
+
+ZTEST(fs_api_dir_file, test_fs_dir)
+{
+	test_mkdir();
+	test_opendir();
+	test_closedir();
+	test_opendir_closedir();
+	test_lsdir();
+}
+
+ZTEST(fs_api_dir_file, test_file_ops)
+{
+	test_file_open();
+	test_file_write();
+	test_file_read();
+	test_file_seek();
+	test_file_truncate();
+	test_file_close();
+}
+
+ZTEST(fs_api_register_mount, test_mount_unmount)
+{
+	fs_register(TEST_FS_1, &temp_fs);
+	test_mount();
+	test_unmount();
+	fs_unregister(TEST_FS_1, &temp_fs);
+}
+
+ZTEST_SUITE(fs_api_register_mount, NULL, NULL, NULL, NULL, NULL);
+ZTEST_SUITE(fs_api_dir_file, NULL, fs_api_setup, NULL, NULL, fs_api_teardown);

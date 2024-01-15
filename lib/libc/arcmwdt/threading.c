@@ -6,11 +6,11 @@
 
 #ifdef CONFIG_MULTITHREADING
 
-#include <init.h>
-#include <kernel.h>
-#include <sys/__assert.h>
-#include <sys/mutex.h>
-#include <logging/log.h>
+#include <zephyr/init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/mutex.h>
+#include <zephyr/logging/log.h>
 #include <../lib/src/c/inc/internal/thread.h>
 
 #ifndef CONFIG_USERSPACE
@@ -46,7 +46,7 @@ void _mwmutex_delete(_lock_t *mutex_ptr)
 #ifdef CONFIG_USERSPACE
 	k_object_release(mutex_ptr);
 #else
-	k_mem_slab_free(&z_arcmwdt_lock_slab, mutex_ptr);
+	k_mem_slab_free(&z_arcmwdt_lock_slab, *mutex_ptr);
 #endif /* CONFIG_USERSPACE */
 }
 

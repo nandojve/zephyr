@@ -5,11 +5,11 @@ description: Renesas R-Car UART controller
 
 compatible: "renesas,rcar-scif"
 
-include: uart-controller.yaml
+include: [uart-controller.yaml, pinctrl-device.yaml]
 
 properties:
-    reg:
-      required: true
+  reg:
+    required: true
 
-    clocks:
-      required: true
+  clocks:
+    required: true

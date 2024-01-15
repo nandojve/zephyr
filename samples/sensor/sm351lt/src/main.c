@@ -6,10 +6,10 @@
  */
 
 #include <stdio.h>
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/gpio.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/sensor.h>
 
 static void fetch_and_display(const struct device *sensor)
 {
@@ -39,14 +39,13 @@ static void trigger_handler(const struct device *dev,
 }
 #endif
 
-void main(void)
+int main(void)
 {
-	const struct device *sensor = device_get_binding(DT_LABEL(DT_INST(0, honeywell_sm351lt)));
+	const struct device *const sensor = DEVICE_DT_GET_ONE(honeywell_sm351lt);
 
-	if (sensor == NULL) {
-		printf("Could not get %s device\n",
-		       DT_LABEL(DT_INST(0, honeywell_sm351lt)));
-		return;
+	if (!device_is_ready(sensor)) {
+		printk("Device %s is not ready\n", sensor->name);
+		return 0;
 	}
 
 #if CONFIG_SM351LT_TRIGGER
@@ -66,13 +65,13 @@ void main(void)
 				     &trigger_type);
 		if (rc != 0) {
 			printf("Failed to set trigger type: %d\n", rc);
-			return;
+			return 0;
 		}
 
 		rc = sensor_trigger_set(sensor, &trig, trigger_handler);
 		if (rc != 0) {
 			printf("Failed to set trigger: %d\n", rc);
-			return;
+			return 0;
 		}
 
 		printf("Waiting for triggers\n");

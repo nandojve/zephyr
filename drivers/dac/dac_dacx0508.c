@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <drivers/spi.h>
-#include <drivers/dac.h>
-#include <logging/log.h>
-#include <dt-bindings/dac/dacx0508.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/dac.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/dt-bindings/dac/dacx0508.h>
 
 LOG_MODULE_REGISTER(dac_dacx0508, CONFIG_DAC_LOG_LEVEL);
 
@@ -330,7 +330,7 @@ static int dacx0508_init(const struct device *dev)
 	struct dacx0508_data *data = dev->data;
 	int ret;
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI bus %s not ready", config->bus.bus->name);
 		return -ENODEV;
 	}
@@ -385,7 +385,7 @@ static const struct dac_driver_api dacx0508_driver_api = {
 			    &dacx0508_init, NULL, \
 			    &dac##t##_data_##n, \
 			    &dac##t##_config_##n, POST_KERNEL, \
-			    CONFIG_DAC_INIT_PRIORITY, \
+			    CONFIG_DAC_DACX0508_INIT_PRIORITY, \
 			    &dacx0508_driver_api)
 
 /*
@@ -406,8 +406,8 @@ static const struct dac_driver_api dacx0508_driver_api = {
 #define CALL_WITH_ARG(arg, expr) expr(arg)
 
 #define INST_DT_DACX0508_FOREACH(t, inst_expr) \
-	UTIL_LISTIFY(DT_NUM_INST_STATUS_OKAY(ti_dac##t), \
-		     CALL_WITH_ARG, inst_expr)
+	LISTIFY(DT_NUM_INST_STATUS_OKAY(ti_dac##t), \
+		     CALL_WITH_ARG, (), inst_expr)
 
 INST_DT_DACX0508_FOREACH(60508, DAC60508_DEVICE);
 INST_DT_DACX0508_FOREACH(70508, DAC70508_DEVICE);

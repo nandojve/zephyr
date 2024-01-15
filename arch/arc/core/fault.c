@@ -11,15 +11,15 @@
  * Common fault handler for ARCv2 processors.
  */
 
-#include <toolchain.h>
-#include <linker/sections.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
 #include <inttypes.h>
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <kernel_internal.h>
-#include <kernel_structs.h>
-#include <exc_handle.h>
-#include <logging/log.h>
+#include <zephyr/kernel_structs.h>
+#include <zephyr/arch/common/exc_handle.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 #ifdef CONFIG_USERSPACE
@@ -51,8 +51,10 @@ static const struct z_exc_handle exceptions[] = {
  */
 static bool z_check_thread_stack_fail(const uint32_t fault_addr, uint32_t sp)
 {
-	const struct k_thread *thread = _current;
 	uint32_t guard_end, guard_start;
+
+#if defined(CONFIG_MULTITHREADING)
+	const struct k_thread *thread = _current;
 
 	if (!thread) {
 		/* TODO: Under what circumstances could we get here ? */
@@ -67,7 +69,7 @@ static bool z_check_thread_stack_fail(const uint32_t fault_addr, uint32_t sp)
 			 * "guard" installed in this case, instead what's
 			 * happening is that the stack pointer is crashing
 			 * into the privilege mode stack buffer which
-			 * immediately precededs it.
+			 * immediately precedes it.
 			 */
 			guard_end = thread->stack_info.start;
 			guard_start = (uint32_t)thread->stack_obj;
@@ -86,6 +88,7 @@ static bool z_check_thread_stack_fail(const uint32_t fault_addr, uint32_t sp)
 		guard_end = thread->stack_info.start;
 		guard_start = guard_end - Z_ARC_STACK_GUARD_SIZE;
 	}
+#endif /* CONFIG_MULTITHREADING */
 
 	 /* treat any MPU exceptions within the guard region as a stack
 	  * overflow.As some instrustions
@@ -101,7 +104,7 @@ static bool z_check_thread_stack_fail(const uint32_t fault_addr, uint32_t sp)
 }
 #endif
 
-#ifdef CONFIG_ARC_EXCEPTION_DEBUG
+#ifdef CONFIG_EXCEPTION_DEBUG
 /* For EV_ProtV, the numbering/semantics of the parameter are consistent across
  * several codes, although not all combination will be reported.
  *
@@ -332,7 +335,7 @@ static void dump_exception_info(uint32_t vector, uint32_t cause, uint32_t parame
 		break;
 	}
 }
-#endif /* CONFIG_ARC_EXCEPTION_DEBUG */
+#endif /* CONFIG_EXCEPTION_DEBUG */
 
 /*
  * @brief Fault handler
@@ -384,7 +387,7 @@ void _Fault(z_arch_esf_t *esf, uint32_t old_sp)
 	LOG_ERR("***** Exception vector: 0x%x, cause code: 0x%x, parameter 0x%x",
 		vector, cause, parameter);
 	LOG_ERR("Address 0x%x", exc_addr);
-#ifdef CONFIG_ARC_EXCEPTION_DEBUG
+#ifdef CONFIG_EXCEPTION_DEBUG
 	dump_exception_info(vector, cause, parameter);
 #endif
 

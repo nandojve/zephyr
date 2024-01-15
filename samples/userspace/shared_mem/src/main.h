@@ -7,22 +7,22 @@
 #ifndef MAIN_H
 #define MAIN_H
 
-#include <zephyr.h>
-#include <sys/printk.h>
-#include <kernel_structs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/kernel_structs.h>
 #include <string.h>
 #include <stdlib.h>
 
-#include <app_memory/app_memdomain.h>
-#include <sys/util.h>
+#include <zephyr/app_memory/app_memdomain.h>
+#include <zephyr/sys/util.h>
 
 #if defined(CONFIG_ARC)
-#include <arch/arc/v2/mpu/arc_core_mpu.h>
+#include <zephyr/arch/arc/v2/mpu/arc_core_mpu.h>
 #endif
 
-void enc(void);
-void pt(void);
-void ct(void);
+void enc(void *p1, void *p2, void *p3);
+void pt(void *p1, void *p2, void *p3);
+void ct(void *p1, void *p2, void *p3);
 
 #define _app_user_d K_APP_DMEM(user_part)
 #define _app_user_b K_APP_BMEM(user_part)

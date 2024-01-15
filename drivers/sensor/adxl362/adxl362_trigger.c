@@ -6,15 +6,15 @@
 
 #define DT_DRV_COMPAT adi_adxl362
 
-#include <device.h>
-#include <drivers/gpio.h>
-#include <sys/util.h>
-#include <kernel.h>
-#include <drivers/sensor.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/sensor.h>
 
 #include "adxl362.h"
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(ADXL362, CONFIG_SENSOR_LOG_LEVEL);
 
 static void adxl362_thread_cb(const struct device *dev)
@@ -29,16 +29,21 @@ static void adxl362_thread_cb(const struct device *dev)
 	}
 
 	k_mutex_lock(&drv_data->trigger_mutex, K_FOREVER);
-	if (drv_data->th_handler != NULL) {
-		if (ADXL362_STATUS_CHECK_INACT(status_buf) ||
-		    ADXL362_STATUS_CHECK_ACTIVITY(status_buf)) {
-			drv_data->th_handler(dev, &drv_data->th_trigger);
+	if (drv_data->inact_handler != NULL) {
+		if (ADXL362_STATUS_CHECK_INACT(status_buf)) {
+			drv_data->inact_handler(dev, drv_data->inact_trigger);
+		}
+	}
+
+	if (drv_data->act_handler != NULL) {
+		if (ADXL362_STATUS_CHECK_ACTIVITY(status_buf)) {
+			drv_data->act_handler(dev, drv_data->act_trigger);
 		}
 	}
 
 	if (drv_data->drdy_handler != NULL &&
 	    ADXL362_STATUS_CHECK_DATA_READY(status_buf)) {
-		drv_data->drdy_handler(dev, &drv_data->drdy_trigger);
+		drv_data->drdy_handler(dev, drv_data->drdy_trigger);
 	}
 	k_mutex_unlock(&drv_data->trigger_mutex);
 }
@@ -57,8 +62,13 @@ static void adxl362_gpio_callback(const struct device *dev,
 }
 
 #if defined(CONFIG_ADXL362_TRIGGER_OWN_THREAD)
-static void adxl362_thread(struct adxl362_data *drv_data)
+static void adxl362_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct adxl362_data *drv_data = p1;
+
 	while (true) {
 		k_sem_take(&drv_data->gpio_sem, K_FOREVER);
 		adxl362_thread_cb(drv_data->dev);
@@ -79,23 +89,36 @@ int adxl362_trigger_set(const struct device *dev,
 			sensor_trigger_handler_t handler)
 {
 	struct adxl362_data *drv_data = dev->data;
+	const struct adxl362_config *config = dev->config;
 	uint8_t int_mask, int_en, status_buf;
 
+	if (!config->interrupt.port) {
+		return -ENOTSUP;
+	}
+
 	switch (trig->type) {
-	case SENSOR_TRIG_THRESHOLD:
+	case SENSOR_TRIG_MOTION:
 		k_mutex_lock(&drv_data->trigger_mutex, K_FOREVER);
-		drv_data->th_handler = handler;
-		drv_data->th_trigger = *trig;
+		drv_data->act_handler = handler;
+		drv_data->act_trigger = trig;
 		k_mutex_unlock(&drv_data->trigger_mutex);
-		int_mask = ADXL362_INTMAP1_ACT |
-			   ADXL362_INTMAP1_INACT;
+		int_mask = ADXL362_INTMAP1_ACT;
+		/* Clear activity and inactivity interrupts */
+		adxl362_get_status(dev, &status_buf);
+		break;
+	case SENSOR_TRIG_STATIONARY:
+		k_mutex_lock(&drv_data->trigger_mutex, K_FOREVER);
+		drv_data->inact_handler = handler;
+		drv_data->inact_trigger = trig;
+		k_mutex_unlock(&drv_data->trigger_mutex);
+		int_mask = ADXL362_INTMAP1_INACT;
 		/* Clear activity and inactivity interrupts */
 		adxl362_get_status(dev, &status_buf);
 		break;
 	case SENSOR_TRIG_DATA_READY:
 		k_mutex_lock(&drv_data->trigger_mutex, K_FOREVER);
 		drv_data->drdy_handler = handler;
-		drv_data->drdy_trigger = *trig;
+		drv_data->drdy_trigger = trig;
 		k_mutex_unlock(&drv_data->trigger_mutex);
 		int_mask = ADXL362_INTMAP1_DATA_READY;
 		adxl362_clear_data_ready(dev);
@@ -122,7 +145,7 @@ int adxl362_init_interrupt(const struct device *dev)
 
 	k_mutex_init(&drv_data->trigger_mutex);
 
-	if (!device_is_ready(cfg->interrupt.port)) {
+	if (!gpio_is_ready_dt(&cfg->interrupt)) {
 		LOG_ERR("GPIO port %s not ready", cfg->interrupt.port->name);
 		return -ENODEV;
 	}
@@ -153,7 +176,7 @@ int adxl362_init_interrupt(const struct device *dev)
 
 	k_thread_create(&drv_data->thread, drv_data->thread_stack,
 			CONFIG_ADXL362_THREAD_STACK_SIZE,
-			(k_thread_entry_t)adxl362_thread, drv_data,
+			adxl362_thread, drv_data,
 			NULL, NULL, K_PRIO_COOP(CONFIG_ADXL362_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_ADXL362_TRIGGER_GLOBAL_THREAD)

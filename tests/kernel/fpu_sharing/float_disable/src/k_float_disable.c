@@ -4,7 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
+#include <zephyr/sys/barrier.h>
 
 #define STACKSIZE 1024
 
@@ -14,10 +15,10 @@
  */
 #define PRIORITY  K_PRIO_COOP(0)
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV) || defined(CONFIG_SPARC)
-#define K_FP_OPTS K_FP_REGS
-#elif defined(CONFIG_X86)
+#if defined(CONFIG_X86) && defined(CONFIG_X86_SSE)
 #define K_FP_OPTS (K_FP_REGS | K_SSE_REGS)
+#elif defined(CONFIG_X86) || defined(CONFIG_ARM) || defined(CONFIG_SPARC)
+#define K_FP_OPTS K_FP_REGS
 #else
 #error "Architecture not supported for this test"
 #endif
@@ -25,22 +26,29 @@
 struct k_thread usr_fp_thread;
 K_THREAD_STACK_DEFINE(usr_fp_thread_stack, STACKSIZE);
 
-ZTEST_BMEM static volatile int ret = TC_PASS;
+ZTEST_BMEM static volatile int test_ret = TC_PASS;
 
-static void usr_fp_thread_entry_1(void)
+static void usr_fp_thread_entry_1(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	k_yield();
 }
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV) || \
-	(defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
+#if defined(CONFIG_ARM) || (defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
 #define K_FLOAT_DISABLE_SYSCALL_RETVAL 0
 #else
 #define K_FLOAT_DISABLE_SYSCALL_RETVAL -ENOTSUP
 #endif
 
-static void usr_fp_thread_entry_2(void)
+static void usr_fp_thread_entry_2(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	k_yield();
 
 	/* System call to disable FP mode */
@@ -48,13 +56,13 @@ static void usr_fp_thread_entry_2(void)
 
 		TC_ERROR("k_float_disable() fail - should never see this\n");
 
-		ret = TC_FAIL;
+		test_ret = TC_FAIL;
 	}
 }
 
-void test_k_float_disable_common(void)
+ZTEST(k_float_disable, test_k_float_disable_common)
 {
-	ret = TC_PASS;
+	test_ret = TC_PASS;
 
 	/* Set thread priority level to the one used
 	 * in this test suite for cooperative threads.
@@ -65,7 +73,7 @@ void test_k_float_disable_common(void)
 	 * priority as the current thread.
 	 */
 	k_thread_create(&usr_fp_thread, usr_fp_thread_stack, STACKSIZE,
-		(k_thread_entry_t)usr_fp_thread_entry_1, NULL, NULL, NULL,
+		usr_fp_thread_entry_1, NULL, NULL, NULL,
 		PRIORITY, K_USER | K_FP_OPTS,
 		K_NO_WAIT);
 
@@ -78,7 +86,7 @@ void test_k_float_disable_common(void)
 		"usr_fp_thread FP options not set (0x%0x)",
 		usr_fp_thread.base.user_options);
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV)
+#if defined(CONFIG_ARM)
 	/* Verify FP mode can only be disabled for current thread */
 	zassert_true((k_float_disable(&usr_fp_thread) == -EINVAL),
 		"k_float_disable() successful on thread other than current!");
@@ -103,9 +111,9 @@ void test_k_float_disable_common(void)
 #endif
 }
 
-void test_k_float_disable_syscall(void)
+ZTEST(k_float_disable, test_k_float_disable_syscall)
 {
-	ret = TC_PASS;
+	test_ret = TC_PASS;
 
 	k_thread_priority_set(k_current_get(), PRIORITY);
 
@@ -114,7 +122,7 @@ void test_k_float_disable_syscall(void)
 	 * FP mode.
 	 */
 	k_thread_create(&usr_fp_thread, usr_fp_thread_stack, STACKSIZE,
-		(k_thread_entry_t)usr_fp_thread_entry_2, NULL, NULL, NULL,
+		usr_fp_thread_entry_2, NULL, NULL, NULL,
 		PRIORITY, K_INHERIT_PERMS | K_USER | K_FP_OPTS,
 		K_NO_WAIT);
 
@@ -130,8 +138,7 @@ void test_k_float_disable_syscall(void)
 	/* Yield will swap-in usr_fp_thread */
 	k_yield();
 
-#if defined(CONFIG_ARM) || defined(CONFIG_RISCV) || \
-	(defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
+#if defined(CONFIG_ARM) || (defined(CONFIG_X86) && defined(CONFIG_LAZY_FPU_SHARING))
 
 	/* Verify K_FP_OPTS are now cleared by the user thread itself */
 	zassert_true(
@@ -139,8 +146,8 @@ void test_k_float_disable_syscall(void)
 		"usr_fp_thread FP options not clear (0x%0x)",
 		usr_fp_thread.base.user_options);
 
-	/* ret is volatile, static analysis says we can't use in assert */
-	bool ok = ret == TC_PASS;
+	/* test_ret is volatile, static analysis says we can't use in assert */
+	bool ok = test_ret == TC_PASS;
 
 	zassert_true(ok, "");
 #else
@@ -150,8 +157,12 @@ void test_k_float_disable_syscall(void)
 
 #if defined(CONFIG_ARM) && defined(CONFIG_DYNAMIC_INTERRUPTS)
 
-#include <arch/cpu.h>
-#include <arch/arm/aarch32/cortex_m/cmsis.h>
+#include <zephyr/arch/cpu.h>
+#if defined(CONFIG_CPU_CORTEX_M)
+#include <cmsis_core.h>
+#else
+#include <zephyr/interrupt_util.h>
+#endif
 
 struct k_thread sup_fp_thread;
 K_THREAD_STACK_DEFINE(sup_fp_thread_stack, STACKSIZE);
@@ -164,22 +175,27 @@ void arm_test_isr_handler(const void *args)
 
 		TC_ERROR("k_float_disable() successful in ISR\n");
 
-		ret = TC_FAIL;
+		test_ret = TC_FAIL;
 	}
 }
 
-static void sup_fp_thread_entry(void)
+static void sup_fp_thread_entry(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	/* Verify K_FP_REGS flag is set */
 	if ((sup_fp_thread.base.user_options & K_FP_REGS) == 0) {
 
 		TC_ERROR("sup_fp_thread FP options cleared\n");
-		ret = TC_FAIL;
+		test_ret = TC_FAIL;
 	}
 
 	/* Determine an NVIC IRQ line that is not currently in use. */
 	int i;
 
+#if defined(CONFIG_CPU_CORTEX_M)
 	for (i = CONFIG_NUM_IRQS - 1; i >= 0; i--) {
 		if (NVIC_GetEnableIRQ(i) == 0) {
 			/*
@@ -191,6 +207,13 @@ static void sup_fp_thread_entry(void)
 			break;
 		}
 	}
+#else
+	/*
+	 * SGIs are always enabled by default, so choose the last one
+	 * for testing.
+	 */
+	i = GIC_PPI_INT_BASE - 1;
+#endif
 
 	zassert_true(i >= 0,
 		"No available IRQ line to use in the test\n");
@@ -203,28 +226,33 @@ static void sup_fp_thread_entry(void)
 		NULL,
 		0);
 
+#if defined(CONFIG_CPU_CORTEX_M)
 	NVIC_ClearPendingIRQ(i);
 	NVIC_EnableIRQ(i);
 	NVIC_SetPendingIRQ(i);
+#else
+	arch_irq_enable(i);
+	trigger_irq(i);
+#endif
 
 	/*
 	 * Instruction barriers to make sure the NVIC IRQ is
 	 * set to pending state before program proceeds.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Verify K_FP_REGS flag is still set */
 	if ((sup_fp_thread.base.user_options & K_FP_REGS) == 0) {
 
 		TC_ERROR("sup_fp_thread FP options cleared\n");
-		ret = TC_FAIL;
+		test_ret = TC_FAIL;
 	}
 }
 
-void test_k_float_disable_irq(void)
+ZTEST(k_float_disable, test_k_float_disable_irq)
 {
-	ret = TC_PASS;
+	test_ret = TC_PASS;
 
 	k_thread_priority_set(k_current_get(), PRIORITY);
 
@@ -233,22 +261,24 @@ void test_k_float_disable_irq(void)
 	 * priority as the current thread.
 	 */
 	k_thread_create(&sup_fp_thread, sup_fp_thread_stack, STACKSIZE,
-		(k_thread_entry_t)sup_fp_thread_entry, NULL, NULL, NULL,
+		sup_fp_thread_entry, NULL, NULL, NULL,
 		PRIORITY, K_FP_REGS,
 		K_NO_WAIT);
 
 	/* Yield will swap-in sup_fp_thread */
 	k_yield();
 
-	/* ret is volatile, static analysis says we can't use in assert */
-	bool ok = ret == TC_PASS;
+	/* test_ret is volatile, static analysis says we can't use in assert */
+	bool ok = test_ret == TC_PASS;
 
 	zassert_true(ok, "");
 }
 #else
-void test_k_float_disable_irq(void)
+ZTEST(k_float_disable, test_k_float_disable_irq)
 {
 	TC_PRINT("This is not an ARM system with DYNAMIC_INTERRUPTS.\n");
 	ztest_test_skip();
 }
 #endif /* CONFIG_ARM && CONFIG_DYNAMIC_INTERRUPTS */
+
+ZTEST_SUITE(k_float_disable, NULL, NULL, NULL, NULL, NULL);

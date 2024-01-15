@@ -17,9 +17,7 @@ Zephyr applications can use the stm32_min_dev_blue or stm32_min_dev_black board
 configuration to use these boards.
 
 .. figure:: img/stm32_min_dev.jpg
-     :width: 500px
      :align: center
-     :height: 350px
      :alt: STM32 Minimum Development Board
 
      STM32 Minimum Development Board
@@ -47,9 +45,7 @@ The pinout diagram of STM32 Minimum Development Blue Pill board can be seen
 below. The Black Pill's one is similar:
 
 .. figure:: img/stm32_min_dev_pinout_blue.jpg
-     :width: 500px
      :align: center
-     :height: 350px
      :alt: Pinout for STM32 Minimum Development Blue Pill Board
 
      Pinout for STM32 Minimum Development Blue Pill Board
@@ -119,7 +115,7 @@ The stm32_min_dev board configuration supports the following hardware features:
 | ADC       | on-chip    | adc                  |
 +-----------+------------+----------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 
 Connections and IOs
 ===================
@@ -165,7 +161,7 @@ built and flashed in the usual way (see :ref:`build_an_application` and
 Flashing
 ========
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -185,6 +181,6 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _STM32F103x8:
-        http://www.st.com/resource/en/datasheet/stm32f103c8.pdf
+        https://www.st.com/resource/en/datasheet/stm32f103c8.pdf
 .. _EmbedJournal:
         https://embedjournal.com/tag/stm32-min-dev/

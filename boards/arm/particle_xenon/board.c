@@ -5,39 +5,31 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
-#include <drivers/gpio.h>
-#include "board.h"
+#include <zephyr/init.h>
+#include <zephyr/drivers/gpio.h>
+
+#define SKY_UFLn_GPIO_SPEC	GPIO_DT_SPEC_GET(DT_NODELABEL(sky13351), vctl1_gpios)
+#define SKY_PCBn_GPIO_SPEC	GPIO_DT_SPEC_GET(DT_NODELABEL(sky13351), vctl2_gpios)
 
 static inline void external_antenna(bool on)
 {
-	const struct device *ufl_gpio_dev, *pcb_gpio_dev;
+	struct gpio_dt_spec ufl_gpio = SKY_UFLn_GPIO_SPEC;
+	struct gpio_dt_spec pcb_gpio = SKY_PCBn_GPIO_SPEC;
 
-	ufl_gpio_dev = device_get_binding(SKY_UFLn_GPIO_NAME);
-	if (!ufl_gpio_dev) {
+	if (!gpio_is_ready_dt(&ufl_gpio)) {
 		return;
 	}
 
-	pcb_gpio_dev = device_get_binding(SKY_PCBn_GPIO_NAME);
-	if (!pcb_gpio_dev) {
+	if (!gpio_is_ready_dt(&pcb_gpio)) {
 		return;
 	}
 
-	gpio_pin_configure(ufl_gpio_dev, SKY_UFLn_GPIO_PIN,
-			   SKY_UFLn_GPIO_FLAGS
-			   | (on
-			      ? GPIO_OUTPUT_ACTIVE
-			      : GPIO_OUTPUT_INACTIVE));
-	gpio_pin_configure(pcb_gpio_dev, SKY_PCBn_GPIO_PIN,
-			   SKY_PCBn_GPIO_FLAGS
-			   | (on
-			      ? GPIO_OUTPUT_INACTIVE
-			      : GPIO_OUTPUT_ACTIVE));
+	gpio_pin_configure_dt(&ufl_gpio, (on ? GPIO_OUTPUT_ACTIVE : GPIO_OUTPUT_INACTIVE));
+	gpio_pin_configure_dt(&pcb_gpio, (on ? GPIO_OUTPUT_INACTIVE : GPIO_OUTPUT_ACTIVE));
 }
 
-static int board_particle_xenon_init(const struct device *dev)
+static int board_particle_xenon_init(void)
 {
-	ARG_UNUSED(dev);
 
 	/*
 	 * On power-up the SKY13351 is left uncontrolled, so neither

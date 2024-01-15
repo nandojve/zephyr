@@ -16,8 +16,6 @@ Extension headers make it easy to connect a daughterboard or wrapping board for 
 application.
 
 .. image:: img/stm3210c_eval.jpg
-     :width: 660px
-     :height: 792px
      :align: center
      :alt: STM3210C-EVAL
 
@@ -95,9 +93,7 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/stm3210c_eval_connectors.png
-     :width: 966px
-     :height: 1017px
+.. image:: img/stm3210c_eval_connectors.jpg
      :align: center
      :alt: STM3210C_EVAL connectors
 
@@ -129,7 +125,7 @@ Flashing an application to STM3210C-EVAL
 Connect the STM3210C-EVAL to your host computer using the USB port, then build
 and flash an application in the usual way.
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -163,7 +159,7 @@ References
 .. target-notes::
 
 .. _STM3210C-EVAL website:
-   http://www.st.com/en/evaluation-tools/stm3210c-eval.html
+   https://www.st.com/en/evaluation-tools/stm3210c-eval.html
 
 .. _STM32F107VCT reference manual:
-   http://www.st.com/resource/en/reference_manual/CD00171190.pdf
+   https://www.st.com/resource/en/reference_manual/CD00171190.pdf

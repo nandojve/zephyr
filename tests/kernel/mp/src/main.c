@@ -4,24 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <tc_util.h>
-#include <ztest.h>
-#include <kernel.h>
+#include <zephyr/tc_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
 
 #ifdef CONFIG_SMP
 #error Cannot test MP API if SMP is using the CPUs
 #endif
 
-BUILD_ASSERT(CONFIG_MP_NUM_CPUS > 1);
+BUILD_ASSERT(CONFIG_MP_MAX_NUM_CPUS > 1);
 
-#define CPU1_STACK_SIZE 1024
+#define CPU_STACK_SIZE 1024
 
-K_THREAD_STACK_DEFINE(cpu1_stack, CPU1_STACK_SIZE);
+K_THREAD_STACK_ARRAY_DEFINE(cpu_stacks, CONFIG_MP_MAX_NUM_CPUS, CPU_STACK_SIZE);
 
 int cpu_arg;
 
-volatile int cpu_running;
+volatile int cpu_running[CONFIG_MP_MAX_NUM_CPUS];
 
 /**
  * @brief Tests for multi processing
@@ -33,11 +32,16 @@ volatile int cpu_running;
  * @{
  * @}
  */
-FUNC_NORETURN void cpu1_fn(void *arg)
+FUNC_NORETURN void cpu_fn(void *arg)
 {
-	zassert_true(arg == &cpu_arg && *(int *)arg == 12345, "wrong arg");
+	zassert_true(arg == &cpu_arg, "mismatched arg");
 
-	cpu_running = 1;
+	int cpu_id = (*(int *)arg) / 12345;
+	int mod = (*(int *)arg) % 12345;
+
+	zassert_true(mod == 0, "wrong arg");
+
+	cpu_running[cpu_id] = 1;
 
 	while (1) {
 	}
@@ -61,7 +65,7 @@ FUNC_NORETURN void cpu1_fn(void *arg)
  *   dynamic analysis and testing
  *
  * Prerequisite Conditions:
- * - CONFIG_MP_NUM_CPUS > 1
+ * - CONFIG_MP_MAX_NUM_CPUS > 1
  *
  * Input Specifications:
  * - CPU ID: the cpu want to start
@@ -76,7 +80,7 @@ FUNC_NORETURN void cpu1_fn(void *arg)
  * -# Enter a while loop and wait for cpu_running equals to 1.
  * -# In target function, check if the address is &cpu_arg and its content
  *  equal to 12345.
- * -# Set the global flag varible cpu_running to 1.
+ * -# Set the global flag variable cpu_running to 1.
  * -# In main thread, check if the cpu_running equals to 1.
  *
  * Expected Test Result:
@@ -92,21 +96,30 @@ FUNC_NORETURN void cpu1_fn(void *arg)
  *
  * @see arch_start_cpu()
  */
-void test_mp_start(void)
+ZTEST(multiprocessing, test_mp_start)
 {
-	cpu_arg = 12345;
+	for (int i = 1; i < CONFIG_MP_MAX_NUM_CPUS; i++) {
+		int wait_count;
 
-	arch_start_cpu(1, cpu1_stack, CPU1_STACK_SIZE, cpu1_fn, &cpu_arg);
+		TC_PRINT("Starting CPU #%d...\n", i);
 
-	while (!cpu_running) {
+		cpu_arg = 12345 * i;
+
+		arch_start_cpu(i, cpu_stacks[i], CPU_STACK_SIZE, cpu_fn, &cpu_arg);
+
+		/* Wait for about 5 (500 * 10ms) seconds for CPU to start. */
+		wait_count = 500;
+		while (!cpu_running[i]) {
+			k_busy_wait(10 * USEC_PER_MSEC);
+
+			wait_count--;
+			if (wait_count < 0) {
+				break;
+			}
+		}
+
+		zassert_true(cpu_running[i], "cpu #%d didn't start", i);
 	}
-
-	zassert_true(cpu_running, "cpu1 didn't start");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(multiprocessing,
-			 ztest_unit_test(test_mp_start));
-	ztest_run_test_suite(multiprocessing);
-}
+ZTEST_SUITE(multiprocessing, NULL, NULL, NULL, NULL, NULL);

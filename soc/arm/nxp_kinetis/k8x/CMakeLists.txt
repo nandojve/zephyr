@@ -2,9 +2,10 @@
 
 zephyr_sources(
   soc.c
-  wdog.S
   )
 zephyr_sources_ifdef(
   CONFIG_ARM_MPU
   nxp_mpu_regions.c
   )
+
+set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/include/zephyr/arch/arm/cortex_m/scripts/linker.ld CACHE INTERNAL "")

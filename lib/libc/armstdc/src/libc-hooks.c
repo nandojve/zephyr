@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
+#include <zephyr/kernel.h>
 #include <stdio.h>
 
 static int _stdout_hook_default(int c)
@@ -24,4 +24,9 @@ void __stdout_hook_install(int (*hook)(int))
 volatile int *__aeabi_errno_addr(void)
 {
 	return &_current->errno_var;
+}
+
+int fputc(int c, FILE *f)
+{
+	return (_stdout_hook)(c);
 }

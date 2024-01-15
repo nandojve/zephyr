@@ -11,19 +11,18 @@
 
 #include <errno.h>
 #include <soc.h>
-#include <drivers/clock_control.h>
+#include <zephyr/drivers/clock_control.h>
 #include <fsl_clock.h>
 
 #define LOG_LEVEL CONFIG_CLOCK_CONTROL_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(clock_control_mcux_pcc);
 
 struct mcux_pcc_config {
 	uint32_t base_address;
 };
 
-#define DEV_CFG(dev)  ((struct mcux_pcc_config *)(dev->config))
-#define DEV_BASE(dev) (DEV_CFG(dev)->base_address)
+#define DEV_BASE(dev) (((struct mcux_pcc_config *)(dev->config))->base_address)
 #ifndef MAKE_PCC_REGADDR
 #define MAKE_PCC_REGADDR(base, offset) ((base) + (offset))
 #endif
@@ -58,11 +57,6 @@ static int mcux_pcc_get_rate(const struct device *dev,
 	return 0;
 }
 
-static int mcux_pcc_init(const struct device *dev)
-{
-	return 0;
-}
-
 static const struct clock_control_driver_api mcux_pcc_api = {
 	.on = mcux_pcc_on,
 	.off = mcux_pcc_off,
@@ -75,7 +69,7 @@ static const struct clock_control_driver_api mcux_pcc_api = {
 	};								\
 									\
 	DEVICE_DT_INST_DEFINE(inst,					\
-			    &mcux_pcc_init,				\
+			    NULL,					\
 			    NULL,					\
 			    NULL, &mcux_pcc##inst##_config,		\
 			    PRE_KERNEL_1,				\

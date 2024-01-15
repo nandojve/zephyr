@@ -4,22 +4,22 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <init.h>
+#include <zephyr/kernel.h>
+#include <zephyr/init.h>
 #include <stdio.h>
-#include <drivers/sensor.h>
+#include <zephyr/drivers/sensor.h>
 
 #define SLEEP_TIME	K_MSEC(1000)
 
-void main(void)
+int main(void)
 {
-	const struct device *dev =
-		device_get_binding(DT_LABEL(DT_INST(0, seeed_grove_light)));
+	const struct device *const dev = DEVICE_DT_GET_ONE(seeed_grove_light);
 
-	if (dev == NULL) {
-		printf("device not found.  aborting test.\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
+
 	while (1) {
 		int read;
 		struct sensor_value lux;
@@ -36,4 +36,5 @@ void main(void)
 
 		k_sleep(SLEEP_TIME);
 	}
+	return 0;
 }

@@ -22,8 +22,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f334r8.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F334R8
 
@@ -109,10 +107,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f334r8_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f334r8_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F334R8 connectors
 
 Default Zephyr Peripheral Mapping:
@@ -147,7 +143,7 @@ Flashing an application to Nucleo F334R8
 
 Connect the Nucleo F334R8 to your host computer using the USB port,
 then build and flash an application. Here is an example for the
-:ref:`blinky-sample` application.
+:zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -160,7 +156,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for
-the :ref:`blinky-sample` application.
+the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -174,10 +170,10 @@ References
 .. target-notes::
 
 .. _Nucleo F334R8 website:
-   http://www.st.com/en/evaluation-tools/nucleo-f334r8.html
+   https://www.st.com/en/evaluation-tools/nucleo-f334r8.html
 
 .. _STM32F334 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00093941.pdf
+   https://www.st.com/resource/en/reference_manual/dm00093941.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf

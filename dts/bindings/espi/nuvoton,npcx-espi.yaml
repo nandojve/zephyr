@@ -5,27 +5,38 @@ description: Nuvoton, NPCX-eSPI node
 
 compatible: "nuvoton,npcx-espi"
 
-include: espi-controller.yaml
+include: [espi-controller.yaml, pinctrl-device.yaml]
 
 properties:
-    reg:
-      description: mmio register space
-      required: true
+  reg:
+    description: mmio register space
+    required: true
 
-    clocks:
-        required: true
-        description: configurations of device source clock controller
+  clocks:
+    required: true
+    description: configurations of device source clock controller
 
-    pinctrl-0:
-        type: phandles
-        required: true
-        description: configurations of pinmux controllers
+  pinctrl-0:
+    required: true
 
-    espi-rst-wui:
-        type: phandle
-        required: true
-        description: |
-            Mapping table between Wake-Up Input (WUI) and ESPI_RST signal.
+  pinctrl-names:
+    required: true
 
-            For example the WUI mapping on NPCX7 would be
-               espi-rst-wui = <&wui_cr_sin1>;
+  espi-rst-wui:
+    type: phandle
+    required: true
+    description: |
+        Mapping table between Wake-Up Input (WUI) and ESPI_RST signal.
+
+        For example the WUI mapping on NPCX7 would be
+           espi-rst-wui = <&wui_cr_sin1>;
+
+  rx-plsize:
+    type: int
+    required: true
+    description: The maximum receive channel payload size.
+
+  tx-plsize:
+    type: int
+    required: true
+    description: The maximum transmit channel payload size.

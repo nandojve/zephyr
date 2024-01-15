@@ -4,28 +4,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/sensor.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
 #include <stdio.h>
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = device_get_binding(DT_LABEL(DT_INST(0, st_vl53l0x)));
+	const struct device *const dev = DEVICE_DT_GET_ONE(st_vl53l0x);
 	struct sensor_value value;
 	int ret;
 
-	if (dev == NULL) {
-		printk("Could not get VL53L0X device\n");
-		return;
+	if (!device_is_ready(dev)) {
+		printk("sensor: device not ready.\n");
+		return 0;
 	}
 
 	while (1) {
 		ret = sensor_sample_fetch(dev);
 		if (ret) {
 			printk("sensor_sample_fetch failed ret %d\n", ret);
-			return;
+			return 0;
 		}
 
 		ret = sensor_channel_get(dev, SENSOR_CHAN_PROX, &value);
@@ -38,4 +38,5 @@ void main(void)
 
 		k_sleep(K_MSEC(1000));
 	}
+	return 0;
 }

@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdint.h>
 #include <stdbool.h>
-#include <sys/dlist.h>
 
 #include "hal/cntr.h"
 
@@ -15,8 +15,6 @@
 
 #include "ticker/ticker.h"
 
-#define LOG_MODULE_NAME bt_ctlr_rv32m1_ticker
-#include "common/log.h"
 #include "hal/debug.h"
 
 #if defined(CONFIG_BT_LL_SW_SPLIT)

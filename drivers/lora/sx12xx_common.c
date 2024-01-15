@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/gpio.h>
-#include <drivers/lora.h>
-#include <logging/log.h>
-#include <sys/atomic.h>
-#include <zephyr.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/lora.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/kernel.h>
 
 /* LoRaMac-node specific includes */
 #include <radio.h>
@@ -39,21 +39,19 @@ static struct sx12xx_data {
 	struct sx12xx_rx_params rx_params;
 } dev_data;
 
-int __sx12xx_configure_pin(const struct device **dev, const char *controller,
-			   gpio_pin_t pin, gpio_flags_t flags)
+int __sx12xx_configure_pin(const struct gpio_dt_spec *gpio, gpio_flags_t flags)
 {
 	int err;
 
-	*dev = device_get_binding(controller);
-	if (!(*dev)) {
-		LOG_ERR("Cannot get pointer to %s device", controller);
-		return -EIO;
+	if (!device_is_ready(gpio->port)) {
+		LOG_ERR("GPIO device not ready %s", gpio->port->name);
+		return -ENODEV;
 	}
 
-	err = gpio_pin_configure(*dev, pin, flags);
+	err = gpio_pin_configure_dt(gpio, flags);
 	if (err) {
-		LOG_ERR("Cannot configure gpio %s %d: %d", controller, pin,
-			err);
+		LOG_ERR("Cannot configure gpio %s %d: %d", gpio->port->name,
+			gpio->pin, err);
 		return err;
 	}
 
@@ -165,6 +163,12 @@ static void sx12xx_ev_tx_done(void)
 	}
 }
 
+static void sx12xx_ev_tx_timed_out(void)
+{
+	/* Just release the modem */
+	modem_release(&dev_data);
+}
+
 int sx12xx_lora_send(const struct device *dev, uint8_t *data,
 		     uint32_t data_len)
 {
@@ -208,7 +212,7 @@ int sx12xx_lora_send(const struct device *dev, uint8_t *data,
 			k_poll(&evt, 1, K_FOREVER);
 		}
 	}
-	return 0;
+	return ret;
 }
 
 int sx12xx_lora_send_async(const struct device *dev, uint8_t *data,
@@ -318,14 +322,16 @@ int sx12xx_lora_config(const struct device *dev,
 		Radio.SetTxConfig(MODEM_LORA, config->tx_power, 0,
 				  config->bandwidth, config->datarate,
 				  config->coding_rate, config->preamble_len,
-				  false, true, 0, 0, false, 4000);
+				  false, true, 0, 0, config->iq_inverted, 4000);
 	} else {
 		/* TODO: Get symbol timeout value from config parameters */
 		Radio.SetRxConfig(MODEM_LORA, config->bandwidth,
 				  config->datarate, config->coding_rate,
 				  0, config->preamble_len, 10, false, 0,
-				  false, 0, 0, false, true);
+				  false, 0, 0, config->iq_inverted, true);
 	}
+
+	Radio.SetPublicNetwork(config->public_network);
 
 	modem_release(&dev_data);
 	return 0;
@@ -351,6 +357,8 @@ int sx12xx_init(const struct device *dev)
 	dev_data.dev = dev;
 	dev_data.events.TxDone = sx12xx_ev_tx_done;
 	dev_data.events.RxDone = sx12xx_ev_rx_done;
+	/* TX timeout event raises at the end of the test CW transmission */
+	dev_data.events.TxTimeout = sx12xx_ev_tx_timed_out;
 	Radio.Init(&dev_data.events);
 
 	/*

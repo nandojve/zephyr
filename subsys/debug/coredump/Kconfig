@@ -2,20 +2,20 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig DEBUG_COREDUMP
-	bool "Enable Core Dump"
+	bool "Core Dump"
 	depends on ARCH_SUPPORTS_COREDUMP
 	help
 	  Enable core dump so it can be used for offline debugging.
 
 if DEBUG_COREDUMP
 
-choice
+choice DEBUG_COREDUMP_BACKEND
 	prompt "Coredump backend"
-	default DEBUG_COREDUMP_BACKEND_LOGGING if LOG
+	default DEBUG_COREDUMP_BACKEND_LOGGING
 
 config DEBUG_COREDUMP_BACKEND_LOGGING
 	bool "Use Logging subsystem for coredump"
-	depends on LOG
+	select LOG
 	help
 	  Core dump is done via logging subsystem.
 
@@ -28,9 +28,22 @@ config DEBUG_COREDUMP_BACKEND_FLASH_PARTITION
 	  Core dump is saved to a flash partition with DTS alias
 	  "coredump-partition".
 
+config DEBUG_COREDUMP_BACKEND_INTEL_ADSP_MEM_WINDOW
+	bool "Use memory window for coredump on Intel ADSP"
+	depends on DT_HAS_INTEL_ADSP_MEM_WINDOW_ENABLED
+	help
+	  Core dump is done via memory window slot[1].
+	  It is Intel ADSP memory region shared with xtensa DSP.
+	  Window 2 slot [1] is reserved for debuging information.
+
+config DEBUG_COREDUMP_BACKEND_OTHER
+	bool "Backend subsystem for coredump defined out of tree"
+	help
+	  Core dump is done via custom mechanism defined out of tree
+
 endchoice
 
-choice
+choice DEBUG_COREDUMP_MEMORY_DUMP
 	prompt "Memory dump"
 	default DEBUG_COREDUMP_MEMORY_DUMP_LINKER_RAM
 
@@ -57,8 +70,7 @@ config DEBUG_COREDUMP_MEMORY_DUMP_LINKER_RAM
 endchoice
 
 config DEBUG_COREDUMP_SHELL
-	bool "Enable Coredump shell"
-	default y
+	bool "Coredump shell"
 	depends on SHELL
 	help
 	  This shell provides access to coredump and its backends.

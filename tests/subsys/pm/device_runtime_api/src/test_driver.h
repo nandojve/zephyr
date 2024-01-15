@@ -7,7 +7,7 @@
 #ifndef TESTS_SUBSYS_PM_DEVICE_RUNTIME_TEST_DRIVER_H_
 #define TESTS_SUBSYS_PM_DEVICE_RUNTIME_TEST_DRIVER_H_
 
-#include <device.h>
+#include <zephyr/device.h>
 
 /**
  * @brief Put test driver in async test mode.
@@ -35,5 +35,14 @@ void test_driver_pm_done(const struct device *dev);
  * @return false If PM action is not ongoing.
  */
 bool test_driver_pm_ongoing(const struct device *dev);
+
+/**
+ * @brief Gets the number of times the device changed state.
+ *
+ * @param dev Device instance.
+ *
+ * @return The number of state changes the device made.
+ */
+size_t test_driver_pm_count(const struct device *dev);
 
 #endif /* TESTS_SUBSYS_PM_DEVICE_RUNTIME_TEST_DRIVER_H_ */

@@ -28,7 +28,7 @@ The application can be built for the :ref:`litex-vexriscv` for
 emulation in Renode as follows:
 
 .. zephyr-app-commands::
-   :zephyr-app: samples/tensorflow/magic_wand
+   :zephyr-app: samples/modules/tflite-micro/magic_wand
    :host-os: unix
    :board: litex_vexriscv
    :goals: build
@@ -40,7 +40,7 @@ start the emulator:
 
 .. code-block:: console
 
-    renode -e "set zephyr_elf @./build/zephyr/zephyr.elf; s @./renode/litex-vexriscv-tflite.resc"
+    renode -e "set zephyr_elf @./build/zephyr/zephyr.elf; s @./samples/modules/tflite-micro/magic_wand/renode/litex-vexriscv-tflite.resc"
 
 .. _download and install Renode 1.12 or higher as a package:
     https://github.com/renode/renode/releases/
@@ -102,14 +102,12 @@ Modifying Sample for Your Own Project
 
 It is recommended that you copy and modify one of the two TensorFlow
 samples when creating your own TensorFlow project. To build with
-TensorFlow, you must enable the below Kconfig options in your :file:`prj.conf`.
+TensorFlow, you must enable the below Kconfig options in your :file:`prj.conf`:
 
-:file:`prj.conf`:
+.. code-block:: kconfig
 
-.. code-block:: console
-
-    CONFIG_CPLUSPLUS=y
-    CONFIG_NEWLIB_LIBC=y
+    CONFIG_CPP=y
+    CONFIG_REQUIRES_FULL_LIBC=y
     CONFIG_TENSORFLOW_LITE_MICRO=y
 
 Training

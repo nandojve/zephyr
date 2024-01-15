@@ -1,9 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
-if BOARD_QEMU_X86
+if BOARD_QEMU_X86 || BOARD_QEMU_X86_64 || BOARD_QEMU_X86_LAKEMONT || BOARD_QEMU_X86_TINY
+
+# The EEPROM emulator must be initialized after the flash simulator
+config EEPROM_INIT_PRIORITY
+	default 60
+	depends on EEPROM
 
 config BUILD_OUTPUT_BIN
 	default n
+
+endif # BOARD_QEMU_X86 || BOARD_QEMU_X86_64 || BOARD_QEMU_X86_LAKEMONT || BOARD_QEMU_X86_TINY
+
+if BOARD_QEMU_X86
 
 config BOARD
 	default "qemu_x86"
@@ -44,9 +53,6 @@ endif # BOARD_QEMU_X86_64
 
 if BOARD_QEMU_X86_LAKEMONT
 
-config BUILD_OUTPUT_BIN
-	default n
-
 config BOARD
 	default "qemu_x86_lakemont"
 
@@ -70,9 +76,6 @@ config QEMU_ICOUNT_SHIFT
 endif # BOARD_QEMU_X86_LAKEMONT
 
 if BOARD_QEMU_X86_TINY
-
-config BUILD_OUTPUT_BIN
-	default n
 
 config BOARD
 	default "qemu_x86_tiny"
@@ -105,7 +108,7 @@ config X86_EXTRA_PAGE_TABLE_PAGES
 	default 2 if DEMAND_PAGING && !LINKER_GENERIC_SECTIONS_PRESENT_AT_BOOT
 
 config DEMAND_PAGING_PAGE_FRAMES_RESERVE
-	# Need to accommodate the heap for newlib in libc-hook.c
-	default 6 if NEWLIB_LIBC
+	# Need to accommodate the heap for newlib or common malloc in libc-hook.c
+	default 6 if NEWLIB_LIBC || (COMMON_LIBC_MALLOC && COMMON_LIBC_MALLOC_ARENA_SIZE != 0)
 
 endif # BOARD_QEMU_X86_TINY

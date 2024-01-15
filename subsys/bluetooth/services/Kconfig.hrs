@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig BT_HRS
-	bool "Enable GATT Heart Rate service"
+	bool "GATT Heart Rate service"
 
 if BT_HRS
 
@@ -26,9 +26,5 @@ config BT_HRS_DEFAULT_PERM_RW_AUTHEN
 	bool "Require encryption and authentication for access"
 
 endchoice
-
-module = BT_HRS
-module-str = HRS
-source "${ZEPHYR_BASE}/subsys/logging/Kconfig.template.log_config"
 
 endif # BT_HRS

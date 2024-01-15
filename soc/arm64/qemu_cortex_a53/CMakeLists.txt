@@ -3,4 +3,4 @@
 
 zephyr_library_sources_ifdef(CONFIG_ARM_MMU mmu_regions.c)
 
-zephyr_sources_ifdef(CONFIG_SOC_QEMU_CORTEX_A53    plat_core.c)
+set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/include/zephyr/arch/arm64/scripts/linker.ld CACHE INTERNAL "")

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018-2021 Linaro Limited
+ * Copyright 2022 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,7 +8,8 @@
 /dts-v1/;
 
 #include <arm/armv8.1-m.dtsi>
-#include <dt-bindings/i2c/i2c.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <mem.h>
 
 / {
@@ -78,10 +80,27 @@
 		user_button_0: button_0 {
 			label = "USERPB0";
 			gpios = <&gpio_button 0>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		user_button_1: button_1 {
 			label = "USERPB1";
 			gpios = <&gpio_button 1>;
+			zephyr,code = <INPUT_KEY_1>;
+		};
+	};
+
+	ethosu {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		interrupt-parent = <&nvic>;
+
+		ethosu0: ethosu@48102000 {
+			compatible = "arm,ethos-u";
+			reg = <0x48102000>;
+			interrupts = <56 3>;
+			secure-enable;
+			privilege-enable;
+			status = "okay";
 		};
 	};
 
@@ -99,7 +118,6 @@
 			mpu: mpu@e000ed90 {
 				compatible = "arm,armv8.1m-mpu";
 				reg = <0xe000ed90 0x40>;
-				arm,num-mpu-regions = <16>;
 			};
 		};
 	};
@@ -108,7 +126,9 @@
 	 * you'll get the non-secure alias
 	 */
 	itcm: itcm@10000000 {	/* alias @ 0x0 */
+		compatible = "zephyr,memory-region";
 		reg = <0x10000000 DT_SIZE_K(512)>;
+		zephyr,memory-region = "ITCM";
 	};
 
 	sram: sram@11000000 {	/* alias @ 0x01000000 */
@@ -117,7 +137,9 @@
 	};
 
 	dtcm: dtcm@30000000 {	/* alias @ 0x20000000 */
+		compatible = "zephyr,memory-region";
 		reg = <0x30000000 DT_SIZE_K(512)>;
+		zephyr,memory-region = "DTCM";
 	};
 
 	isram: sram@31000000 {/* alias @ 0x21000000 */
@@ -128,6 +150,7 @@
 	/* DDR4 - 2G, alternates non-secure/secure every 256M */
 	ddr4: memory@60000000 {
 		device_type = "memory";
+		compatible = "zephyr,memory-region";
 		reg = <0x60000000 DT_SIZE_M(256)
 		       0x70000000 DT_SIZE_M(256)
 		       0x80000000 DT_SIZE_M(256)
@@ -136,6 +159,7 @@
 		       0xb0000000 DT_SIZE_M(256)
 		       0xc0000000 DT_SIZE_M(256)
 		       0xd0000000 DT_SIZE_M(256)>;
+		zephyr,memory-region = "DDR4";
 	};
 
 	soc {

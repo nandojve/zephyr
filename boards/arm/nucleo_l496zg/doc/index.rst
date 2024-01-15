@@ -29,9 +29,7 @@ some highlights of the Nucleo L476ZG board:
 - 2 push buttons: USER and RESET
 
 .. image:: img/nucleo_l496zg.jpg
-   :width: 250px
    :align: center
-   :height: 250px
    :alt: Nucleo L496ZG
 
 More information about the board can be found at the `Nucleo L496ZG website`_.
@@ -234,13 +232,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _Nucleo L496ZG website:
-   http://www.st.com/en/evaluation-tools/nucleo-l496zg.html
+   https://www.st.com/en/evaluation-tools/nucleo-l496zg.html
 
 .. _STM32 Nucleo-144 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00368330.pdf
+   https://www.st.com/resource/en/user_manual/dm00368330.pdf
 
 .. _STM32L496ZG on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32l496zg.html
+   https://www.st.com/en/microcontrollers/stm32l496zg.html
 
 .. _STM32L496 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00083560.pdf
+   https://www.st.com/resource/en/reference_manual/dm00083560.pdf

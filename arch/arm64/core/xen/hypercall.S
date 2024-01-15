@@ -1,13 +1,12 @@
+/* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Copyright (c) 2021 EPAM Systems
- *
- * SPDX-License-Identifier: Apache-2.0
+ * Copyright (c) 2021-2023 EPAM Systems
  */
 
-#include <toolchain.h>
-#include <linker/sections.h>
-#include <xen/public/arch-arm.h>
-#include <xen/public/xen.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
+#include <zephyr/xen/public/arch-arm.h>
+#include <zephyr/xen/public/xen.h>
 
 #define HYPERCALL(hypercall)			\
 GTEXT(HYPERVISOR_##hypercall);			\
@@ -24,3 +23,7 @@ HYPERCALL(sched_op);
 HYPERCALL(event_channel_op);
 HYPERCALL(hvm_op);
 HYPERCALL(memory_op);
+
+#ifdef CONFIG_XEN_DOM0
+HYPERCALL(domctl);
+#endif

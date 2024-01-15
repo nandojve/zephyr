@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <kernel.h>
+#include <zephyr/ztest.h>
+#include <zephyr/kernel.h>
 #include <cmsis_os2.h>
 
 #define MAX_BLOCKS      10
@@ -16,7 +16,7 @@ struct mem_block {
 	int member2;
 };
 
-static char __aligned(4) sample_mem[sizeof(struct mem_block) * MAX_BLOCKS];
+static char __aligned(sizeof(void *)) sample_mem[sizeof(struct mem_block) * MAX_BLOCKS];
 static const osMemoryPoolAttr_t mp_attrs = {
 	.name = "TestMempool",
 	.attr_bits = 0,
@@ -101,7 +101,7 @@ static void mempool_common_tests(osMemoryPoolId_t mp_id,
  *
  * @see osMemoryPoolNew(), osMemoryPoolAlloc(), osMemoryPoolFree(),
  */
-void test_mempool_dynamic(void)
+ZTEST(cmsis_mempool, test_mempool_dynamic)
 {
 	osMemoryPoolId_t mp_id;
 
@@ -117,7 +117,7 @@ void test_mempool_dynamic(void)
  *
  * @see osMemoryPoolNew(), osMemoryPoolAlloc(), osMemoryPoolFree(),
  */
-void test_mempool(void)
+ZTEST(cmsis_mempool, test_mempool)
 {
 	osMemoryPoolId_t mp_id;
 
@@ -132,3 +132,4 @@ void test_mempool(void)
 
 	mempool_common_tests(mp_id, mp_attrs.name);
 }
+ZTEST_SUITE(cmsis_mempool, NULL, NULL, NULL, NULL, NULL);

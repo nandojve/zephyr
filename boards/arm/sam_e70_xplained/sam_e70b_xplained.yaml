@@ -11,8 +11,12 @@ toolchain:
 supported:
   - netif:eth
   - adc
+  - dac
   - gpio
   - spi
   - watchdog
   - usb_device
   - pwm
+  - can
+  - hwinfo
+vendor: atmel

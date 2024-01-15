@@ -9,11 +9,11 @@
 #define LOG_MODULE_NAME net_ipso_pressure_sensor
 #define LOG_LEVEL CONFIG_LWM2M_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdint.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include "lwm2m_object.h"
 #include "lwm2m_engine.h"
@@ -79,13 +79,13 @@ static struct lwm2m_engine_res_inst res_inst[MAX_INSTANCE_COUNT]
 static void update_min_measured(uint16_t obj_inst_id, int index)
 {
 	min_measured_value[index] = sensor_value[index];
-	NOTIFY_OBSERVER(IPSO_OBJECT_ID, obj_inst_id, MIN_MEASURED_VALUE_RID);
+	lwm2m_notify_observer(IPSO_OBJECT_ID, obj_inst_id, MIN_MEASURED_VALUE_RID);
 }
 
 static void update_max_measured(uint16_t obj_inst_id, int index)
 {
 	max_measured_value[index] = sensor_value[index];
-	NOTIFY_OBSERVER(IPSO_OBJECT_ID, obj_inst_id, MAX_MEASURED_VALUE_RID);
+	lwm2m_notify_observer(IPSO_OBJECT_ID, obj_inst_id, MAX_MEASURED_VALUE_RID);
 }
 
 static int reset_min_max_measured_values_cb(uint16_t obj_inst_id,
@@ -171,8 +171,8 @@ pressure_sensor_create(uint16_t obj_inst_id)
 	INIT_OBJ_RES(SENSOR_VALUE_RID, res[index], i, res_inst[index], j, 1,
 		     false, true, &sensor_value[index], sizeof(*sensor_value),
 		     NULL, NULL, NULL, sensor_value_write_cb, NULL);
-	INIT_OBJ_RES_DATA(SENSOR_UNITS_RID, res[index], i, res_inst[index], j,
-			  units[index], UNIT_STR_MAX_SIZE);
+	INIT_OBJ_RES_DATA_LEN(SENSOR_UNITS_RID, res[index], i, res_inst[index], j,
+			  units[index], UNIT_STR_MAX_SIZE, 0);
 	INIT_OBJ_RES_DATA(MIN_MEASURED_VALUE_RID, res[index], i,
 			  res_inst[index], j, &min_measured_value[index],
 			  sizeof(*min_measured_value));
@@ -206,7 +206,7 @@ pressure_sensor_create(uint16_t obj_inst_id)
 	return &inst[index];
 }
 
-static int ipso_pressure_sensor_init(const struct device *dev)
+static int ipso_pressure_sensor_init(void)
 {
 	sensor.obj_id = IPSO_OBJECT_ID;
 	sensor.version_major = PRESSURE_VERSION_MAJOR;

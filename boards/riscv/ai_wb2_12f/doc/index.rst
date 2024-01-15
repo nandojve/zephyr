@@ -32,15 +32,22 @@ Accelerator).
      :align: center
      :alt: near-infrared picture of a open,likely damaged, ai-wb2-12f
 
-Markings:
-MCU:
+#. Markings:
+
+ #. MCU:
    BL602C00
+
    SAT4T2
+
    2111F2
-Flash:
+
+ #. Flash:
    BA2307
+
    25VQ32BTIG
+
    P3F776
+
 
 Hardware
 ********
@@ -135,10 +142,8 @@ Samples
 
    .. code-block:: console
 
-      *** Booting Zephyr OS build zephyr-v2.6.0-1729-g22140c728537  ***
-      Hello World! dt_bl10_devkit
-
-Congratulations, you have `dt_bl10_devkit`_ configured and running Zephyr.
+      *** Booting Zephyr OS build v2.6.0-rc2-4710-g6896bf977b5c  ***
+      Hello World! ai_wb2_12f
 
 
 .. _Bouffalo Lab BL602 MCU Website:

@@ -6,25 +6,8 @@ description: Bouffalo Lab Pinctrl node
 compatible: "bflb,bl-pinctrl"
 
 include:
-    - name: base.yaml
-    - name: pincfg-node-group.yaml
-      child-binding:
-        child-binding:
-          property-allowlist:
-            - bias-high-impedance
-            - bias-pull-down
-            - bias-pull-up
-            - input-enable
-            - input-schmitt-enable
-            - output-enable
+  - name: base.yaml
 
-properties:
-    "#address-cells":
-      required: true
-      const: 1
-    "#size-cells":
-      required: true
-      const: 1
 
 child-binding:
   description: |
@@ -60,6 +43,17 @@ child-binding:
 
       Note that bias options are mutually exclusive. It is the same with GPIO
       input/output enable options.
+
+    include:
+      - name: pincfg-node.yaml
+        property-allowlist:
+          - bias-high-impedance
+          - bias-pull-down
+          - bias-pull-up
+          - input-enable
+          - input-schmitt-enable
+          - output-enable
+
     properties:
       "bflb,pins":
         required: true

@@ -25,8 +25,8 @@
 
 #ifdef _ASMLANGUAGE
 
-#include <toolchain.h>
-#include <linker/sections.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/linker/sections.h>
 
 GTEXT(__start)
 GTEXT(_VectorTable)
@@ -46,7 +46,7 @@ GTEXT(__ev_div_zero)
 GTEXT(__ev_dc_error)
 GTEXT(__ev_maligned)
 
-GTEXT(_PrepC)
+GTEXT(z_prep_c)
 GTEXT(_isr_wrapper)
 
 #else

@@ -24,6 +24,11 @@
 
 #define _kernel_offset_to_current \
 	(___cpu_t_current_OFFSET)
+
+#if defined(CONFIG_FPU_SHARING)
+#define _kernel_offset_to_fp_ctx \
+	(___cpu_t_fp_ctx_OFFSET)
+#endif /* CONFIG_FPU_SHARING */
 #endif /* CONFIG_SMP */
 
 #define _kernel_offset_to_idle \
@@ -51,26 +56,9 @@
 
 /* base */
 
-#define _thread_offset_to_thread_state \
-	(___thread_t_base_OFFSET + ___thread_base_t_thread_state_OFFSET)
-
 #define _thread_offset_to_user_options \
 	(___thread_t_base_OFFSET + ___thread_base_t_user_options_OFFSET)
 
-#define _thread_offset_to_prio \
-	(___thread_t_base_OFFSET + ___thread_base_t_prio_OFFSET)
-
-#define _thread_offset_to_sched_locked \
-	(___thread_t_base_OFFSET + ___thread_base_t_sched_locked_OFFSET)
-
-#define _thread_offset_to_preempt \
-	(___thread_t_base_OFFSET + ___thread_base_t_preempt_OFFSET)
-
-#define _thread_offset_to_esf \
-	(___thread_t_arch_OFFSET + ___thread_arch_t_esf_OFFSET)
-
-#define _thread_offset_to_stack_start \
-	(___thread_t_stack_info_OFFSET + ___thread_stack_info_t_start_OFFSET)
 /* end - threads */
 
 #endif /* ZEPHYR_KERNEL_INCLUDE_OFFSETS_SHORT_H_ */

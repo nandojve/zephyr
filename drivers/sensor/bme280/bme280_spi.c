@@ -10,7 +10,7 @@
  * Bus-specific functionality for BME280s accessed via SPI.
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 #include "bme280.h"
 
 #if BME280_BUS_SPI
@@ -19,7 +19,7 @@ LOG_MODULE_DECLARE(BME280, CONFIG_SENSOR_LOG_LEVEL);
 
 static int bme280_bus_check_spi(const union bme280_bus *bus)
 {
-	return spi_is_ready(&bus->spi) ? 0 : -ENODEV;
+	return spi_is_ready_dt(&bus->spi) ? 0 : -ENODEV;
 }
 
 static int bme280_reg_read_spi(const union bme280_bus *bus,

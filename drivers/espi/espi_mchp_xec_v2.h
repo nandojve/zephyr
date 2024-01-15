@@ -8,10 +8,11 @@
 #define ZEPHYR_DRIVERS_ESPI_MCHP_XEC_ESPI_V2_H_
 
 #include <stdint.h>
-#include <device.h>
-#include <drivers/espi.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/espi.h>
+#include <zephyr/drivers/pinctrl.h>
 
-#define ESPI_XEC_V2_DEBUG	1
+/* #define ESPI_XEC_V2_DEBUG	1 */
 
 struct espi_isr {
 	uint8_t girq_id;
@@ -38,8 +39,10 @@ struct espi_xec_config {
 	uint32_t vw_base_addr;
 	uint8_t pcr_idx;
 	uint8_t pcr_bitpos;
-	const struct espi_xec_irq_info *irq_info_list;
 	uint8_t irq_info_size;
+	uint8_t rsvd[1];
+	const struct espi_xec_irq_info *irq_info_list;
+	const struct pinctrl_dev_config *pcfg;
 };
 
 #define ESPI_XEC_CONFIG(dev)						\
@@ -50,9 +53,6 @@ struct espi_xec_data {
 	struct k_sem tx_lock;
 	struct k_sem rx_lock;
 	struct k_sem flash_lock;
-	uint8_t plt_rst_asserted;
-	uint8_t espi_rst_asserted;
-	uint8_t sx_state;
 #ifdef ESPI_XEC_V2_DEBUG
 	uint32_t espi_rst_count;
 #endif
@@ -62,9 +62,10 @@ struct espi_xec_data {
 	((struct espi_xec_data * const)(dev)->data)
 
 struct xec_signal {
-	uint8_t xec_reg_idx;
+	uint8_t host_idx;
 	uint8_t bit;
-	uint8_t dir;
+	uint8_t xec_reg_idx;
+	uint8_t flags;
 };
 
 enum mchp_msvw_regs {
@@ -103,7 +104,6 @@ enum xec_espi_girq_idx {
 	vw_ch_en_girq_idx,
 	max_girq_idx,
 };
-
 
 int xec_host_dev_init(const struct device *dev);
 int xec_host_dev_connect_irqs(const struct device *dev);

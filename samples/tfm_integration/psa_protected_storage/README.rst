@@ -17,7 +17,7 @@ Using the PS API, this sample stores data to non-volatile storage. The sample sh
 be stored to and read from UIDs, and how overwrite protection can be enabled using flags.
 
 TF-M includes a maximum number of PS records, set via ``PS_NUM_ASSETS`` (default 10 as of
-TF-M 1.3), and a maximum record size, set via ``PS_MAX_ASSET_SIZE`` (default of 2048 as of
+TF-M 1.3.0), and a maximum record size, set via ``PS_MAX_ASSET_SIZE`` (default of 2048 as of
 TF-M 1.3.0). These defaults may be different depending on the platform being used, the current
 value will be printed by the build system during the TF-M compilation step.
 
@@ -33,8 +33,6 @@ Building and Running
 
 On Target
 =========
-
-Refer to :ref:`tfm_psa_crypto` for detailed instructions.
 
 Note that the board needs to be completely erased before programming the sample, as the flash area
 used might contain data from before. The board must also be erased between each time the sample is

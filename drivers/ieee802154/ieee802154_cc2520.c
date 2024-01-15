@@ -11,34 +11,34 @@
 #define LOG_MODULE_NAME ieee802154_cc2520
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <errno.h>
 
-#include <kernel.h>
-#include <arch/cpu.h>
-#include <debug/stack.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/debug/stack.h>
 
-#include <device.h>
-#include <init.h>
-#include <net/net_if.h>
-#include <net/net_pkt.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_pkt.h>
 
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
 #include <string.h>
-#include <random/rand32.h>
+#include <zephyr/random/random.h>
 
-#include <drivers/gpio.h>
+#include <zephyr/drivers/gpio.h>
 
 #ifdef CONFIG_IEEE802154_CC2520_CRYPTO
 
-#include <crypto/cipher.h>
-#include <crypto/cipher_structs.h>
+#include <zephyr/crypto/crypto.h>
+#include <zephyr/crypto/cipher.h>
 
 #endif /* CONFIG_IEEE802154_CC2520_CRYPTO */
 
-#include <net/ieee802154_radio.h>
+#include <zephyr/net/ieee802154_radio.h>
 
 #include "ieee802154_cc2520.h"
 
@@ -536,11 +536,11 @@ static inline bool read_rxfifo_content(const struct device *dev,
 	return true;
 }
 
-static inline void insert_radio_noise_details(struct net_pkt *pkt, uint8_t *buf)
+static inline void insert_radio_noise_details(struct net_pkt *pkt, uint8_t *status)
 {
 	uint8_t lqi;
 
-	net_pkt_set_ieee802154_rssi(pkt, buf[0]);
+	net_pkt_set_ieee802154_rssi_dbm(pkt, (int8_t) status[0]);
 
 	/**
 	 * CC2520 does not provide an LQI but a correlation factor.
@@ -552,7 +552,7 @@ static inline void insert_radio_noise_details(struct net_pkt *pkt, uint8_t *buf)
 	 * else:
 	 * lqi = (lqi - 50) * 4
 	 */
-	lqi = buf[1] & CC2520_FCS_CORRELATION;
+	lqi = status[1] & CC2520_FCS_CORRELATION;
 	if (lqi <= 50U) {
 		lqi = 0U;
 	} else if (lqi >= 110U) {
@@ -566,17 +566,17 @@ static inline void insert_radio_noise_details(struct net_pkt *pkt, uint8_t *buf)
 
 static inline bool verify_crc(const struct device *dev, struct net_pkt *pkt)
 {
-	uint8_t fcs[2];
+	uint8_t status[2];
 
-	if (!z_cc2520_access(dev, true, CC2520_INS_RXBUF, 0, &fcs, 2)) {
+	if (!z_cc2520_access(dev, true, CC2520_INS_RXBUF, 0, &status, 2)) {
 		return false;
 	}
 
-	if (!(fcs[1] & CC2520_FCS_CRC_OK)) {
+	if (!(status[1] & CC2520_FCS_CRC_OK)) {
 		return false;
 	}
 
-	insert_radio_noise_details(pkt, fcs);
+	insert_radio_noise_details(pkt, status);
 
 	return true;
 }
@@ -591,9 +591,12 @@ static inline bool verify_rxfifo_validity(const struct device *dev,
 	return true;
 }
 
-static void cc2520_rx(void *arg)
+static void cc2520_rx(void *p1, void *p2, void *p3)
 {
-	const struct device *dev = arg;
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	const struct device *dev = p1;
 	struct cc2520_context *cc2520 = dev->data;
 	struct net_pkt *pkt;
 	uint8_t pkt_len;
@@ -616,8 +619,8 @@ static void cc2520_rx(void *arg)
 			goto flush;
 		}
 
-		pkt = net_pkt_alloc_with_buffer(cc2520->iface, pkt_len,
-						AF_UNSPEC, 0, K_NO_WAIT);
+		pkt = net_pkt_rx_alloc_with_buffer(cc2520->iface, pkt_len,
+						   AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No pkt available");
 			goto flush;
@@ -637,7 +640,7 @@ static void cc2520_rx(void *arg)
 			goto out;
 		}
 
-		if (ieee802154_radio_handle_ack(cc2520->iface, pkt) == NET_OK) {
+		if (ieee802154_handle_ack(cc2520->iface, pkt) == NET_OK) {
 			LOG_DBG("ACK packet handled");
 			goto out;
 		}
@@ -667,10 +670,9 @@ out:
  *******************/
 static enum ieee802154_hw_caps cc2520_get_capabilities(const struct device *dev)
 {
-	/* ToDo: Add support for IEEE802154_HW_PROMISC */
-	return IEEE802154_HW_FCS |
-		IEEE802154_HW_2_4_GHZ |
-		IEEE802154_HW_FILTER;
+	/* TODO: Add support for IEEE802154_HW_PROMISC */
+	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER |
+	       IEEE802154_HW_RX_TX_ACK;
 }
 
 static int cc2520_cca(const struct device *dev)
@@ -687,8 +689,12 @@ static int cc2520_set_channel(const struct device *dev, uint16_t channel)
 {
 	LOG_DBG("%u", channel);
 
-	if (channel < 11 || channel > 26) {
+	if (channel > 26) {
 		return -EINVAL;
+	}
+
+	if (channel < 11) {
+		return -ENOTSUP;
 	}
 
 	/* See chapter 16 */
@@ -817,6 +823,7 @@ static int cc2520_tx(const struct device *dev,
 			goto error;
 		}
 
+		/* TODO: Implement standard conforming CSMA/CA or use the soft MAC's default. */
 		k_sem_take(&cc2520->tx_sync, K_MSEC(10));
 
 		retry--;
@@ -876,6 +883,19 @@ static int cc2520_stop(const struct device *dev)
 	}
 
 	return 0;
+}
+
+/* driver-allocated attribute memory - constant across all driver instances */
+IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 11, 26);
+
+static int cc2520_attr_get(const struct device *dev, enum ieee802154_attr attr,
+			   struct ieee802154_attr_value *value)
+{
+	ARG_UNUSED(dev);
+
+	return ieee802154_attr_get_channel_page_and_range(
+		attr, IEEE802154_ATTR_PHY_CHANNEL_PAGE_ZERO_OQPSK_2450_BPSK_868_915,
+		&drv_attr.phy_supported_channels, value);
 }
 
 /******************
@@ -951,12 +971,12 @@ static int configure_gpios(const struct device *dev)
 {
 	const struct cc2520_config *cfg = dev->config;
 
-	if (!device_is_ready(cfg->vreg_en.port) ||
-	    !device_is_ready(cfg->reset.port) ||
-	    !device_is_ready(cfg->fifo.port) ||
-	    !device_is_ready(cfg->cca.port) ||
-	    !device_is_ready(cfg->sfd.port) ||
-	    !device_is_ready(cfg->fifop.port)) {
+	if (!gpio_is_ready_dt(&cfg->vreg_en) ||
+	    !gpio_is_ready_dt(&cfg->reset) ||
+	    !gpio_is_ready_dt(&cfg->fifo) ||
+	    !gpio_is_ready_dt(&cfg->cca) ||
+	    !gpio_is_ready_dt(&cfg->sfd) ||
+	    !gpio_is_ready_dt(&cfg->fifop)) {
 		return -ENODEV;
 	}
 
@@ -989,7 +1009,7 @@ static int cc2520_init(const struct device *dev)
 		return -EIO;
 	}
 
-	if (!spi_is_ready(&cfg->bus)) {
+	if (!spi_is_ready_dt(&cfg->bus)) {
 		LOG_ERR("SPI bus %s not ready", cfg->bus.bus->name);
 		return -EIO;
 	}
@@ -1003,7 +1023,7 @@ static int cc2520_init(const struct device *dev)
 
 	k_thread_create(&cc2520->cc2520_rx_thread, cc2520->cc2520_rx_stack,
 			CONFIG_IEEE802154_CC2520_RX_STACK_SIZE,
-			(k_thread_entry_t)cc2520_rx,
+			cc2520_rx,
 			(void *)dev, NULL, NULL, K_PRIO_COOP(2), 0, K_NO_WAIT);
 	k_thread_name_set(&cc2520->cc2520_rx_thread, "cc2520_rx");
 
@@ -1037,7 +1057,7 @@ static const struct cc2520_config cc2520_config = {
 
 static struct cc2520_context cc2520_context_data;
 
-static struct ieee802154_radio_api cc2520_radio_api = {
+static const struct ieee802154_radio_api cc2520_radio_api = {
 	.iface_api.init	= cc2520_iface_init,
 
 	.get_capabilities	= cc2520_get_capabilities,
@@ -1048,20 +1068,18 @@ static struct ieee802154_radio_api cc2520_radio_api = {
 	.start			= cc2520_start,
 	.stop			= cc2520_stop,
 	.tx			= cc2520_tx,
+	.attr_get		= cc2520_attr_get,
 };
 
 #if defined(CONFIG_IEEE802154_RAW_MODE)
-DEVICE_DEFINE(cc2520, CONFIG_IEEE802154_CC2520_DRV_NAME,
-		cc2520_init, NULL, &cc2520_context_data, NULL,
-		POST_KERNEL, CONFIG_IEEE802154_CC2520_INIT_PRIO,
-		&cc2520_radio_api);
+DEVICE_DT_INST_DEFINE(0, cc2520_init, NULL, &cc2520_context_data, NULL,
+		      POST_KERNEL, CONFIG_IEEE802154_CC2520_INIT_PRIO,
+		      &cc2520_radio_api);
 #else
-NET_DEVICE_INIT(cc2520, CONFIG_IEEE802154_CC2520_DRV_NAME,
-		cc2520_init, NULL,
-		&cc2520_context_data, &cc2520_config,
-		CONFIG_IEEE802154_CC2520_INIT_PRIO,
-		&cc2520_radio_api, IEEE802154_L2,
-		NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);
+NET_DEVICE_DT_INST_DEFINE(0, cc2520_init, NULL, &cc2520_context_data,
+			  &cc2520_config, CONFIG_IEEE802154_CC2520_INIT_PRIO,
+			  &cc2520_radio_api, IEEE802154_L2,
+			  NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);
 #endif
 
 
@@ -1383,12 +1401,12 @@ static int cc2520_crypto_init(const struct device *dev)
 
 struct crypto_driver_api cc2520_crypto_api = {
 	.query_hw_caps			= cc2520_crypto_hw_caps,
-	.begin_session			= cc2520_crypto_begin_session,
-	.free_session			= cc2520_crypto_free_session,
-	.crypto_async_callback_set	= NULL
+	.cipher_begin_session			= cc2520_crypto_begin_session,
+	.cipher_free_session			= cc2520_crypto_free_session,
+	.cipher_async_callback_set	= NULL
 };
 
-DEVICE_DEFINE(cc2520_crypto, CONFIG_IEEE802154_CC2520_CRYPTO_DRV_NAME,
+DEVICE_DEFINE(cc2520_crypto, "cc2520_crypto",
 		cc2520_crypto_init, NULL,
 		&cc2520_context_data, NULL, POST_KERNEL,
 		CONFIG_IEEE802154_CC2520_CRYPTO_INIT_PRIO, &cc2520_crypto_api);

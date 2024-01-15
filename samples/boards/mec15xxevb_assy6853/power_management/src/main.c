@@ -5,13 +5,13 @@
  */
 
 #define LOG_LEVEL LOG_LEVEL_INF
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(mec15_brd_test);
 #include "power_mgmt.h"
 
 #define MAX_CYCLES 5ul
 
-void main(void)
+int main(void)
 {
 	test_pwr_mgmt_singlethread(false, MAX_CYCLES);
 
@@ -20,4 +20,5 @@ void main(void)
 	test_pwr_mgmt_multithread(false, MAX_CYCLES);
 
 	test_pwr_mgmt_multithread(true, MAX_CYCLES);
+	return 0;
 }

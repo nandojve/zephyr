@@ -4,17 +4,17 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_virtual_interface_sample, LOG_LEVEL_DBG);
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 #include <errno.h>
 
-#include <net/net_core.h>
-#include <net/ethernet.h>
-#include <net/virtual.h>
-#include <net/virtual_mgmt.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/virtual.h>
+#include <zephyr/net/virtual_mgmt.h>
 
 /* User data for the interface callback */
 struct ud {
@@ -44,7 +44,7 @@ struct virtual_test_context {
 static void virtual_test_iface_init(struct net_if *iface)
 {
 	struct virtual_test_context *ctx = net_if_get_device(iface)->data;
-	char name[16];
+	char name[sizeof("VirtualTest-+##########")];
 	static int count;
 
 	if (ctx->init_done) {
@@ -70,13 +70,6 @@ static struct virtual_test_context virtual_test_context_data2 = {
 
 static struct virtual_test_context virtual_test_context_data3 = {
 };
-
-static int virtual_test_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	return 0;
-}
 
 static enum virtual_interface_caps
 virtual_test_get_capabilities(struct net_if *iface)
@@ -170,24 +163,21 @@ static const struct virtual_interface_api virtual_test_iface_api = {
 	.attach = virtual_test_interface_attach,
 };
 
-NET_VIRTUAL_INTERFACE_INIT(virtual_test1, VIRTUAL_TEST,
-			   virtual_test_init, NULL,
+NET_VIRTUAL_INTERFACE_INIT(virtual_test1, VIRTUAL_TEST, NULL, NULL,
 			   &virtual_test_context_data1,
 			   NULL,
 			   CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 			   &virtual_test_iface_api,
 			   VIRTUAL_TEST_MTU);
 
-NET_VIRTUAL_INTERFACE_INIT(virtual_test2, VIRTUAL_TEST2,
-			   virtual_test_init, NULL,
+NET_VIRTUAL_INTERFACE_INIT(virtual_test2, VIRTUAL_TEST2, NULL, NULL,
 			   &virtual_test_context_data2,
 			   NULL,
 			   CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 			   &virtual_test_iface_api,
 			   VIRTUAL_TEST_MTU);
 
-NET_VIRTUAL_INTERFACE_INIT(virtual_test3, VIRTUAL_TEST3,
-			   virtual_test_init, NULL,
+NET_VIRTUAL_INTERFACE_INIT(virtual_test3, VIRTUAL_TEST3, NULL, NULL,
 			   &virtual_test_context_data3,
 			   NULL,
 			   CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
@@ -359,7 +349,7 @@ done:
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
 #define MAX_NAME_LEN 32
 	char buf[MAX_NAME_LEN];
@@ -374,18 +364,15 @@ void main(void)
 
 	LOG_INF("My example tunnel interface %d (%s / %p)",
 		net_if_get_by_iface(ud.my_iface),
-		log_strdup(net_virtual_get_name(ud.my_iface, buf,
-						sizeof(buf))),
+		net_virtual_get_name(ud.my_iface, buf, sizeof(buf)),
 		ud.my_iface);
 	LOG_INF("Tunnel interface %d (%s / %p)",
 		net_if_get_by_iface(ud.ip_tunnel_1),
-		log_strdup(net_virtual_get_name(ud.ip_tunnel_1, buf,
-						sizeof(buf))),
+		net_virtual_get_name(ud.ip_tunnel_1, buf, sizeof(buf)),
 		ud.ip_tunnel_1);
 	LOG_INF("Tunnel interface %d (%s / %p)",
 		net_if_get_by_iface(ud.ip_tunnel_2),
-		log_strdup(net_virtual_get_name(ud.ip_tunnel_2, buf,
-						sizeof(buf))),
+		net_virtual_get_name(ud.ip_tunnel_2, buf, sizeof(buf)),
 		ud.ip_tunnel_2);
 	LOG_INF("IPIP interface %d (%p)",
 		net_if_get_by_iface(ud.ipip), ud.ipip);
@@ -396,7 +383,7 @@ void main(void)
 	net_virtual_interface_attach(ud.ip_tunnel_1, ud.ethernet);
 
 	/* Attach our example virtual interface on top of the IPv4 one.
-	 * This is just an exaple how to stack the interface on top of
+	 * This is just an example how to stack the interface on top of
 	 * each other.
 	 */
 	net_virtual_interface_attach(ud.my_iface, ud.ip_tunnel_1);
@@ -436,4 +423,5 @@ void main(void)
 	 * net-shell to send ping or UDP/TCP packets for testing
 	 * purposes.
 	 */
+	return 0;
 }

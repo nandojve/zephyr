@@ -1,0 +1,12 @@
+tests:
+  bluetooth.host_long_adv_recv:
+    platform_allow:
+      - native_posix
+      - native_posix_64
+      - native_sim
+      - native_sim_64
+    integration_platforms:
+      - native_sim
+    tags:
+      - bluetooth
+      - host

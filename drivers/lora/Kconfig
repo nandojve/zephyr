@@ -7,8 +7,7 @@
 # Top-level configuration file for LORA drivers.
 
 menuconfig LORA
-	bool "LoRa support [EXPERIMENTAL]"
-	select REQUIRES_FULL_LIBC
+	bool "LoRa drivers [EXPERIMENTAL]"
 	select POLL
 	select EXPERIMENTAL
 	help
@@ -21,8 +20,7 @@ module-str = lora
 source "subsys/logging/Kconfig.template.log_config"
 
 config LORA_SHELL
-	bool "Enable LoRa Shell"
-	default y
+	bool "LoRa Shell"
 	depends on SHELL
 	help
 	  Enable LoRa Shell for testing.

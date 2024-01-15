@@ -4,18 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <drivers/watchdog.h>
-#include <drivers/counter.h>
-#include <logging/log_ctrl.h>
+#include <zephyr/drivers/watchdog.h>
+#include <zephyr/drivers/counter.h>
+#include <zephyr/logging/log_ctrl.h>
 
 #define WDT_CHANNEL_COUNT DT_PROP(DT_WDT_COUNTER, num_channels)
 #define DT_WDT_COUNTER DT_COMPAT_GET_ANY_STATUS_OKAY(zephyr_counter_watchdog)
+
+#define WDT_SUPPORTED_CFG_FLAGS (WDT_FLAG_RESET_NONE | WDT_FLAG_RESET_SOC)
 
 extern void sys_arch_reboot(int type);
 
 struct wdt_counter_data {
 	wdt_callback_t callback[CONFIG_WDT_COUNTER_CH_COUNT];
 	uint32_t timeout[CONFIG_WDT_COUNTER_CH_COUNT];
+	uint8_t flags[CONFIG_WDT_COUNTER_CH_COUNT];
 	uint8_t alloc_cnt;
 };
 
@@ -25,19 +28,10 @@ struct wdt_counter_config {
 	const struct device *counter;
 };
 
-static inline struct wdt_counter_data *get_dev_data(const struct device *dev)
-{
-	return dev->data;
-}
-
-static inline const struct wdt_counter_config *get_dev_config(const struct device *dev)
-{
-	return dev->config;
-}
-
 static int wdt_counter_setup(const struct device *dev, uint8_t options)
 {
-	const struct device *counter = get_dev_config(dev)->counter;
+	const struct wdt_counter_config *config = dev->config;
+	const struct device *counter = config->counter;
 
 	if ((options & WDT_OPT_PAUSE_IN_SLEEP) || (options & WDT_OPT_PAUSE_IN_SLEEP)) {
 		return -ENOTSUP;
@@ -48,7 +42,8 @@ static int wdt_counter_setup(const struct device *dev, uint8_t options)
 
 static int wdt_counter_disable(const struct device *dev)
 {
-	const struct device *counter = get_dev_config(dev)->counter;
+	const struct wdt_counter_config *config = dev->config;
+	const struct device *counter = config->counter;
 
 	return counter_stop(counter);
 }
@@ -58,21 +53,24 @@ static void counter_alarm_callback(const struct device *dev,
 				   void *user_data)
 {
 	const struct device *wdt_dev = user_data;
-	struct wdt_counter_data *data = get_dev_data(wdt_dev);
+	struct wdt_counter_data *data = wdt_dev->data;
 
 	counter_stop(dev);
 	if (data->callback[chan_id]) {
 		data->callback[chan_id](wdt_dev, chan_id);
 	}
 
-	LOG_PANIC();
-	sys_arch_reboot(0);
+	if (data->flags[chan_id] & WDT_FLAG_RESET_SOC) {
+		LOG_PANIC();
+		sys_arch_reboot(0);
+	}
 }
 
 static int timeout_set(const struct device *dev, int chan_id, bool cancel)
 {
-	struct wdt_counter_data *data = get_dev_data(dev);
-	const struct device *counter = get_dev_config(dev)->counter;
+	const struct wdt_counter_config *config = dev->config;
+	struct wdt_counter_data *data = dev->data;
+	const struct device *counter = config->counter;
 	struct counter_alarm_cfg alarm_cfg = {
 		.callback = counter_alarm_callback,
 		.ticks = data->timeout[chan_id],
@@ -94,8 +92,8 @@ static int timeout_set(const struct device *dev, int chan_id, bool cancel)
 static int wdt_counter_install_timeout(const struct device *dev,
 				   const struct wdt_timeout_cfg *cfg)
 {
-	struct wdt_counter_data *data = get_dev_data(dev);
-	const struct wdt_counter_config *config = get_dev_config(dev);
+	struct wdt_counter_data *data = dev->data;
+	const struct wdt_counter_config *config = dev->config;
 	const struct device *counter = config->counter;
 	int chan_id;
 
@@ -108,7 +106,7 @@ static int wdt_counter_install_timeout(const struct device *dev,
 				COUNTER_GUARD_PERIOD_LATE_TO_SET);
 	uint32_t timeout_ticks = counter_us_to_ticks(counter, cfg->window.max * 1000);
 
-	if (cfg->flags != WDT_FLAG_RESET_SOC) {
+	if (cfg->flags & ~WDT_SUPPORTED_CFG_FLAGS) {
 		return -ENOTSUP;
 	}
 
@@ -128,6 +126,7 @@ static int wdt_counter_install_timeout(const struct device *dev,
 	chan_id = data->alloc_cnt;
 	data->timeout[chan_id] = timeout_ticks;
 	data->callback[chan_id] = cfg->callback;
+	data->flags[chan_id] = cfg->flags;
 
 	int err = timeout_set(dev, chan_id, false);
 
@@ -140,7 +139,9 @@ static int wdt_counter_install_timeout(const struct device *dev,
 
 static int wdt_counter_feed(const struct device *dev, int chan_id)
 {
-	if (chan_id > counter_get_num_of_channels(get_dev_config(dev)->counter)) {
+	const struct wdt_counter_config *config = dev->config;
+
+	if (chan_id > counter_get_num_of_channels(config->counter)) {
 		return -EINVAL;
 	}
 
@@ -162,8 +163,9 @@ static const struct wdt_counter_config wdt_counter_config = {
 
 static int wdt_counter_init(const struct device *dev)
 {
-	struct wdt_counter_data *data = get_dev_data(dev);
-	uint8_t ch_cnt = counter_get_num_of_channels(get_dev_config(dev)->counter);
+	const struct wdt_counter_config *config = dev->config;
+	struct wdt_counter_data *data = dev->data;
+	uint8_t ch_cnt = counter_get_num_of_channels(config->counter);
 
 	data->alloc_cnt = MIN(ch_cnt, CONFIG_WDT_COUNTER_CH_COUNT);
 

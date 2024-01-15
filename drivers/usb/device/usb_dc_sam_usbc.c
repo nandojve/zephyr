@@ -6,14 +6,17 @@
 
 #define DT_DRV_COMPAT atmel_sam_usbc
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(usb_dc_sam_usbc, CONFIG_USB_DRIVER_LOG_LEVEL);
 
-#include <kernel.h>
-#include <usb/usb_device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/usb/usb_device.h>
 #include <soc.h>
 #include <string.h>
-#include <sys/byteorder.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/barrier.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/irq.h>
 
 #define EP_UDINT_MASK           0x000FF000
 
@@ -24,7 +27,7 @@ LOG_MODULE_REGISTER(usb_dc_sam_usbc, CONFIG_USB_DRIVER_LOG_LEVEL);
 /**
  * @brief USB Driver Control Endpoint Finite State Machine states
  *
- * FSM states to keep tracking of control endpoint hiden states.
+ * FSM states to keep tracking of control endpoint hidden states.
  */
 enum usb_dc_epctrl_state {
 	/* Wait a SETUP packet */
@@ -99,8 +102,8 @@ struct usb_device_data {
 static struct sam_usbc_desc_table dev_desc[(NUM_OF_EP_MAX + 1) * 2];
 static struct usb_device_data dev_data;
 static volatile Usbc *regs = (Usbc *) DT_INST_REG_ADDR(0);
-static uint32_t num_pins = ATMEL_SAM_DT_INST_NUM_PINS(0);
-static struct soc_gpio_pin pins[] = ATMEL_SAM_DT_INST_PINS(0);
+PINCTRL_DT_INST_DEFINE(0);
+static const struct pinctrl_dev_config *pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0);
 static enum usb_dc_epctrl_state epctrl_fsm;
 static const char *const usb_dc_epctrl_state_string[] = {
 	"STP",
@@ -652,7 +655,7 @@ static void usb_dc_sam_usbc_isr(void)
 	}
 
 usb_dc_sam_usbc_isr_barrier:
-	__DMB();
+	barrier_dmem_fence_full();
 }
 
 int usb_dc_attach(void)
@@ -660,6 +663,7 @@ int usb_dc_attach(void)
 	uint32_t pmcon;
 	uint32_t regval;
 	uint32_t key = irq_lock();
+	int retval;
 
 	/* Enable USBC asynchronous wake-up source */
 	PM->AWEN |= BIT(PM_AWEN_USBC);
@@ -677,7 +681,6 @@ int usb_dc_attach(void)
 		PM_CLOCK_MASK(PM_CLK_GRP_PBB, SYSCLK_USBC_REGS));
 	soc_pmc_peripheral_enable(
 		PM_CLOCK_MASK(PM_CLK_GRP_HSB, SYSCLK_USBC_DATA));
-	soc_gpio_list_configure(pins, num_pins);
 
 	/* Enable USB Generic clock */
 	SCIF->GCCTRL[GEN_CLK_USBC] = 0;
@@ -689,6 +692,11 @@ int usb_dc_attach(void)
 		;
 	};
 
+	retval = pinctrl_apply_state(pcfg, PINCTRL_STATE_DEFAULT);
+	if (retval < 0) {
+		return retval;
+	}
+
 	/* Enable the USB controller in device mode with the clock unfrozen */
 	regs->USBCON = USBC_USBCON_UIMOD | USBC_USBCON_USBE;
 
@@ -699,7 +707,7 @@ int usb_dc_attach(void)
 	/* Select the speed with pads detached */
 	regval = USBC_UDCON_DETACH;
 
-	switch (DT_ENUM_IDX(DT_DRV_INST(0), maximum_speed)) {
+	switch (DT_INST_ENUM_IDX(0, maximum_speed)) {
 	case 1:
 		WRITE_BIT(regval, USBC_UDCON_LS_Pos, 0);
 		break;
@@ -1101,7 +1109,7 @@ int usb_dc_ep_flush(uint8_t ep)
 
 	dev_data.ep_data[ep_idx].out_at = 0U;
 
-	/* Reenable interrupts */
+	/* Re-enable interrupts */
 	usb_dc_ep_enable_interrupts(ep_idx);
 
 	irq_unlock(key);
@@ -1179,7 +1187,7 @@ static int usb_dc_ep_write_stp(uint8_t ep_bank, const uint8_t *data,
 		if (data) {
 			memcpy(dev_desc[ep_bank].ep_pipe_addr,
 			       data, packet_len);
-			__DSB();
+			barrier_dsync_fence_full();
 		}
 		dev_desc[ep_bank].sizes = packet_len;
 
@@ -1261,7 +1269,7 @@ int usb_dc_ep_write(uint8_t ep, const uint8_t *data,
 	} else {
 		if (data && packet_len > 0) {
 			memcpy(dev_desc[ep_bank].ep_pipe_addr, data, packet_len);
-			__DSB();
+			barrier_dsync_fence_full();
 		}
 		dev_desc[ep_bank].sizes = packet_len;
 
@@ -1377,7 +1385,7 @@ int usb_dc_ep_read_ex(uint8_t ep, uint8_t *data, uint32_t max_data_len,
 		       (uint8_t *) dev_desc[ep_bank].ep_pipe_addr +
 		       dev_data.ep_data[ep_idx].out_at,
 		       take);
-		__DSB();
+		barrier_dsync_fence_full();
 	}
 
 	if (read_bytes) {

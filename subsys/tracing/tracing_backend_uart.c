@@ -11,16 +11,17 @@
 
 #include <errno.h>
 #include <ctype.h>
-#include <kernel.h>
-#include <device.h>
-#include <drivers/uart.h>
-#include <sys/__assert.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/uart.h>
+#include <zephyr/sys/__assert.h>
 #include <tracing_core.h>
 #include <tracing_buffer.h>
 #include <tracing_backend.h>
 
 
-static const struct device *tracing_uart_dev;
+static const struct device *const tracing_uart_dev =
+	DEVICE_DT_GET(DT_CHOSEN(zephyr_tracing_uart));
 
 #ifdef CONFIG_TRACING_HANDLE_HOST_CMD
 static void uart_isr(const struct device *dev, void *user_data)
@@ -47,7 +48,7 @@ static void uart_isr(const struct device *dev, void *user_data)
 			length = tracing_cmd_buffer_alloc(&cmd);
 		}
 
-		if (!isprint(byte)) {
+		if (isprint(byte) == 0) {
 			if (byte == '\r') {
 				cmd[cur] = '\0';
 				tracing_cmd_handle(cmd, cur);
@@ -76,9 +77,7 @@ static void tracing_backend_uart_output(
 
 static void tracing_backend_uart_init(void)
 {
-	tracing_uart_dev =
-		device_get_binding(CONFIG_TRACING_BACKEND_UART_NAME);
-	__ASSERT(tracing_uart_dev, "uart backend binding failed");
+	__ASSERT(device_is_ready(tracing_uart_dev), "uart backend is not ready");
 
 #ifdef CONFIG_TRACING_HANDLE_HOST_CMD
 	uart_irq_rx_disable(tracing_uart_dev);

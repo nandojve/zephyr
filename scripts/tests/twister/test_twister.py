@@ -10,11 +10,14 @@ import os
 import sys
 import pytest
 
+from pathlib import Path
+
 ZEPHYR_BASE = os.getenv("ZEPHYR_BASE")
 sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts/pylib/twister"))
 
 import scl
-from twisterlib import TwisterConfigParser
+from twisterlib.error import ConfigurationError
+from twisterlib.testplan import TwisterConfigParser
 
 def test_yamlload():
     """ Test to check if loading the non-existent files raises the errors """
@@ -24,10 +27,10 @@ def test_yamlload():
 
 
 @pytest.mark.parametrize("filename, schema",
-                         [("testcase_correct_schema.yaml", "testcase-schema.yaml"),
+                         [("testsuite_correct_schema.yaml", "testsuite-schema.yaml"),
                           ("platform_correct_schema.yaml", "platform-schema.yaml")])
 def test_correct_schema(filename, schema, test_data):
-    """ Test to validate the testcase schema"""
+    """ Test to validate the testsuite schema"""
     filename = test_data + filename
     schema = scl.yaml_load(ZEPHYR_BASE +'/scripts/schemas/twister//' + schema)
     data = TwisterConfigParser(filename, schema)
@@ -36,12 +39,55 @@ def test_correct_schema(filename, schema, test_data):
 
 
 @pytest.mark.parametrize("filename, schema",
-                         [("testcase_incorrect_schema.yaml", "testcase-schema.yaml"),
+                         [("testsuite_incorrect_schema.yaml", "testsuite-schema.yaml"),
                           ("platform_incorrect_schema.yaml", "platform-schema.yaml")])
 def test_incorrect_schema(filename, schema, test_data):
-    """ Test to validate the exception is raised for incorrect testcase schema"""
+    """ Test to validate the exception is raised for incorrect testsuite schema"""
     filename = test_data + filename
     schema = scl.yaml_load(ZEPHYR_BASE +'/scripts/schemas/twister//' + schema)
     with pytest.raises(Exception) as exception:
         scl.yaml_load_verify(filename, schema)
         assert str(exception.value) == "Schema validation failed"
+
+def test_testsuite_config_files():
+    """ Test to validate conf and overlay files are extracted properly """
+    filename = Path(ZEPHYR_BASE) / "scripts/tests/twister/test_data/testsuites/tests/test_config/test_data.yaml"
+    schema = scl.yaml_load(Path(ZEPHYR_BASE) / "scripts/schemas/twister/testsuite-schema.yaml")
+    data = TwisterConfigParser(filename, schema)
+    data.load()
+
+    # Load and validate the specific scenario from testcases.yaml
+    scenario = data.get_scenario("test_config.main")
+    assert scenario
+
+    # CONF_FILE, DTC_OVERLAY_FILE, OVERLAY_CONFIG fields should be stripped out
+    # of extra_args. Other fields should remain untouched.
+    assert scenario["extra_args"] == ["UNRELATED1=abc", "UNRELATED2=xyz"]
+
+    # Check that all conf files have been assembled in the correct order
+    assert ";".join(scenario["extra_conf_files"]) == \
+        "conf1;conf2;conf3;conf4;conf5;conf6;conf7;conf8"
+
+    # Check that all DTC overlay files have been assembled in the correct order
+    assert ";".join(scenario["extra_dtc_overlay_files"]) == \
+        "overlay1;overlay2;overlay3;overlay4;overlay5;overlay6;overlay7;overlay8"
+
+    # Check that all overlay conf files have been assembled in the correct order
+    assert scenario["extra_overlay_confs"] == \
+        ["oc1.conf", "oc2.conf", "oc3.conf", "oc4.conf"]
+
+    # Check extra kconfig statements, too
+    assert scenario["extra_configs"] == ["CONFIG_FOO=y"]
+
+def test_configuration_error():
+    """Test to validate that the ConfigurationError is raisable without further errors.
+
+    It ought to have an str with a path, colon and a message as its only args entry.
+    """
+    filename = Path(ZEPHYR_BASE) / "scripts/tests/twister/test_twister.py"
+
+    with pytest.raises(ConfigurationError) as exception:
+        raise ConfigurationError(filename, "Dummy message.")
+
+    assert len(exception.value.args) == 1
+    assert exception.value.args[0] == str(filename) + ": " + "Dummy message."

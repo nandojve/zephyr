@@ -7,9 +7,13 @@
 *.swp
 *.swo
 *~
+.\#*
+\#*\#
 build*/
-!doc/guides/build
+!doc/build/
+!scripts/build
 !tests/drivers/build_all
+!scripts/pylib/build_helpers
 cscope.*
 .dir
 
@@ -33,7 +37,9 @@ doc/latex
 doc/themes/zephyr-docs-theme
 sanity-out*
 twister-out*
+bsim_out
 bsim_bt_out
+tests/RunResults.xml
 scripts/grub
 doc/reference/kconfig/*.rst
 doc/doc.warnings
@@ -45,6 +51,7 @@ hide-defaults-note
 venv
 .venv
 .DS_Store
+.clangd
 
 # CI output
 compliance.xml
@@ -58,3 +65,20 @@ TAGS
 tags
 
 .idea
+
+# from check_compliance.py
+BinaryFiles.txt
+Checkpatch.txt
+DevicetreeBindings.txt
+Gitlint.txt
+Identity.txt
+ImageSize.txt
+Kconfig.txt
+KconfigBasic.txt
+KconfigBasicNoModules.txt
+KeepSorted.txt
+MaintainersFormat.txt
+ModulesMaintainers.txt
+Nits.txt
+Pylint.txt
+YAMLLint.txt

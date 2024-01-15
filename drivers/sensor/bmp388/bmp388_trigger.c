@@ -8,12 +8,9 @@
  * https://www.bosch-sensortec.com/media/boschsensortec/downloads/datasheets/bst-bmp388-ds001.pdf
  */
 
-#define DT_DRV_COMPAT bosch_bmp388
-
-#include <kernel.h>
-#include <drivers/sensor.h>
-#include <drivers/gpio.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/logging/log.h>
 
 #include "bmp388.h"
 
@@ -22,15 +19,10 @@ LOG_MODULE_DECLARE(BMP388, CONFIG_SENSOR_LOG_LEVEL);
 static void bmp388_handle_interrupts(const void *arg)
 {
 	const struct device *dev = (const struct device *)arg;
-	struct bmp388_data *data = DEV_DATA(dev);
-
-	struct sensor_trigger drdy_trigger = {
-		.type = SENSOR_TRIG_DATA_READY,
-		.chan = SENSOR_CHAN_PRESS,
-	};
+	struct bmp388_data *data = dev->data;
 
 	if (data->handler_drdy) {
-		data->handler_drdy(dev, &drdy_trigger);
+		data->handler_drdy(dev, data->trig_drdy);
 	}
 }
 
@@ -44,7 +36,7 @@ static void bmp388_thread_main(void *arg1, void *unused1, void *unused2)
 	ARG_UNUSED(unused1);
 	ARG_UNUSED(unused2);
 	const struct device *dev = (const struct device *)arg1;
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 
 	while (1) {
 		k_sem_take(&data->sem, K_FOREVER);
@@ -89,7 +81,7 @@ int bmp388_trigger_set(
 	const struct sensor_trigger *trig,
 	sensor_trigger_handler_t handler)
 {
-	struct bmp388_data *data = DEV_DATA(dev);
+	struct bmp388_data *data = dev->data;
 
 #ifdef CONFIG_PM_DEVICE
 	enum pm_device_state state;
@@ -114,17 +106,18 @@ int bmp388_trigger_set(
 	}
 
 	data->handler_drdy = handler;
+	data->trig_drdy = trig;
 
 	return 0;
 }
 
 int bmp388_trigger_mode_init(const struct device *dev)
 {
-	struct bmp388_data *data = DEV_DATA(dev);
-	const struct bmp388_config *cfg = DEV_CFG(dev);
+	struct bmp388_data *data = dev->data;
+	const struct bmp388_config *cfg = dev->config;
 	int ret;
 
-	if (!device_is_ready(cfg->gpio_int.port)) {
+	if (!gpio_is_ready_dt(&cfg->gpio_int)) {
 		LOG_ERR("INT device is not ready");
 		return -ENODEV;
 	}

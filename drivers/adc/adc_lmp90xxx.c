@@ -9,17 +9,16 @@
  * @brief ADC driver for the LMP90xxx AFE.
  */
 
-#include <drivers/adc.h>
-#include <drivers/adc/lmp90xxx.h>
-#include <drivers/gpio.h>
-#include <drivers/spi.h>
-#include <kernel.h>
-#include <sys/byteorder.h>
-#include <sys/crc.h>
-#include <zephyr.h>
+#include <zephyr/drivers/adc.h>
+#include <zephyr/drivers/adc/lmp90xxx.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/spi.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/crc.h>
 
 #define LOG_LEVEL CONFIG_ADC_LOG_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(adc_lmp90xxx);
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER
@@ -651,8 +650,12 @@ static int lmp90xxx_adc_read_channel(const struct device *dev,
 	return 0;
 }
 
-static void lmp90xxx_acquisition_thread(struct lmp90xxx_data *data)
+static void lmp90xxx_acquisition_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct lmp90xxx_data *data = p1;
 	uint8_t bgcalcn = LMP90XXX_BGCALN(0x3); /* Default to BgCalMode3 */
 	int32_t result = 0;
 	uint8_t channel;
@@ -941,7 +944,7 @@ static int lmp90xxx_init(const struct device *dev)
 	/* Force INST1 + UAB on first access */
 	data->ura = LMP90XXX_INVALID_URA;
 
-	if (!spi_is_ready(&config->bus)) {
+	if (!spi_is_ready_dt(&config->bus)) {
 		LOG_ERR("SPI bus %s not ready", config->bus.bus->name);
 		return -ENODEV;
 	}
@@ -1015,7 +1018,7 @@ static int lmp90xxx_init(const struct device *dev)
 
 	tid = k_thread_create(&data->thread, data->stack,
 			      CONFIG_ADC_LMP90XXX_ACQUISITION_THREAD_STACK_SIZE,
-			      (k_thread_entry_t)lmp90xxx_acquisition_thread,
+			      lmp90xxx_acquisition_thread,
 			      data, NULL, NULL,
 			      CONFIG_ADC_LMP90XXX_ACQUISITION_THREAD_PRIO,
 			      0, K_NO_WAIT);
@@ -1076,56 +1079,66 @@ static const struct adc_driver_api lmp90xxx_adc_api = {
 			 CONFIG_ADC_INIT_PRIORITY, \
 			 &lmp90xxx_adc_api);
 
-#define LMP90XXX_FOREACH_STATUS_OKAY(compat, fn)		\
-	COND_CODE_1(DT_HAS_COMPAT_STATUS_OKAY(compat),		\
-		    (UTIL_CAT(DT_FOREACH_OKAY_INST_,		\
-			      compat)(fn)),			\
-		    ())
-
 /*
  * LMP90077: 16 bit, 2 diff/4 se (4 channels), 0 currents
  */
 #define LMP90077_INIT(n) LMP90XXX_INIT(90077, n, 16, 4)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90077, LMP90077_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90077
+DT_INST_FOREACH_STATUS_OKAY(LMP90077_INIT)
 
 /*
  * LMP90078: 16 bit, 2 diff/4 se (4 channels), 2 currents
  */
 #define LMP90078_INIT(n) LMP90XXX_INIT(90078, n, 16, 4)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90078, LMP90078_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90078
+DT_INST_FOREACH_STATUS_OKAY(LMP90078_INIT)
 
 /*
  * LMP90079: 16 bit, 4 diff/7 se (7 channels), 0 currents, has VIN3-5
  */
 #define LMP90079_INIT(n) LMP90XXX_INIT(90079, n, 16, 7)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90079, LMP90079_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90079
+DT_INST_FOREACH_STATUS_OKAY(LMP90079_INIT)
 
 /*
  * LMP90080: 16 bit, 4 diff/7 se (7 channels), 2 currents, has VIN3-5
  */
 #define LMP90080_INIT(n) LMP90XXX_INIT(90080, n, 16, 7)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90080, LMP90080_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90080
+DT_INST_FOREACH_STATUS_OKAY(LMP90080_INIT)
 
 /*
  * LMP90097: 24 bit, 2 diff/4 se (4 channels), 0 currents
  */
 #define LMP90097_INIT(n) LMP90XXX_INIT(90097, n, 24, 4)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90097, LMP90097_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90097
+DT_INST_FOREACH_STATUS_OKAY(LMP90097_INIT)
 
 /*
  * LMP90098: 24 bit, 2 diff/4 se (4 channels), 2 currents
  */
 #define LMP90098_INIT(n) LMP90XXX_INIT(90098, n, 24, 4)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90098, LMP90098_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90098
+DT_INST_FOREACH_STATUS_OKAY(LMP90098_INIT)
 
 /*
  * LMP90099: 24 bit, 4 diff/7 se (7 channels), 0 currents, has VIN3-5
  */
 #define LMP90099_INIT(n) LMP90XXX_INIT(90099, n, 24, 7)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90099, LMP90099_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90099
+DT_INST_FOREACH_STATUS_OKAY(LMP90099_INIT)
 
 /*
  * LMP90100: 24 bit, 4 diff/7 se (7 channels), 2 currents, has VIN3-5
  */
 #define LMP90100_INIT(n) LMP90XXX_INIT(90100, n, 24, 7)
-LMP90XXX_FOREACH_STATUS_OKAY(ti_lmp90100, LMP90100_INIT)
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT ti_lmp90100
+DT_INST_FOREACH_STATUS_OKAY(LMP90100_INIT)

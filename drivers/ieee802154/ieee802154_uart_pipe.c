@@ -4,25 +4,27 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT zephyr_ieee802154_uart_pipe
+
 #define LOG_MODULE_NAME ieee802154_uart_pipe
 #define LOG_LEVEL CONFIG_IEEE802154_DRIVER_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <errno.h>
 
-#include <kernel.h>
-#include <arch/cpu.h>
+#include <zephyr/kernel.h>
+#include <zephyr/arch/cpu.h>
 
-#include <device.h>
-#include <init.h>
-#include <net/net_if.h>
-#include <net/net_pkt.h>
-#include <random/rand32.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/random/random.h>
 
-#include <drivers/console/uart_pipe.h>
-#include <net/ieee802154_radio.h>
+#include <zephyr/drivers/uart_pipe.h>
+#include <zephyr/net/ieee802154_radio.h>
 
 #include "ieee802154_uart_pipe.h"
 
@@ -134,7 +136,7 @@ static uint8_t *upipe_rx(uint8_t *buf, size_t *off)
 			goto flush;
 		}
 
-		frag = net_pkt_get_frag(pkt, K_NO_WAIT);
+		frag = net_pkt_get_frag(pkt, upipe->rx_len, K_NO_WAIT);
 		if (!frag) {
 			LOG_DBG("No fragment available");
 			goto out;
@@ -152,7 +154,7 @@ static uint8_t *upipe_rx(uint8_t *buf, size_t *off)
 		}
 #endif
 
-		if (ieee802154_radio_handle_ack(upipe->iface, pkt) == NET_OK) {
+		if (ieee802154_handle_ack(upipe->iface, pkt) == NET_OK) {
 			LOG_DBG("ACK packet handled");
 			goto out;
 		}
@@ -179,9 +181,7 @@ done:
 
 static enum ieee802154_hw_caps upipe_get_capabilities(const struct device *dev)
 {
-	return IEEE802154_HW_FCS |
-		IEEE802154_HW_2_4_GHZ |
-		IEEE802154_HW_FILTER;
+	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER;
 }
 
 static int upipe_cca(const struct device *dev)
@@ -327,6 +327,20 @@ static int upipe_stop(const struct device *dev)
 	return 0;
 }
 
+/* driver-allocated attribute memory - constant across all driver instances */
+IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 11, 26);
+
+/* API implementation: attr_get */
+static int upipe_attr_get(const struct device *dev, enum ieee802154_attr attr,
+			  struct ieee802154_attr_value *value)
+{
+	ARG_UNUSED(dev);
+
+	return ieee802154_attr_get_channel_page_and_range(
+		attr, IEEE802154_ATTR_PHY_CHANNEL_PAGE_ZERO_OQPSK_2450_BPSK_868_915,
+		&drv_attr.phy_supported_channels, value);
+}
+
 static int upipe_init(const struct device *dev)
 {
 	struct upipe_context *upipe = dev->data;
@@ -378,7 +392,7 @@ static void upipe_iface_init(struct net_if *iface)
 
 static struct upipe_context upipe_context_data;
 
-static struct ieee802154_radio_api upipe_radio_api = {
+static const struct ieee802154_radio_api upipe_radio_api = {
 	.iface_api.init		= upipe_iface_init,
 
 	.get_capabilities	= upipe_get_capabilities,
@@ -389,11 +403,10 @@ static struct ieee802154_radio_api upipe_radio_api = {
 	.tx			= upipe_tx,
 	.start			= upipe_start,
 	.stop			= upipe_stop,
+	.attr_get		= upipe_attr_get,
 };
 
-NET_DEVICE_INIT(upipe_15_4, CONFIG_IEEE802154_UPIPE_DRV_NAME,
-		upipe_init, NULL,
-		&upipe_context_data, NULL,
-		CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
-		&upipe_radio_api, IEEE802154_L2,
-		NET_L2_GET_CTX_TYPE(IEEE802154_L2), 125);
+NET_DEVICE_DT_INST_DEFINE(0, upipe_init, NULL, &upipe_context_data, NULL,
+			  CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &upipe_radio_api,
+			  IEEE802154_L2, NET_L2_GET_CTX_TYPE(IEEE802154_L2),
+			  125);

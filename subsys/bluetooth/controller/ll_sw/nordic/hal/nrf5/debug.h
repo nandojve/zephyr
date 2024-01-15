@@ -8,6 +8,7 @@
 #if defined(CONFIG_BT_CTLR_DEBUG_PINS) || \
 	defined(CONFIG_BT_CTLR_DEBUG_PINS_CPUAPP)
 #if defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP) || \
+	defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP_NS) || \
 	defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUNET)
 #define DEBUG_PORT       NRF_P1
 #define DEBUG_PIN_IDX0   0
@@ -30,39 +31,21 @@
 #define DEBUG_PIN7       BIT(DEBUG_PIN_IDX7)
 #define DEBUG_PIN8       BIT(DEBUG_PIN_IDX8)
 #define DEBUG_PIN9       BIT(DEBUG_PIN_IDX9)
-#if defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP)
+#if defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP) || \
+	(defined(CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP_NS) && defined(CONFIG_BUILD_WITH_TFM))
+#include <soc_secure.h>
 #define DEBUG_SETUP() \
 	do { \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX0] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX1] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX2] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX3] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX4] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX5] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX6] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX7] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX8] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
-		DEBUG_PORT->PIN_CNF[DEBUG_PIN_IDX9] = \
-			(GPIO_PIN_CNF_MCUSEL_NetworkMCU << \
-			 GPIO_PIN_CNF_MCUSEL_Pos); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX0, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX1, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX2, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX3, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX4, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX5, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX6, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX7, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX8, NRF_GPIO_PIN_SEL_NETWORK); \
+		soc_secure_gpio_pin_mcu_select(32 + DEBUG_PIN_IDX9, NRF_GPIO_PIN_SEL_NETWORK); \
 	} while (0)
 #endif /* CONFIG_BOARD_NRF5340DK_NRF5340_CPUAPP */
 #elif defined(CONFIG_BOARD_NRF52840DK_NRF52840) || \
@@ -360,4 +343,40 @@
 #define DEBUG_RADIO_PREPARE_M(flag)
 #define DEBUG_RADIO_START_M(flag)
 #define DEBUG_RADIO_CLOSE_M(flag)
+#endif /* CONFIG_BT_CTLR_DEBUG_PINS */
+
+#if defined(CONFIG_BT_CTLR_DEBUG_PINS) || \
+	defined(CONFIG_BT_CTLR_DEBUG_PINS_CPUAPP)
+#define DEBUG_COEX_PORT NRF_P1
+#define DEBUG_COEX_PIN_GRANT BIT(12)
+#define DEBUG_COEX_PIN_IRQ BIT(13)
+#define DEBUG_COEX_PIN_MASK    (DEBUG_COEX_PIN_IRQ | DEBUG_COEX_PIN_GRANT)
+#define DEBUG_COEX_INIT() \
+	do { \
+		DEBUG_COEX_PORT->DIRSET = DEBUG_COEX_PIN_MASK; \
+		DEBUG_COEX_PORT->OUTCLR = DEBUG_COEX_PIN_MASK; \
+	} while (0)
+
+#define DEBUG_COEX_GRANT(flag) \
+	do { \
+		if (flag) { \
+			DEBUG_COEX_PORT->OUTSET = DEBUG_COEX_PIN_GRANT; \
+		} else { \
+			DEBUG_COEX_PORT->OUTCLR = DEBUG_COEX_PIN_GRANT; \
+		} \
+	} while (0)
+
+
+#define DEBUG_COEX_IRQ(flag) \
+	do { \
+		if (flag) { \
+			DEBUG_COEX_PORT->OUTSET = DEBUG_COEX_PIN_IRQ; \
+		} else { \
+			DEBUG_COEX_PORT->OUTCLR = DEBUG_COEX_PIN_IRQ; \
+		} \
+	} while (0)
+#else
+#define DEBUG_COEX_INIT()
+#define DEBUG_COEX_GRANT(flag)
+#define DEBUG_COEX_IRQ(flag)
 #endif /* CONFIG_BT_CTLR_DEBUG_PINS */

@@ -6,6 +6,8 @@
 menuconfig LORAWAN
 	bool "LoRaWAN support [EXPERIMENTAL]"
 	depends on LORA
+	depends on SYSTEM_WORKQUEUE_STACK_SIZE >= 2048
+	select REQUIRES_FULL_LIBC
 	select HAS_SEMTECH_LORAMAC
 	select HAS_SEMTECH_SOFT_SE
 	select EXPERIMENTAL
@@ -25,14 +27,12 @@ config LORAWAN_SYSTEM_MAX_RX_ERROR
 	  System Max Rx timing error value in ms to be used by LoRaWAN stack
 	  for calculating the RX1/RX2 window timing.
 
-choice LORAMAC_REGION
-	prompt "LoRaWAN Region Selection"
-	default LORAMAC_REGION_UNKNOWN
+config LORAWAN_PUBLIC_NETWORK
+	bool "LoRaWAN Public Network"
+	default y
 	help
-	  Select the LoRaWAN region.
-
-config LORAMAC_REGION_UNKNOWN
-	bool "Unknown region"
+	  Enable this option to use a public LoRaWAN network.
+	  Disable for private LoRaWAN networks.
 
 config LORAMAC_REGION_AS923
 	bool "Asia 923MHz Frequency band"
@@ -64,6 +64,8 @@ config LORAMAC_REGION_US915
 config LORAMAC_REGION_RU864
 	bool "Russia 864MHz Frequency band"
 
-endchoice
+rsource "nvm/Kconfig"
+
+rsource "services/Kconfig"
 
 endif # LORAWAN

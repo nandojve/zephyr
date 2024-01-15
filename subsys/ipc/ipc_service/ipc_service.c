@@ -5,14 +5,62 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ipc/ipc_service.h>
-#include <ipc/ipc_service_backend.h>
+#include <zephyr/ipc/ipc_service.h>
+#include <zephyr/ipc/ipc_service_backend.h>
 
-#include <logging/log.h>
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 
 LOG_MODULE_REGISTER(ipc_service, CONFIG_IPC_SERVICE_LOG_LEVEL);
+
+int ipc_service_open_instance(const struct device *instance)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!instance) {
+		LOG_ERR("Invalid instance");
+		return -EINVAL;
+	}
+
+	backend = (const struct ipc_service_backend *) instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	if (!backend->open_instance) {
+		/* maybe not needed on backend */
+		return 0;
+	}
+
+	return backend->open_instance(instance);
+}
+
+int ipc_service_close_instance(const struct device *instance)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!instance) {
+		LOG_ERR("Invalid instance");
+		return -EINVAL;
+	}
+
+	backend = (const struct ipc_service_backend *) instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	if (!backend->close_instance) {
+		/* maybe not needed on backend */
+		return 0;
+	}
+
+	return backend->close_instance(instance);
+}
 
 int ipc_service_register_endpoint(const struct device *instance,
 				  struct ipc_ept *ept,
@@ -39,9 +87,52 @@ int ipc_service_register_endpoint(const struct device *instance,
 	return backend->register_endpoint(instance, &ept->token, cfg);
 }
 
+int ipc_service_deregister_endpoint(struct ipc_ept *ept)
+{
+	const struct ipc_service_backend *backend;
+	int err;
+
+	if (!ept) {
+		LOG_ERR("Invalid endpoint");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend || !backend->deregister_endpoint) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	err = backend->deregister_endpoint(ept->instance, ept->token);
+	if (err != 0) {
+		return err;
+	}
+
+	ept->instance = 0;
+
+	return 0;
+}
+
+
 int ipc_service_send(struct ipc_ept *ept, const void *data, size_t len)
 {
 	const struct ipc_service_backend *backend;
+
+	if (!ept) {
+		LOG_ERR("Invalid endpoint");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
 
 	backend = ept->instance->api;
 
@@ -51,4 +142,179 @@ int ipc_service_send(struct ipc_ept *ept, const void *data, size_t len)
 	}
 
 	return backend->send(ept->instance, ept->token, data, len);
+}
+
+int ipc_service_get_tx_buffer_size(struct ipc_ept *ept)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!ept) {
+		LOG_ERR("Invalid endpoint");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	if (!backend->get_tx_buffer_size) {
+		LOG_ERR("No-copy feature not available");
+		return -EIO;
+	}
+
+	return backend->get_tx_buffer_size(ept->instance, ept->token);
+}
+
+int ipc_service_get_tx_buffer(struct ipc_ept *ept, void **data, uint32_t *len, k_timeout_t wait)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!ept || !data || !len) {
+		LOG_ERR("Invalid endpoint, data or len pointer");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	if (!backend->send_nocopy || !backend->get_tx_buffer) {
+		LOG_ERR("No-copy feature not available");
+		return -EIO;
+	}
+
+	return backend->get_tx_buffer(ept->instance, ept->token, data, len, wait);
+}
+
+int ipc_service_drop_tx_buffer(struct ipc_ept *ept, const void *data)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!ept || !data) {
+		LOG_ERR("Invalid endpoint or data pointer");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	if (!backend->drop_tx_buffer) {
+		LOG_ERR("No-copy feature not available");
+		return -EIO;
+	}
+
+	return backend->drop_tx_buffer(ept->instance, ept->token, data);
+}
+
+int ipc_service_send_nocopy(struct ipc_ept *ept, const void *data, size_t len)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!ept) {
+		LOG_ERR("Invalid endpoint");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	if (!backend->get_tx_buffer || !backend->send_nocopy) {
+		LOG_ERR("No-copy feature not available");
+		return -EIO;
+	}
+
+	return backend->send_nocopy(ept->instance, ept->token, data, len);
+}
+
+int ipc_service_hold_rx_buffer(struct ipc_ept *ept, void *data)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!ept) {
+		LOG_ERR("Invalid endpoint");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	/* We also need the release function */
+	if (!backend->release_rx_buffer || !backend->hold_rx_buffer) {
+		LOG_ERR("No-copy feature not available");
+		return -EIO;
+	}
+
+	return backend->hold_rx_buffer(ept->instance, ept->token, data);
+}
+int ipc_service_release_rx_buffer(struct ipc_ept *ept, void *data)
+{
+	const struct ipc_service_backend *backend;
+
+	if (!ept) {
+		LOG_ERR("Invalid endpoint");
+		return -EINVAL;
+	}
+
+	if (!ept->instance) {
+		LOG_ERR("Endpoint not registered\n");
+		return -ENOENT;
+	}
+
+	backend = ept->instance->api;
+
+	if (!backend) {
+		LOG_ERR("Invalid backend configuration");
+		return -EIO;
+	}
+
+	/* We also need the hold function */
+	if (!backend->hold_rx_buffer || !backend->release_rx_buffer) {
+		LOG_ERR("No-copy feature not available");
+		return -EIO;
+	}
+
+	return backend->release_rx_buffer(ept->instance, ept->token, data);
 }

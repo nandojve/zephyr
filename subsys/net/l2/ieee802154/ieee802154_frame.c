@@ -4,37 +4,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <logging/log.h>
+/**
+ * @file
+ * @brief IEEE 802.15.4 MAC frame related functions implementation
+ *
+ * All references to the spec refer to IEEE 802.15.4-2020.
+ */
+
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_ieee802154_frame, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
-
-#include <net/net_core.h>
-#include <net/net_if.h>
-
-#include <ipv6.h>
-#include <nbr.h>
 
 #include "ieee802154_frame.h"
 #include "ieee802154_security.h"
 
-#define dbg_print_fs(fs)						\
-	NET_DBG("fs(1): %u/%u/%u/%u/%u/%u",				\
-		fs->fc.frame_type, fs->fc.security_enabled,		\
-		fs->fc.frame_pending, fs->fc.ar, fs->fc.pan_id_comp,	\
-		fs->fc.reserved);					\
-	NET_DBG("fs(2): %u/%u/%u/%u/%u - %u",				\
-		fs->fc.seq_num_suppr, fs->fc.ie_list,			\
-		fs->fc.dst_addr_mode, fs->fc.frame_version,		\
-		fs->fc.src_addr_mode, fs->sequence)
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_if.h>
+
+#include <ipv6.h>
+#include <nbr.h>
+
+#define dbg_print_fs(fs)                                                                           \
+	NET_DBG("fs(1): %u/%u/%u/%u/%u/%u", fs->fc.frame_type, fs->fc.security_enabled,            \
+		fs->fc.frame_pending, fs->fc.ar, fs->fc.pan_id_comp, fs->fc.reserved);             \
+	NET_DBG("fs(2): %u/%u/%u/%u/%u - %u", fs->fc.seq_num_suppr, fs->fc.ie_list,                \
+		fs->fc.dst_addr_mode, fs->fc.frame_version, fs->fc.src_addr_mode, fs->sequence)
 
 #define BUF_TIMEOUT K_MSEC(50)
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-const uint8_t level_2_tag_size[4] = {
-	0,
-	IEEE8021254_AUTH_TAG_LENGTH_32,
-	IEEE8021254_AUTH_TAG_LENGTH_64,
-	IEEE8021254_AUTH_TAG_LENGTH_128
-};
+const uint8_t level_2_authtag_len[4] = {0, IEEE802154_AUTH_TAG_LENGTH_32,
+					IEEE802154_AUTH_TAG_LENGTH_64,
+					IEEE802154_AUTH_TAG_LENGTH_128};
 #endif
 
 struct ieee802154_fcf_seq *ieee802154_validate_fc_seq(uint8_t *buf, uint8_t **p_buf,
@@ -45,33 +45,37 @@ struct ieee802154_fcf_seq *ieee802154_validate_fc_seq(uint8_t *buf, uint8_t **p_
 	dbg_print_fs(fs);
 
 	/** Basic FC checks */
-	if (fs->fc.frame_type >= IEEE802154_FRAME_TYPE_RESERVED ||
+	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_RESERVED ||
 	    fs->fc.frame_version >= IEEE802154_VERSION_RESERVED) {
 		return NULL;
 	}
 
-	/** Only for versions 2003/2006 */
-	if (fs->fc.frame_version < IEEE802154_VERSION_802154 &&
-	    (fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_RESERVED ||
-	     fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_RESERVED ||
-	     fs->fc.frame_type >= IEEE802154_FRAME_TYPE_LLDN)) {
-		return NULL;
+	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_MULTIPURPOSE) {
+		if (fs->fc.frame_version != 0) {
+			return NULL;
+		}
+	} else {
+		/** Only for versions 2003/2006 */
+		if (fs->fc.frame_version < IEEE802154_VERSION_802154 &&
+		    (fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_RESERVED ||
+		     fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_RESERVED ||
+		     fs->fc.frame_type >= IEEE802154_FRAME_TYPE_RESERVED)) {
+			return NULL;
+		}
 	}
 
 	if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_BEACON &&
 	    (fs->fc.dst_addr_mode != IEEE802154_ADDR_MODE_NONE ||
-	     fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_NONE ||
-	     fs->fc.pan_id_comp)) {
-		/** See section 5.2.2.1.1 */
+	     fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_NONE || fs->fc.pan_id_comp)) {
+		/** See section 7.2.2.1.1 */
 		return NULL;
 	} else if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_DATA &&
 		   fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_NONE &&
 		   fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_NONE) {
-		/** See section 5.2.2.2.1 */
+		/** See section 7.2.2.2.1 */
 		return NULL;
-	} else if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND &&
-		   fs->fc.frame_pending) {
-		/** See section 5.3 */
+	} else if (fs->fc.frame_type == IEEE802154_FRAME_TYPE_MAC_COMMAND && fs->fc.frame_pending) {
+		/** See section 7.3 */
 		return NULL;
 	}
 
@@ -90,16 +94,14 @@ struct ieee802154_fcf_seq *ieee802154_validate_fc_seq(uint8_t *buf, uint8_t **p_
 }
 
 static inline bool validate_addr(uint8_t *buf, uint8_t **p_buf, uint8_t *length,
-				 enum ieee802154_addressing_mode mode,
-				 bool pan_id_compression,
+				 enum ieee802154_addressing_mode mode, bool pan_id_compression,
 				 struct ieee802154_address_field **addr)
 {
 	uint8_t len = 0;
 
 	*p_buf = buf;
 
-	NET_DBG("Buf %p - mode %d - pan id comp %d",
-		buf, mode, pan_id_compression);
+	NET_DBG("Buf %p - mode %d - pan id comp %d", (void *)buf, mode, pan_id_compression);
 
 	if (mode == IEEE802154_ADDR_MODE_NONE) {
 		*addr = NULL;
@@ -133,10 +135,8 @@ static inline bool validate_addr(uint8_t *buf, uint8_t **p_buf, uint8_t *length,
 struct ieee802154_aux_security_hdr *
 ieee802154_validate_aux_security_hdr(uint8_t *buf, uint8_t **p_buf, uint8_t *length)
 {
-	struct ieee802154_aux_security_hdr *ash =
-		(struct ieee802154_aux_security_hdr *)buf;
-	uint8_t len =  IEEE802154_SECURITY_CF_LENGTH +
-		IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	struct ieee802154_aux_security_hdr *ash = (struct ieee802154_aux_security_hdr *)buf;
+	uint8_t len = IEEE802154_SECURITY_CF_LENGTH + IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
 
 	/* At least the asf is sized of: control field + frame counter */
 	if (*length < len) {
@@ -148,12 +148,12 @@ ieee802154_validate_aux_security_hdr(uint8_t *buf, uint8_t **p_buf, uint8_t *len
 		return NULL;
 	}
 
-	/* Explicit key must have a key index != 0x00, see Section 7.4.3.2 */
+	/* Explicit key must have a key index != 0x00, see section 9.4.2.3 */
 	switch (ash->control.key_id_mode) {
 	case IEEE802154_KEY_ID_MODE_IMPLICIT:
 		break;
 	case IEEE802154_KEY_ID_MODE_INDEX:
-		len +=  IEEE8021254_KEY_ID_FIELD_INDEX_LENGTH;
+		len += IEEE802154_KEY_ID_FIELD_INDEX_LENGTH;
 		if (*length < len) {
 			return NULL;
 		}
@@ -164,7 +164,7 @@ ieee802154_validate_aux_security_hdr(uint8_t *buf, uint8_t **p_buf, uint8_t *len
 
 		break;
 	case IEEE802154_KEY_ID_MODE_SRC_4_INDEX:
-		len += IEEE8021254_KEY_ID_FIELD_SRC_4_INDEX_LENGTH;
+		len += IEEE802154_KEY_ID_FIELD_SRC_4_INDEX_LENGTH;
 		if (*length < len) {
 			return NULL;
 		}
@@ -175,7 +175,7 @@ ieee802154_validate_aux_security_hdr(uint8_t *buf, uint8_t **p_buf, uint8_t *len
 
 		break;
 	case IEEE802154_KEY_ID_MODE_SRC_8_INDEX:
-		len += IEEE8021254_KEY_ID_FIELD_SRC_8_INDEX_LENGTH;
+		len += IEEE802154_KEY_ID_FIELD_SRC_8_INDEX_LENGTH;
 		if (*length < len) {
 			return NULL;
 		}
@@ -194,77 +194,69 @@ ieee802154_validate_aux_security_hdr(uint8_t *buf, uint8_t **p_buf, uint8_t *len
 }
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
-static inline bool
-validate_beacon(struct ieee802154_mpdu *mpdu, uint8_t *buf, uint8_t *length)
+static inline bool validate_beacon(struct ieee802154_mpdu *mpdu, uint8_t *buf, uint8_t length)
 {
-	struct ieee802154_beacon *b = (struct ieee802154_beacon *)buf;
+	struct ieee802154_beacon *beacon = (struct ieee802154_beacon *)buf;
 	struct ieee802154_pas_spec *pas;
-	uint8_t len = IEEE802154_BEACON_SF_SIZE +
-		IEEE802154_BEACON_GTS_SPEC_SIZE;
+	uint8_t len = IEEE802154_BEACON_SF_SIZE + IEEE802154_BEACON_GTS_SPEC_SIZE;
 
-
-	if (*length < len) {
+	if (length < len) {
 		return false;
 	}
 
-	if (b->gts.desc_count) {
+	if (beacon->gts.desc_count) {
 		len += IEEE802154_BEACON_GTS_DIR_SIZE +
-			b->gts.desc_count * IEEE802154_BEACON_GTS_SIZE;
+		       beacon->gts.desc_count * IEEE802154_BEACON_GTS_SIZE;
 	}
 
-	if (*length < len) {
+	if (length < len) {
 		return false;
 	}
 
 	pas = (struct ieee802154_pas_spec *)buf + len;
 
 	len += IEEE802154_BEACON_PAS_SPEC_SIZE;
-	if (*length < len) {
+	if (length < len) {
 		return false;
 	}
 
 	if (pas->nb_sap || pas->nb_eap) {
 		len += (pas->nb_sap * IEEE802154_SHORT_ADDR_LENGTH) +
-			(pas->nb_eap * IEEE802154_EXT_ADDR_LENGTH);
+		       (pas->nb_eap * IEEE802154_EXT_ADDR_LENGTH);
 	}
 
-	if (*length < len) {
+	if (length < len) {
 		return false;
 	}
 
-	*length -= len;
-	mpdu->beacon = b;
+	mpdu->beacon = beacon;
 
 	return true;
 }
 
-static inline bool
-validate_mac_command_cfi_to_mhr(struct ieee802154_mhr *mhr,
-				uint8_t ar, uint8_t comp,
-				uint8_t src, bool src_pan_brdcst_chk,
-				uint8_t dst, bool dst_brdcst_chk)
+static inline bool validate_mac_command_cfi_to_mhr(struct ieee802154_mhr *mhr,
+						   bool ack_requested, bool has_pan_id,
+						   uint8_t src_bf, bool src_pan_brdcst_chk,
+						   uint8_t dst_bf, bool dst_brdcst_chk)
 {
-	if (mhr->fs->fc.ar != ar || mhr->fs->fc.pan_id_comp != comp) {
+	if (mhr->fs->fc.ar != ack_requested || mhr->fs->fc.pan_id_comp == has_pan_id) {
 		return false;
 	}
 
-	if ((mhr->fs->fc.src_addr_mode != src) ||
-	    (mhr->fs->fc.dst_addr_mode != dst)) {
+	if (!(BIT(mhr->fs->fc.src_addr_mode) & src_bf) ||
+	    !(BIT(mhr->fs->fc.dst_addr_mode) & dst_bf)) {
 		return false;
 	}
 
-	/* This should be set only when comp == 0 */
 	if (src_pan_brdcst_chk) {
-		if (mhr->src_addr->plain.pan_id !=
-		    IEEE802154_BROADCAST_PAN_ID) {
+		if (mhr->src_addr->plain.pan_id != IEEE802154_BROADCAST_PAN_ID) {
 			return false;
 		}
 	}
 
-	/* This should be set only when comp == 0 */
 	if (dst_brdcst_chk) {
-		if (mhr->dst_addr->plain.addr.short_addr !=
-		    IEEE802154_BROADCAST_ADDRESS) {
+		/* broadcast address is symmetric so no need to swap byte order */
+		if (mhr->dst_addr->plain.addr.short_addr != IEEE802154_BROADCAST_ADDRESS) {
 			return false;
 		}
 	}
@@ -272,158 +264,149 @@ validate_mac_command_cfi_to_mhr(struct ieee802154_mhr *mhr,
 	return true;
 }
 
-static inline bool
-validate_mac_command(struct ieee802154_mpdu *mpdu, uint8_t *buf, uint8_t *length)
+static inline bool validate_mac_command(struct ieee802154_mpdu *mpdu, uint8_t *buf, uint8_t length)
 {
-	struct ieee802154_command *c = (struct ieee802154_command *)buf;
+	struct ieee802154_command *command = (struct ieee802154_command *)buf;
 	uint8_t len = IEEE802154_CMD_CFI_LENGTH;
 	bool src_pan_brdcst_chk = false;
+	uint8_t src_bf = 0, dst_bf = 0;
 	bool dst_brdcst_chk = false;
-	uint8_t comp = 0U;
-	uint8_t ar = 0U;
-	uint8_t src, dst;
+	bool ack_requested = false;
+	bool has_pan_id = true;
 
-	if (*length < len) {
+	if (length < len) {
 		return false;
 	}
 
-	switch (c->cfi) {
+	switch (command->cfi) {
 	case IEEE802154_CFI_UNKNOWN:
 		return false;
 	case IEEE802154_CFI_ASSOCIATION_REQUEST:
 		len += IEEE802154_CMD_ASSOC_REQ_LENGTH;
-		src = IEEE802154_EXT_ADDR_LENGTH;
+		ack_requested = true;
+		src_bf = BIT(IEEE802154_ADDR_MODE_EXTENDED);
 		src_pan_brdcst_chk = true;
-		dst = IEEE802154_ADDR_MODE_SHORT |
-			IEEE802154_ADDR_MODE_EXTENDED;
+		dst_bf = BIT(IEEE802154_ADDR_MODE_SHORT) | BIT(IEEE802154_ADDR_MODE_EXTENDED);
 
 		break;
 	case IEEE802154_CFI_ASSOCIATION_RESPONSE:
 		len += IEEE802154_CMD_ASSOC_RES_LENGTH;
 		__fallthrough;
 	case IEEE802154_CFI_DISASSOCIATION_NOTIFICATION:
-		if (c->cfi == IEEE802154_CFI_DISASSOCIATION_NOTIFICATION) {
+		if (command->cfi == IEEE802154_CFI_DISASSOCIATION_NOTIFICATION) {
 			len += IEEE802154_CMD_DISASSOC_NOTE_LENGTH;
+			dst_bf = BIT(IEEE802154_ADDR_MODE_SHORT);
 		}
 		__fallthrough;
-	case IEEE802154_CFI_PAN_ID_CONLICT_NOTIFICATION:
-		ar = 1U;
-		comp = 1U;
-		src = IEEE802154_EXT_ADDR_LENGTH;
-		dst = IEEE802154_EXT_ADDR_LENGTH;
+	case IEEE802154_CFI_PAN_ID_CONFLICT_NOTIFICATION:
+		ack_requested = true;
+		has_pan_id = false;
+		src_bf = BIT(IEEE802154_ADDR_MODE_EXTENDED);
+		dst_bf |= BIT(IEEE802154_ADDR_MODE_EXTENDED);
 
 		break;
 	case IEEE802154_CFI_DATA_REQUEST:
-		ar = 1U;
-		src = IEEE802154_ADDR_MODE_SHORT |
-			IEEE802154_ADDR_MODE_EXTENDED;
+		ack_requested = true;
+		src_bf = BIT(IEEE802154_ADDR_MODE_SHORT) | BIT(IEEE802154_ADDR_MODE_EXTENDED);
 
-		if (mpdu->mhr.fs->fc.dst_addr_mode ==
-		    IEEE802154_ADDR_MODE_NONE) {
-			dst = IEEE802154_ADDR_MODE_NONE;
+		if (mpdu->mhr.fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_NONE) {
+			dst_bf = BIT(IEEE802154_ADDR_MODE_NONE);
 		} else {
-			comp = 1U;
-			dst = IEEE802154_ADDR_MODE_SHORT |
-				IEEE802154_ADDR_MODE_EXTENDED;
+			has_pan_id = false;
+			dst_bf = BIT(IEEE802154_ADDR_MODE_SHORT) |
+				 BIT(IEEE802154_ADDR_MODE_EXTENDED);
 		}
 
 		break;
 	case IEEE802154_CFI_ORPHAN_NOTIFICATION:
-		comp = 1U;
-		src = IEEE802154_EXT_ADDR_LENGTH;
-		dst = IEEE802154_ADDR_MODE_SHORT;
+		has_pan_id = false;
+		src_bf = BIT(IEEE802154_ADDR_MODE_EXTENDED);
+		dst_bf = BIT(IEEE802154_ADDR_MODE_SHORT);
 
 		break;
 	case IEEE802154_CFI_BEACON_REQUEST:
-		src = IEEE802154_ADDR_MODE_NONE;
-		dst = IEEE802154_ADDR_MODE_SHORT;
+		src_bf = BIT(IEEE802154_ADDR_MODE_NONE);
+		dst_bf = BIT(IEEE802154_ADDR_MODE_SHORT);
 		dst_brdcst_chk = true;
 
 		break;
 	case IEEE802154_CFI_COORDINATOR_REALIGNEMENT:
 		len += IEEE802154_CMD_COORD_REALIGN_LENGTH;
-		src = IEEE802154_EXT_ADDR_LENGTH;
+		src_bf = BIT(IEEE802154_ADDR_MODE_EXTENDED);
 
-		if (mpdu->mhr.fs->fc.dst_addr_mode ==
-		    IEEE802154_ADDR_MODE_SHORT) {
-			dst = IEEE802154_ADDR_MODE_SHORT;
+		if (mpdu->mhr.fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
+			dst_bf = BIT(IEEE802154_ADDR_MODE_SHORT);
 			dst_brdcst_chk = true;
 		} else {
-			dst = IEEE802154_ADDR_MODE_EXTENDED;
+			dst_bf = BIT(IEEE802154_ADDR_MODE_EXTENDED);
 		}
 
 		break;
 	case IEEE802154_CFI_GTS_REQUEST:
 		len += IEEE802154_GTS_REQUEST_LENGTH;
-		ar = 1U;
-		src = IEEE802154_ADDR_MODE_SHORT;
-		dst = IEEE802154_ADDR_MODE_NONE;
+		ack_requested = true;
+		src_bf = BIT(IEEE802154_ADDR_MODE_SHORT);
+		dst_bf = BIT(IEEE802154_ADDR_MODE_NONE);
 
 		break;
 	default:
 		return false;
 	}
 
-	if (*length < len) {
+	if (length < len) {
 		return false;
 	}
 
-	if (!validate_mac_command_cfi_to_mhr(&mpdu->mhr, ar, comp,
-					     src, src_pan_brdcst_chk,
-					     dst, dst_brdcst_chk)) {
+	if (!validate_mac_command_cfi_to_mhr(&mpdu->mhr, ack_requested, has_pan_id, src_bf,
+					     src_pan_brdcst_chk, dst_bf,
+					     dst_brdcst_chk)) {
 		return false;
 	}
 
-	*length -= len;
-	mpdu->command = c;
+	mpdu->command = command;
 
 	return true;
 }
 
-static inline bool
-validate_payload_and_mfr(struct ieee802154_mpdu *mpdu,
-			 uint8_t *buf, uint8_t *p_buf, uint8_t *length)
+static inline bool validate_payload_and_mfr(struct ieee802154_mpdu *mpdu, uint8_t *buf,
+					    uint8_t *p_buf, uint8_t length)
 {
 	uint8_t type = mpdu->mhr.fs->fc.frame_type;
 
-	NET_DBG("Header size: %u, payload size %u",
-		(uint32_t)(p_buf - buf), *length);
+	NET_DBG("Header size: %u, payload size %u", (uint32_t)(p_buf - buf), length);
 
 	if (type == IEEE802154_FRAME_TYPE_BEACON) {
 		if (!validate_beacon(mpdu, p_buf, length)) {
 			return false;
 		}
 	} else if (type == IEEE802154_FRAME_TYPE_DATA) {
-		 /** A data frame embeds a payload */
-		if (*length == 0U) {
+		/** A data frame embeds a payload */
+		if (length == 0U) {
 			return false;
 		}
-
-		mpdu->payload = (void *)p_buf;
 	} else if (type == IEEE802154_FRAME_TYPE_ACK) {
 		/** An ACK frame has no payload */
-		if (*length) {
+		if (length) {
 			return false;
 		}
-
-		mpdu->payload = NULL;
 	} else {
 		if (!validate_mac_command(mpdu, p_buf, length)) {
 			return false;
 		}
 	}
 
-	if (*length) {
-		mpdu->mfr = (struct ieee802154_mfr *)(p_buf + *length);
+	mpdu->payload_length = length;
+
+	if (length) {
+		mpdu->payload = (void *)p_buf;
 	} else {
-		mpdu->mfr = NULL;
+		mpdu->payload = NULL;
 	}
 
 	return true;
 }
 
-bool ieee802154_validate_frame(uint8_t *buf, uint8_t length,
-			       struct ieee802154_mpdu *mpdu)
+bool ieee802154_validate_frame(uint8_t *buf, uint8_t length, struct ieee802154_mpdu *mpdu)
 {
 	uint8_t *p_buf = NULL;
 
@@ -437,81 +420,63 @@ bool ieee802154_validate_frame(uint8_t *buf, uint8_t length,
 		return false;
 	}
 
-	/* ToDo: Support later version's frame types */
+	/* TODO: Support later version's frame types */
 	if (mpdu->mhr.fs->fc.frame_type > IEEE802154_FRAME_TYPE_MAC_COMMAND) {
 		return false;
 	}
 
-	if (!validate_addr(p_buf, &p_buf, &length,
-			   mpdu->mhr.fs->fc.dst_addr_mode,
-			   false, &mpdu->mhr.dst_addr) ||
-	    !validate_addr(p_buf, &p_buf, &length,
-			   mpdu->mhr.fs->fc.src_addr_mode,
-			   (mpdu->mhr.fs->fc.pan_id_comp),
-			   &mpdu->mhr.src_addr)) {
+	if (!validate_addr(p_buf, &p_buf, &length, mpdu->mhr.fs->fc.dst_addr_mode, false,
+			   &mpdu->mhr.dst_addr) ||
+	    !validate_addr(p_buf, &p_buf, &length, mpdu->mhr.fs->fc.src_addr_mode,
+			   (mpdu->mhr.fs->fc.pan_id_comp), &mpdu->mhr.src_addr)) {
 		return false;
 	}
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 	if (mpdu->mhr.fs->fc.security_enabled) {
-		mpdu->mhr.aux_sec =
-			ieee802154_validate_aux_security_hdr(p_buf, &p_buf,
-							     &length);
+		mpdu->mhr.aux_sec = ieee802154_validate_aux_security_hdr(p_buf, &p_buf, &length);
 		if (!mpdu->mhr.aux_sec) {
 			return false;
 		}
 	}
 #endif
 
-	return validate_payload_and_mfr(mpdu, buf, p_buf, &length);
+	return validate_payload_and_mfr(mpdu, buf, p_buf, length);
 }
 
-uint8_t ieee802154_compute_header_size(struct net_if *iface,
-				    struct in6_addr *dst)
+void ieee802154_compute_header_and_authtag_len(struct net_if *iface, struct net_linkaddr *dst,
+					       struct net_linkaddr *src, uint8_t *ll_hdr_len,
+					       uint8_t *authtag_len)
 {
-	uint8_t hdr_len = sizeof(struct ieee802154_fcf_seq);
-#ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-	struct ieee802154_security_ctx *sec_ctx =
-		&((struct ieee802154_context *)net_if_l2_data(iface))->sec_ctx;
-#endif
+	uint8_t hdr_len = sizeof(struct ieee802154_fcf_seq), tag_len = 0;
+	bool broadcast = !dst->addr;
 
-	/** if dst is NULL, we'll consider it as a brodcast header */
-	if (!dst ||
-	    net_ipv6_is_addr_mcast(dst) ||
-	    net_ipv6_is_addr_unspecified(dst)) {
-		NET_DBG("Broadcast destination");
-		/* 4 dst pan/addr + 8 src addr */
-		hdr_len += IEEE802154_PAN_ID_LENGTH +
-			IEEE802154_SHORT_ADDR_LENGTH +
-			IEEE802154_EXT_ADDR_LENGTH;
-		if (IS_ENABLED(CONFIG_NET_L2_IEEE802154_SECURITY)) {
-			NET_DBG("Broadcast packet do not have security");
-			goto done;
-		}
-	} else {
-		struct net_nbr *nbr;
+	/* PAN ID */
+	hdr_len += IEEE802154_PAN_ID_LENGTH;
 
-		nbr = net_ipv6_nbr_lookup(iface, dst);
-		if (nbr) {
-			/* ToDo: handle short addresses */
-			/* dst pan/addr + src addr */
-			hdr_len += IEEE802154_PAN_ID_LENGTH +
-				(IEEE802154_EXT_ADDR_LENGTH * 2);
-		} else {
-			/* src pan/addr only */
-			hdr_len += IEEE802154_PAN_ID_LENGTH +
-				IEEE802154_EXT_ADDR_LENGTH;
-		}
-	}
+	/* Destination Address - see get_dst_addr_mode() */
+	hdr_len += broadcast ? IEEE802154_SHORT_ADDR_LENGTH : dst->len;
+
+	/* Source Address - see data_addr_to_fs_settings() */
+	hdr_len += src->addr ? src->len : dst->len;
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-	if (sec_ctx->level == IEEE802154_SECURITY_LEVEL_NONE) {
+	if (broadcast) {
+		NET_DBG("Broadcast packets are not being encrypted.");
 		goto done;
 	}
 
+	struct ieee802154_context *ctx = (struct ieee802154_context *)net_if_l2_data(iface);
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	struct ieee802154_security_ctx *sec_ctx = &ctx->sec_ctx;
+	if (sec_ctx->level == IEEE802154_SECURITY_LEVEL_NONE) {
+		goto release;
+	}
+
 	/* Compute aux-sec hdr size and add it to hdr_len */
-	hdr_len += IEEE802154_SECURITY_CF_LENGTH +
-		IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	hdr_len += IEEE802154_SECURITY_CF_LENGTH + IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
 
 	switch (sec_ctx->key_mode) {
 	case IEEE802154_KEY_ID_MODE_IMPLICIT:
@@ -520,49 +485,45 @@ uint8_t ieee802154_compute_header_size(struct net_if *iface,
 		 */
 		break;
 	case IEEE802154_KEY_ID_MODE_INDEX:
-		hdr_len += IEEE8021254_KEY_ID_FIELD_INDEX_LENGTH;
+		hdr_len += IEEE802154_KEY_ID_FIELD_INDEX_LENGTH;
 		break;
 	case IEEE802154_KEY_ID_MODE_SRC_4_INDEX:
-		hdr_len += IEEE8021254_KEY_ID_FIELD_SRC_4_INDEX_LENGTH;
+		hdr_len += IEEE802154_KEY_ID_FIELD_SRC_4_INDEX_LENGTH;
 		break;
 	case IEEE802154_KEY_ID_MODE_SRC_8_INDEX:
-		hdr_len += IEEE8021254_KEY_ID_FIELD_SRC_8_INDEX_LENGTH;
+		hdr_len += IEEE802154_KEY_ID_FIELD_SRC_8_INDEX_LENGTH;
 	}
 
-	/* This is a _HACK_: as net_buf do not let the possibility to
-	 * reserve tailroom - here for authentication tag - it "reserves"
-	 * it in headroom so the payload won't occupy all the left space
-	 * and then when it will come to finalize the data frame it will
-	 * reduce the reserved space by the tag size, move the payload
-	 * backward accordingly, and only then: run the
-	 * encryption/authentication which will fill the tag space in the end.
-	 */
 	if (sec_ctx->level < IEEE802154_SECURITY_LEVEL_ENC) {
-		hdr_len += level_2_tag_size[sec_ctx->level];
+		tag_len = level_2_authtag_len[sec_ctx->level];
 	} else {
-		hdr_len += level_2_tag_size[sec_ctx->level - 4];
+		tag_len = level_2_authtag_len[sec_ctx->level - 4U];
 	}
+
+release:
+	k_sem_give(&ctx->ctx_lock);
+done:
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
-done:
-	NET_DBG("Computed size of %u", hdr_len);
+	NET_DBG("Computed header size %u", hdr_len);
+	NET_DBG("Computed authtag size: %u", tag_len);
 
-	return hdr_len;
+	*ll_hdr_len = hdr_len;
+	*authtag_len = tag_len;
 }
 
-static inline struct ieee802154_fcf_seq *generate_fcf_grounds(uint8_t **p_buf,
-							      bool ack)
+static inline struct ieee802154_fcf_seq *generate_fcf_grounds(uint8_t **p_buf, bool ack_requested)
 {
 	struct ieee802154_fcf_seq *fs;
 
-	fs = (struct ieee802154_fcf_seq *) *p_buf;
+	fs = (struct ieee802154_fcf_seq *)*p_buf;
 
 	fs->fc.security_enabled = 0U;
 	fs->fc.frame_pending = 0U;
-	fs->fc.ar = ack;
+	fs->fc.ar = ack_requested;
 	fs->fc.pan_id_comp = 0U;
 	fs->fc.reserved = 0U;
-	/** We support version 2006 only for now */
+	/* We support version 2006 only for now */
 	fs->fc.seq_num_suppr = 0U;
 	fs->fc.ie_list = 0U;
 	fs->fc.frame_version = IEEE802154_VERSION_802154_2006;
@@ -572,21 +533,21 @@ static inline struct ieee802154_fcf_seq *generate_fcf_grounds(uint8_t **p_buf,
 	return fs;
 }
 
-static inline enum ieee802154_addressing_mode
-get_dst_addr_mode(struct net_linkaddr *dst, bool *broadcast)
+static inline enum ieee802154_addressing_mode get_dst_addr_mode(struct net_linkaddr *dst,
+								bool *broadcast)
 {
 	if (!dst->addr) {
 		NET_DBG("Broadcast destination");
-
 		*broadcast = true;
-
 		return IEEE802154_ADDR_MODE_SHORT;
 	}
 
-	*broadcast = false;
-
 	if (dst->len == IEEE802154_SHORT_ADDR_LENGTH) {
+		uint16_t short_addr = ntohs(*(uint16_t *)(dst->addr));
+		*broadcast = (short_addr == IEEE802154_BROADCAST_ADDRESS);
 		return IEEE802154_ADDR_MODE_SHORT;
+	} else {
+		*broadcast = false;
 	}
 
 	if (dst->len == IEEE802154_EXT_ADDR_LENGTH) {
@@ -596,10 +557,8 @@ get_dst_addr_mode(struct net_linkaddr *dst, bool *broadcast)
 	return IEEE802154_ADDR_MODE_NONE;
 }
 
-static inline
-bool data_addr_to_fs_settings(struct net_linkaddr *dst,
-			      struct ieee802154_fcf_seq *fs,
-			      struct ieee802154_frame_params *params)
+static inline bool data_addr_to_fs_settings(struct net_linkaddr *dst, struct ieee802154_fcf_seq *fs,
+					    struct ieee802154_frame_params *params)
 {
 	bool broadcast;
 
@@ -611,13 +570,17 @@ bool data_addr_to_fs_settings(struct net_linkaddr *dst,
 			params->dst.short_addr = IEEE802154_BROADCAST_ADDRESS;
 			params->dst.len = IEEE802154_SHORT_ADDR_LENGTH;
 			fs->fc.ar = 0U;
+		} else if (dst->len == IEEE802154_SHORT_ADDR_LENGTH) {
+			params->dst.short_addr = ntohs(*(uint16_t *)(dst->addr));
+			params->dst.len = IEEE802154_SHORT_ADDR_LENGTH;
 		} else {
-			params->dst.ext_addr = dst->addr;
-			params->dst.len = dst->len;
+			__ASSERT_NO_MSG(dst->len == IEEE802154_EXT_ADDR_LENGTH);
+			memcpy(params->dst.ext_addr, dst->addr, sizeof(params->dst.ext_addr));
+			params->dst.len = IEEE802154_EXT_ADDR_LENGTH;
 		}
 	}
 
-	if (fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_SHORT && !broadcast) {
+	if (params->short_addr) {
 		fs->fc.src_addr_mode = IEEE802154_ADDR_MODE_SHORT;
 	} else {
 		fs->fc.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED;
@@ -626,53 +589,51 @@ bool data_addr_to_fs_settings(struct net_linkaddr *dst,
 	return broadcast;
 }
 
-static
-uint8_t *generate_addressing_fields(struct ieee802154_context *ctx,
-				 struct ieee802154_fcf_seq *fs,
-				 struct ieee802154_frame_params *params,
-				 uint8_t *p_buf)
+static uint8_t *generate_addressing_fields(struct ieee802154_context *ctx,
+					   struct ieee802154_fcf_seq *fs,
+					   struct ieee802154_frame_params *params, uint8_t *p_buf)
 {
-	struct ieee802154_address_field *af;
-	struct ieee802154_address *src_addr;
+	struct ieee802154_address_field *address_field;
 
+	/* destination address */
 	if (fs->fc.dst_addr_mode != IEEE802154_ADDR_MODE_NONE) {
-		af = (struct ieee802154_address_field *)p_buf;
-		af->plain.pan_id = params->dst.pan_id;
+		address_field = (struct ieee802154_address_field *)p_buf;
+
+		address_field->plain.pan_id = sys_cpu_to_le16(params->dst.pan_id);
+		p_buf += IEEE802154_PAN_ID_LENGTH;
 
 		if (fs->fc.dst_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
-			af->plain.addr.short_addr =
+			address_field->plain.addr.short_addr =
 				sys_cpu_to_le16(params->dst.short_addr);
-			p_buf += IEEE802154_PAN_ID_LENGTH +
-				IEEE802154_SHORT_ADDR_LENGTH;
+			p_buf += IEEE802154_SHORT_ADDR_LENGTH;
 		} else {
-			sys_memcpy_swap(af->plain.addr.ext_addr,
-					params->dst.ext_addr,
+			sys_memcpy_swap(address_field->plain.addr.ext_addr, params->dst.ext_addr,
 					IEEE802154_EXT_ADDR_LENGTH);
-			p_buf += IEEE802154_PAN_ID_LENGTH +
-				IEEE802154_EXT_ADDR_LENGTH;
+			p_buf += IEEE802154_EXT_ADDR_LENGTH;
 		}
 	}
 
+	/* source address */
 	if (fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_NONE) {
 		return p_buf;
 	}
 
-	af = (struct ieee802154_address_field *)p_buf;
+	address_field = (struct ieee802154_address_field *)p_buf;
+	struct ieee802154_address *src_addr;
 
-	if (!fs->fc.pan_id_comp) {
-		af->plain.pan_id = params->pan_id;
-		src_addr = &af->plain.addr;
-		p_buf += IEEE802154_PAN_ID_LENGTH;
+	if (fs->fc.pan_id_comp) {
+		src_addr = &address_field->comp.addr;
 	} else {
-		src_addr = &af->comp.addr;
+		address_field->plain.pan_id = sys_cpu_to_le16(params->pan_id);
+		src_addr = &address_field->plain.addr;
+		p_buf += IEEE802154_PAN_ID_LENGTH;
 	}
 
 	if (fs->fc.src_addr_mode == IEEE802154_ADDR_MODE_SHORT) {
 		src_addr->short_addr = sys_cpu_to_le16(params->short_addr);
 		p_buf += IEEE802154_SHORT_ADDR_LENGTH;
 	} else {
-		memcpy(src_addr->ext_addr, ctx->ext_addr,
-		       IEEE802154_EXT_ADDR_LENGTH);
+		memcpy(src_addr->ext_addr, ctx->ext_addr, IEEE802154_EXT_ADDR_LENGTH);
 		p_buf += IEEE802154_EXT_ADDR_LENGTH;
 	}
 
@@ -680,9 +641,7 @@ uint8_t *generate_addressing_fields(struct ieee802154_context *ctx,
 }
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
-static
-uint8_t *generate_aux_security_hdr(struct ieee802154_security_ctx *sec_ctx,
-				uint8_t *p_buf)
+static uint8_t *generate_aux_security_hdr(struct ieee802154_security_ctx *sec_ctx, uint8_t *p_buf)
 {
 	struct ieee802154_aux_security_hdr *aux_sec;
 
@@ -691,7 +650,7 @@ uint8_t *generate_aux_security_hdr(struct ieee802154_security_ctx *sec_ctx,
 	}
 
 	if (sec_ctx->key_mode != IEEE802154_KEY_ID_MODE_IMPLICIT) {
-		/* ToDo: it supports implicit mode only, for now */
+		/* TODO: Support other key ID modes. */
 		return NULL;
 	}
 
@@ -703,21 +662,21 @@ uint8_t *generate_aux_security_hdr(struct ieee802154_security_ctx *sec_ctx,
 
 	aux_sec->frame_counter = sys_cpu_to_le32(sec_ctx->frame_counter);
 
-	return p_buf + IEEE802154_SECURITY_CF_LENGTH +
-		IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
+	return p_buf + IEEE802154_SECURITY_CF_LENGTH + IEEE802154_SECURITY_FRAME_COUNTER_LENGTH;
 }
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
 
-bool ieee802154_create_data_frame(struct ieee802154_context *ctx,
-				  struct net_linkaddr *dst,
-				  struct net_buf *buf,
-				  uint8_t hdr_size)
+bool ieee802154_create_data_frame(struct ieee802154_context *ctx, struct net_linkaddr *dst,
+				  struct net_linkaddr *src, struct net_buf *buf, uint8_t ll_hdr_len)
 {
-	struct ieee802154_frame_params params;
+	struct ieee802154_frame_params params = {0};
 	struct ieee802154_fcf_seq *fs;
 	uint8_t *p_buf = buf->data;
 	uint8_t *buf_start = p_buf;
+	bool ret = false;
 	bool broadcast;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
 
 	fs = generate_fcf_grounds(&p_buf, ctx->ack_requested);
 
@@ -726,6 +685,23 @@ bool ieee802154_create_data_frame(struct ieee802154_context *ctx,
 
 	params.dst.pan_id = ctx->pan_id;
 	params.pan_id = ctx->pan_id;
+	if (src->addr && src->len == IEEE802154_SHORT_ADDR_LENGTH) {
+		params.short_addr = ntohs(*(uint16_t *)(src->addr));
+		if (ctx->short_addr != params.short_addr) {
+			goto out;
+		}
+	} else {
+		if (src->len != IEEE802154_EXT_ADDR_LENGTH) {
+			goto out;
+		}
+
+		uint8_t ext_addr_le[IEEE802154_EXT_ADDR_LENGTH];
+
+		sys_memcpy_swap(ext_addr_le, src->addr, IEEE802154_EXT_ADDR_LENGTH);
+		if (memcmp(ctx->ext_addr, ext_addr_le, src->len)) {
+			goto out;
+		}
+	}
 
 	broadcast = data_addr_to_fs_settings(dst, fs, &params);
 
@@ -733,65 +709,68 @@ bool ieee802154_create_data_frame(struct ieee802154_context *ctx,
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 	if (broadcast) {
+		/* TODO: This may not always be correct. */
 		NET_DBG("No security hdr needed: broadcasting");
+		goto no_security_hdr;
+	}
 
+	if (ctx->sec_ctx.level == IEEE802154_SECURITY_LEVEL_NONE) {
+		NET_WARN("IEEE 802.15.4 security is enabled but has not been configured.");
 		goto no_security_hdr;
 	}
 
 	fs->fc.security_enabled = 1U;
 
 	p_buf = generate_aux_security_hdr(&ctx->sec_ctx, p_buf);
-
-	/* If tagged, let's retrieve tag space from hdr reserved space.
-	 * See comment in ieee802154_compute_header_size()
-	 */
-	if (ctx->sec_ctx.level != IEEE802154_SECURITY_LEVEL_NONE &&
-	    ctx->sec_ctx.level != IEEE802154_SECURITY_LEVEL_ENC) {
-		uint8_t level;
-
-		level = ctx->sec_ctx.level;
-		if (level >= IEEE802154_SECURITY_LEVEL_ENC) {
-			level -= 4U;
-		}
-
-		/* p_buf should point to the right place */
-		memmove(p_buf, buf->data, buf->len);
-		hdr_size -= level_2_tag_size[level];
+	if (!p_buf) {
+		NET_ERR("Unsupported key mode.");
+		goto out;
 	}
+
+	uint8_t level = ctx->sec_ctx.level;
+
+	if (level >= IEEE802154_SECURITY_LEVEL_ENC) {
+		level -= 4U;
+	}
+
+	uint8_t authtag_len = level_2_authtag_len[level];
+	uint8_t payload_len = buf->len - ll_hdr_len - authtag_len;
+
+	/* Let's encrypt/auth only in the end, if needed */
+	if (!ieee802154_encrypt_auth(&ctx->sec_ctx, buf_start, ll_hdr_len,
+				     payload_len, authtag_len, ctx->ext_addr)) {
+		goto out;
+	};
 
 no_security_hdr:
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */
-
-	if ((p_buf - buf_start) != hdr_size) {
-		/* hdr_size was too small? We probably overwrote
-		 * payload bytes
-		 */
-		NET_ERR("Could not generate data frame %zu vs %u",
-			(p_buf - buf_start), hdr_size);
-		return false;
+	if ((p_buf - buf_start) != ll_hdr_len) {
+		/* ll_hdr_len was too small? We probably overwrote payload bytes */
+		NET_ERR("Could not generate data frame %zu vs %u", (p_buf - buf_start), ll_hdr_len);
+		goto out;
 	}
 
 	dbg_print_fs(fs);
 
-	/* Let's encrypt/auth only in the end, is needed */
-	return ieee802154_encrypt_auth(broadcast ? NULL : &ctx->sec_ctx,
-				       buf_start, hdr_size, buf->len,
-				       ctx->ext_addr);
+	ret = true;
+
+out:
+	k_sem_give(&ctx->ctx_lock);
+	return ret;
 }
 
 #ifdef CONFIG_NET_L2_IEEE802154_RFD
 
-static inline bool cfi_to_fs_settings(enum ieee802154_cfi cfi,
-				      struct ieee802154_fcf_seq *fs,
+static inline bool cfi_to_fs_settings(enum ieee802154_cfi cfi, struct ieee802154_fcf_seq *fs,
 				      struct ieee802154_frame_params *params)
 {
 	switch (cfi) {
 	case IEEE802154_CFI_DISASSOCIATION_NOTIFICATION:
-		fs->fc.ar = 1U;
 		fs->fc.pan_id_comp = 1U;
 
 		__fallthrough;
 	case IEEE802154_CFI_ASSOCIATION_REQUEST:
+		fs->fc.ar = 1U;
 		fs->fc.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED;
 
 		if (params->dst.len == IEEE802154_SHORT_ADDR_LENGTH) {
@@ -802,7 +781,7 @@ static inline bool cfi_to_fs_settings(enum ieee802154_cfi cfi,
 
 		break;
 	case IEEE802154_CFI_ASSOCIATION_RESPONSE:
-	case IEEE802154_CFI_PAN_ID_CONLICT_NOTIFICATION:
+	case IEEE802154_CFI_PAN_ID_CONFLICT_NOTIFICATION:
 		fs->fc.ar = 1U;
 		fs->fc.pan_id_comp = 1U;
 		fs->fc.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED;
@@ -811,7 +790,7 @@ static inline bool cfi_to_fs_settings(enum ieee802154_cfi cfi,
 		break;
 	case IEEE802154_CFI_DATA_REQUEST:
 		fs->fc.ar = 1U;
-		/* ToDo: src/dst addr mode: see 5.3.4 */
+		/* TODO: src/dst addr mode: see section 7.5.5 */
 
 		break;
 	case IEEE802154_CFI_ORPHAN_NOTIFICATION:
@@ -826,7 +805,7 @@ static inline bool cfi_to_fs_settings(enum ieee802154_cfi cfi,
 		break;
 	case IEEE802154_CFI_COORDINATOR_REALIGNEMENT:
 		fs->fc.src_addr_mode = IEEE802154_ADDR_MODE_EXTENDED;
-		/* Todo: ar and dst addr mode: see 5.3.8 */
+		/* TODO: ack_requested and dst addr mode: see section 7.5.10 */
 
 		break;
 	case IEEE802154_CFI_GTS_REQUEST:
@@ -865,35 +844,33 @@ static inline uint8_t mac_command_length(enum ieee802154_cfi cfi)
 	return length;
 }
 
-struct net_pkt *
-ieee802154_create_mac_cmd_frame(struct net_if *iface,
-				enum ieee802154_cfi type,
-				struct ieee802154_frame_params *params)
+struct net_pkt *ieee802154_create_mac_cmd_frame(struct net_if *iface, enum ieee802154_cfi type,
+						struct ieee802154_frame_params *params)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	struct ieee802154_fcf_seq *fs;
-	struct net_pkt *pkt;
+	struct net_pkt *pkt = NULL;
 	uint8_t *p_buf, *p_start;
 
-	/* It would be costly to compute the size when actual frame are never
-	 * bigger than 125 bytes, so let's allocate that size as buffer.
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	/* It would be costly to compute the size when actual frames are never
+	 * bigger than IEEE802154_MTU bytes less the FCS size, so let's allocate that
+	 * size as buffer.
 	 */
-	pkt = net_pkt_alloc_with_buffer(iface,
-					IEEE802154_MTU - IEEE802154_MFR_LENGTH,
-					AF_UNSPEC, 0, BUF_TIMEOUT);
+	pkt = net_pkt_alloc_with_buffer(iface, IEEE802154_MTU, AF_UNSPEC, 0, BUF_TIMEOUT);
 	if (!pkt) {
-		return NULL;
+		goto out;
 	}
 
 	p_buf = net_pkt_data(pkt);
 	p_start = p_buf;
 
-	fs = generate_fcf_grounds(&p_buf,
-				  type == IEEE802154_CFI_BEACON_REQUEST ?
-				  false : ctx->ack_requested);
+	fs = generate_fcf_grounds(
+		&p_buf, type == IEEE802154_CFI_BEACON_REQUEST ? false : ctx->ack_requested);
 
 	fs->fc.frame_type = IEEE802154_FRAME_TYPE_MAC_COMMAND;
-	fs->sequence = ctx->sequence;
+	fs->sequence = ctx->sequence++;
 
 	if (!cfi_to_fs_settings(type, fs, params)) {
 		goto error;
@@ -908,24 +885,25 @@ ieee802154_create_mac_cmd_frame(struct net_if *iface,
 
 	dbg_print_fs(fs);
 
-	return pkt;
+	goto out;
+
 error:
 	net_pkt_unref(pkt);
+	pkt = NULL;
 
-	return NULL;
+out:
+	k_sem_give(&ctx->ctx_lock);
+	return pkt;
 }
 
-void ieee802154_mac_cmd_finalize(struct net_pkt *pkt,
-				 enum ieee802154_cfi type)
+void ieee802154_mac_cmd_finalize(struct net_pkt *pkt, enum ieee802154_cfi type)
 {
 	net_buf_add(pkt->buffer, mac_command_length(type));
 }
 
 #endif /* CONFIG_NET_L2_IEEE802154_RFD */
 
-#ifdef CONFIG_NET_L2_IEEE802154_ACK_REPLY
-bool ieee802154_create_ack_frame(struct net_if *iface,
-				 struct net_pkt *pkt, uint8_t seq)
+bool ieee802154_create_ack_frame(struct net_if *iface, struct net_pkt *pkt, uint8_t seq)
 {
 	uint8_t *p_buf = net_pkt_data(pkt);
 	struct ieee802154_fcf_seq *fs;
@@ -936,8 +914,8 @@ bool ieee802154_create_ack_frame(struct net_if *iface,
 
 	fs = generate_fcf_grounds(&p_buf, false);
 
-	fs->fc.dst_addr_mode = 0U;
-	fs->fc.src_addr_mode = 0U;
+	fs->fc.dst_addr_mode = IEEE802154_ADDR_MODE_NONE;
+	fs->fc.src_addr_mode = IEEE802154_ADDR_MODE_NONE;
 
 	fs->fc.frame_type = IEEE802154_FRAME_TYPE_ACK;
 	fs->sequence = seq;
@@ -946,49 +924,67 @@ bool ieee802154_create_ack_frame(struct net_if *iface,
 
 	return true;
 }
-#endif /* CONFIG_NET_L2_IEEE802154_ACK_REPLY */
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 bool ieee802154_decipher_data_frame(struct net_if *iface, struct net_pkt *pkt,
 				    struct ieee802154_mpdu *mpdu)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
-	uint8_t level;
+	bool ret = false;
+
+	k_sem_take(&ctx->ctx_lock, K_FOREVER);
+
+	uint8_t level = ctx->sec_ctx.level;
 
 	if (!mpdu->mhr.fs->fc.security_enabled) {
-		return true;
+		ret = true;
+		goto out;
 	}
 
-	/* Section 7.2.3 (i) talks about "security level policy" conformance
-	 * but such policy does not seem to be detailed. So let's assume both
-	 * ends should have same security level.
+	/* Section 9.2.4: Incoming frame security procedure, Security Enabled field is set to one
+	 *
+	 * [...]
+	 *
+	 * a) Legacy security. If the Frame Version field of the frame to be unsecured is set to
+	 *    zero, the procedure shall return with a Status of UNSUPPORTED_LEGACY.
 	 */
-	if (mpdu->mhr.aux_sec->control.security_level != ctx->sec_ctx.level) {
-		return false;
+	if (mpdu->mhr.aux_sec->control.security_level != level) {
+		goto out;
 	}
 
-	/* ToDo: handle src short address
-	 * This will require to look up in nbr cache with short addr
-	 * in order to get the extended address related to it
-	 */
-	if (!ieee802154_decrypt_auth(&ctx->sec_ctx, net_pkt_data(pkt),
-				     (uint8_t *)mpdu->payload - net_pkt_data(pkt),
-				     net_pkt_get_len(pkt),
-				     net_pkt_lladdr_src(pkt)->addr,
-				     sys_le32_to_cpu(
-					mpdu->mhr.aux_sec->frame_counter))) {
-		NET_ERR("Could not decipher the frame");
-		return false;
-	}
-
-	level = ctx->sec_ctx.level;
 	if (level >= IEEE802154_SECURITY_LEVEL_ENC) {
 		level -= 4U;
 	}
 
-	/* We remove tag size from buf's length, it is now useless */
-	pkt->buffer->len -= level_2_tag_size[level];
+	uint8_t authtag_len = level_2_authtag_len[level];
+	uint8_t ll_hdr_len = (uint8_t *)mpdu->payload - net_pkt_data(pkt);
+	uint8_t payload_len = net_pkt_get_len(pkt) - ll_hdr_len - authtag_len;
+	uint8_t ext_addr_le[IEEE802154_EXT_ADDR_LENGTH];
 
-	return true;
+	/* TODO: Handle src short address.
+	 * This will require to look up in nbr cache with short addr
+	 * in order to get the extended address related to it.
+	 */
+	if (net_pkt_lladdr_src(pkt)->len != IEEE802154_EXT_ADDR_LENGTH) {
+		NET_ERR("Decrypting packages with short source addresses is not supported.");
+		goto out;
+	}
+
+	sys_memcpy_swap(ext_addr_le, net_pkt_lladdr_src(pkt)->addr, net_pkt_lladdr_src(pkt)->len);
+	if (!ieee802154_decrypt_auth(&ctx->sec_ctx, net_pkt_data(pkt), ll_hdr_len, payload_len,
+				     authtag_len, ext_addr_le,
+				     sys_le32_to_cpu(mpdu->mhr.aux_sec->frame_counter))) {
+		NET_ERR("Could not decipher the frame");
+		goto out;
+	}
+
+	/* We remove tag size from buf's length, it is now useless. */
+	pkt->buffer->len -= authtag_len;
+
+	ret = true;
+
+out:
+	k_sem_give(&ctx->ctx_lock);
+	return ret;
 }
 #endif /* CONFIG_NET_L2_IEEE802154_SECURITY */

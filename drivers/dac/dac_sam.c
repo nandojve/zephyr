@@ -14,12 +14,15 @@
 #define DT_DRV_COMPAT atmel_sam_dac
 
 #include <errno.h>
-#include <sys/__assert.h>
+#include <zephyr/sys/__assert.h>
 #include <soc.h>
-#include <device.h>
-#include <drivers/dac.h>
-
-#include <logging/log.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/dac.h>
+#include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/irq.h>
 LOG_MODULE_REGISTER(dac_sam, CONFIG_DAC_LOG_LEVEL);
 
 BUILD_ASSERT(IS_ENABLED(CONFIG_SOC_SERIES_SAME70) ||
@@ -31,9 +34,10 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_SOC_SERIES_SAME70) ||
 /* Device constant configuration parameters */
 struct dac_sam_dev_cfg {
 	Dacc *regs;
+	const struct atmel_sam_pmc_config clock_cfg;
+	const struct pinctrl_dev_config *pcfg;
 	void (*irq_config)(void);
 	uint8_t irq_id;
-	uint8_t periph_id;
 	uint8_t prescaler;
 };
 
@@ -46,17 +50,10 @@ struct dac_sam_dev_data {
 	struct dac_channel dac_channels[DAC_CHANNEL_NO];
 };
 
-#define DEV_NAME(dev) ((dev)->name)
-#define DEV_CFG(dev) \
-	((const struct dac_sam_dev_cfg *const)(dev)->config)
-#define DEV_DATA(dev) \
-	((struct dac_sam_dev_data *const)(dev)->data)
-
-static void dac_sam_isr(void *arg)
+static void dac_sam_isr(const struct device *dev)
 {
-	const struct device *dev = (const struct device *)arg;
-	const struct dac_sam_dev_cfg *const dev_cfg = DEV_CFG(dev);
-	struct dac_sam_dev_data *const dev_data = DEV_DATA(dev);
+	const struct dac_sam_dev_cfg *const dev_cfg = dev->config;
+	struct dac_sam_dev_data *const dev_data = dev->data;
 	Dacc *const dac = dev_cfg->regs;
 	uint32_t int_stat;
 
@@ -78,7 +75,7 @@ static void dac_sam_isr(void *arg)
 static int dac_sam_channel_setup(const struct device *dev,
 				 const struct dac_channel_cfg *channel_cfg)
 {
-	const struct dac_sam_dev_cfg *const dev_cfg = DEV_CFG(dev);
+	const struct dac_sam_dev_cfg *const dev_cfg = dev->config;
 	Dacc *const dac = dev_cfg->regs;
 
 	if (channel_cfg->channel_id >= DAC_CHANNEL_NO) {
@@ -97,8 +94,8 @@ static int dac_sam_channel_setup(const struct device *dev,
 static int dac_sam_write_value(const struct device *dev, uint8_t channel,
 			       uint32_t value)
 {
-	struct dac_sam_dev_data *const dev_data = DEV_DATA(dev);
-	const struct dac_sam_dev_cfg *const dev_cfg = DEV_CFG(dev);
+	struct dac_sam_dev_data *const dev_data = dev->data;
+	const struct dac_sam_dev_cfg *const dev_cfg = dev->config;
 	Dacc *const dac = dev_cfg->regs;
 
 	if (channel >= DAC_CHANNEL_NO) {
@@ -107,6 +104,11 @@ static int dac_sam_write_value(const struct device *dev, uint8_t channel,
 
 	if (dac->DACC_IMR & (DACC_IMR_TXRDY0 << channel)) {
 		/* Attempting to send data on channel that's already in use */
+		return -EINVAL;
+	}
+
+	if (value >= BIT(12)) {
+		LOG_ERR("value %d out of range", value);
 		return -EINVAL;
 	}
 
@@ -123,9 +125,10 @@ static int dac_sam_write_value(const struct device *dev, uint8_t channel,
 
 static int dac_sam_init(const struct device *dev)
 {
-	const struct dac_sam_dev_cfg *const dev_cfg = DEV_CFG(dev);
-	struct dac_sam_dev_data *const dev_data = DEV_DATA(dev);
+	const struct dac_sam_dev_cfg *const dev_cfg = dev->config;
+	struct dac_sam_dev_data *const dev_data = dev->data;
 	Dacc *const dac = dev_cfg->regs;
+	int retval;
 
 	/* Configure interrupts */
 	dev_cfg->irq_config();
@@ -136,7 +139,13 @@ static int dac_sam_init(const struct device *dev)
 	}
 
 	/* Enable DAC clock in PMC */
-	soc_pmc_peripheral_enable(dev_cfg->periph_id);
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&dev_cfg->clock_cfg);
+
+	retval = pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	if (retval < 0) {
+		return retval;
+	}
 
 	/* Set Mode Register */
 	dac->DACC_MR = DACC_MR_PRESCALER(dev_cfg->prescaler);
@@ -144,7 +153,7 @@ static int dac_sam_init(const struct device *dev)
 	/* Enable module's IRQ */
 	irq_enable(dev_cfg->irq_id);
 
-	LOG_INF("Device %s initialized", DEV_NAME(dev));
+	LOG_INF("Device %s initialized", dev->name);
 
 	return 0;
 }
@@ -162,11 +171,14 @@ static void dacc_irq_config(void)
 		    DEVICE_DT_INST_GET(0), 0);
 }
 
+PINCTRL_DT_INST_DEFINE(0);
+
 static const struct dac_sam_dev_cfg dacc_sam_config = {
 	.regs = (Dacc *)DT_INST_REG_ADDR(0),
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 	.irq_id = DT_INST_IRQN(0),
 	.irq_config = dacc_irq_config,
-	.periph_id = DT_INST_PROP(0, peripheral_id),
+	.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(0),
 	.prescaler = DT_INST_PROP(0, prescaler),
 };
 

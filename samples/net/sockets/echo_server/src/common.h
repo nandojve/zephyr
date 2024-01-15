@@ -7,14 +7,14 @@
 
 
 #define MY_PORT 4242
-#if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS) || defined(CONFIG_NET_TCP2) || \
-	defined(CONFIG_COVERAGE)
+#if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS) || defined(CONFIG_NET_TCP) || \
+	defined(CONFIG_COVERAGE_GCOV)
 #define STACK_SIZE 4096
 #else
 #define STACK_SIZE 2048
 #endif
 
-#if IS_ENABLED(CONFIG_NET_TC_THREAD_COOPERATIVE)
+#if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
 #define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
 #else
 #define THREAD_PRIORITY K_PRIO_PREEMPT(8)
@@ -24,7 +24,7 @@
 #define STATS_TIMER 60 /* How often to print statistics (in seconds) */
 
 #if defined(CONFIG_USERSPACE)
-#include <app_memory/app_memdomain.h>
+#include <zephyr/app_memory/app_memdomain.h>
 extern struct k_mem_partition app_partition;
 extern struct k_mem_domain app_domain;
 #define APP_BMEM K_APP_BMEM(app_partition)

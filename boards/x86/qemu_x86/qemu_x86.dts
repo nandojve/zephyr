@@ -8,11 +8,12 @@
 #define DT_DRAM_BASE		0
 #endif
 #ifndef DT_DRAM_SIZE
-#define DT_DRAM_SIZE		DT_SIZE_K(4096)
+#define DT_DRAM_SIZE		DT_SIZE_M(32)
 #endif
 #define DT_FLASH_SIZE		DT_SIZE_K(4096)
 
-#include <ia32.dtsi>
+#include <intel/ia32.dtsi>
+#include <zephyr/dt-bindings/pcie/pcie.h>
 
 / {
 	model = "QEMU X86 emulator";
@@ -28,6 +29,7 @@
 		uart-1 = &uart1;
 		eeprom-0 = &eeprom0;
 		eeprom-1 = &eeprom1;
+		rtc = &rtc;
 	};
 
 	chosen {
@@ -40,13 +42,37 @@
 		zephyr,bt-mon-uart = &uart1;
 		zephyr,code-partition = &slot0_partition;
 		zephyr,flash-controller = &sim_flash;
+		zephyr,ieee802154 = &ieee802154;
+		zephyr,canbus = &can0;
 	};
 
-	soc {
-		eth0: eth@febc0000 {
+	pcie0: pcie0 {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "intel,pcie";
+		ranges;
+
+		can0: can0 {
+			compatible = "kvaser,pcican";
+			status = "okay";
+			vendor-id = <0x10e8>;
+			device-id = <0x8406>;
+			interrupts = <11 IRQ_TYPE_LOWEST_LEVEL_LOW 3>;
+			interrupt-parent = <&intc>;
+			bus-speed = <125000>;
+			sample-point = <875>;
+
+			can-transceiver {
+				max-bitrate = <1000000>;
+			};
+		};
+
+		eth0: eth0 {
 			compatible = "intel,e1000";
-			reg = <0xfebc0000 0x100>;
-			label = "eth0";
+
+			vendor-id = <0x8086>;
+			device-id = <0x100e>;
+
 			interrupts = <11 IRQ_TYPE_LOWEST_EDGE_RISING 3>;
 			interrupt-parent = <&intc>;
 
@@ -56,7 +82,6 @@
 
 	sim_flash: sim_flash {
 		compatible = "zephyr,sim-flash";
-		label = "FLASH_SIMULATOR";
 
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -74,7 +99,6 @@
 	eeprom1: eeprom1 {
 		status = "okay";
 		compatible = "zephyr,emu-eeprom";
-		label = "EEPROM_1";
 		size = <DT_SIZE_K(4)>;
 		pagesize = <DT_SIZE_K(8)>;
 		partition = <&eepromemu_partition>;
@@ -84,8 +108,11 @@
 	eeprom0: eeprom0 {
 		status = "okay";
 		compatible = "zephyr,sim-eeprom";
-		label = "EEPROM_0";
 		size = <DT_SIZE_K(4)>;
+	};
+
+	ieee802154: ieee802154 {
+		compatible = "zephyr,ieee802154-uart-pipe";
 	};
 
 };

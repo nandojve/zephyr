@@ -14,13 +14,13 @@
 #ifndef _SOC__H_
 #define _SOC__H_
 
-#include <sys/util.h>
+#include <zephyr/sys/util.h>
 #include <../common/soc_common.h>
 
 #ifndef _ASMLANGUAGE
 
 /* Add include for DTS generated information */
-#include <devicetree.h>
+#include <zephyr/devicetree.h>
 
 #if defined(CONFIG_SOC_SERIES_BL6)
 #include <bl602.h>

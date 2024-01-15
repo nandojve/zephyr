@@ -7,23 +7,22 @@
 #define LOG_MODULE_NAME wifi_winc1500
 #define LOG_LEVEL CONFIG_WIFI_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
-#include <zephyr.h>
-#include <kernel.h>
-#include <debug/stack.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/debug/stack.h>
+#include <zephyr/device.h>
 #include <string.h>
 #include <errno.h>
-#include <net/net_pkt.h>
-#include <net/net_if.h>
-#include <net/net_l2.h>
-#include <net/net_context.h>
-#include <net/net_offload.h>
-#include <net/wifi_mgmt.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_if.h>
+#include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_context.h>
+#include <zephyr/net/net_offload.h>
+#include <zephyr/net/wifi_mgmt.h>
 
-#include <sys/printk.h>
+#include <zephyr/sys/printk.h>
 
 /* We do not need <socket/include/socket.h>
  * It seems there is a bug in ASF side: if OS is already defining sockaddr
@@ -54,7 +53,7 @@ NMI_API sint16 send(SOCKET sock, void *pvSendBuffer,
 NMI_API sint16 sendto(SOCKET sock, void *pvSendBuffer,
 		      uint16 u16SendLength, uint16 flags,
 		      struct sockaddr *pstrDestAddr, uint8 u8AddrLen);
-NMI_API sint8 close(SOCKET sock);
+NMI_API sint8 winc1500_close(SOCKET sock);
 
 enum socket_errors {
 	SOCK_ERR_NO_ERROR = 0,
@@ -159,11 +158,11 @@ struct winc1500_data {
 static struct winc1500_data w1500_data;
 
 #if LOG_LEVEL > LOG_LEVEL_OFF
-
 static void stack_stats(void)
 {
 	log_stack_usage(&winc1500_thread_data);
 }
+#endif /* LOG_LEVEL > LOG_LEVEL_OFF */
 
 static char *socket_error_string(int8_t err)
 {
@@ -285,8 +284,6 @@ static char *socket_message_to_string(uint8_t message)
 		return "UNKNOWN.";
 	}
 }
-
-#endif /* LOG_LEVEL > LOG_LEVEL_OFF */
 
 /**
  * This function is called when the socket is to be opened.
@@ -596,7 +593,7 @@ static int winc1500_put(struct net_context *context)
 
 	memset(&(context->remote), 0, sizeof(struct sockaddr_in));
 	context->flags &= ~NET_CONTEXT_REMOTE_ADDR_SET;
-	ret = close(sock);
+	ret = winc1500_close(sock);
 
 	net_pkt_unref(sd->rx_pkt);
 
@@ -642,6 +639,7 @@ static void handle_wifi_con_state_changed(void *pvMsg)
 		LOG_DBG("Connected (%u)", pstrWifiState->u8ErrCode);
 
 		w1500_data.connected = true;
+		w1500_data.connecting = false;
 		wifi_mgmt_raise_connect_result_event(w1500_data.iface, 0);
 
 		break;
@@ -774,8 +772,9 @@ static void winc1500_wifi_cb(uint8_t message_type, void *pvMsg)
 	default:
 		break;
 	}
-
+#if LOG_LEVEL > LOG_LEVEL_OFF
 	stack_stats();
+#endif /* LOG_LEVEL > LOG_LEVEL_OFF */
 }
 
 static void handle_socket_msg_connect(struct socket_data *sd, void *pvMsg)
@@ -899,7 +898,7 @@ static void handle_socket_msg_accept(struct socket_data *sd, void *pvMsg)
 		 * context as well. The new context gives us another socket
 		 * so we have to close that one first.
 		 */
-		close((int)a_sd->context->offload_context);
+		winc1500_close((int)a_sd->context->offload_context);
 
 		a_sd->context->offload_context =
 				(void *)((int)accept_msg->sock);
@@ -963,12 +962,17 @@ static void winc1500_socket_cb(SOCKET sock, uint8 message, void *pvMsg)
 
 		break;
 	}
-
+#if LOG_LEVEL > LOG_LEVEL_OFF
 	stack_stats();
+#endif /* LOG_LEVEL > LOG_LEVEL_OFF */
 }
 
-static void winc1500_thread(void)
+static void winc1500_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	while (1) {
 		while (m2m_wifi_handle_events(NULL) != 0) {
 		}
@@ -977,8 +981,12 @@ static void winc1500_thread(void)
 	}
 }
 
-static int winc1500_mgmt_scan(const struct device *dev, scan_result_cb_t cb)
+static int winc1500_mgmt_scan(const struct device *dev,
+			      struct wifi_scan_params *params,
+			      scan_result_cb_t cb)
 {
+	ARG_UNUSED(params);
+
 	if (w1500_data.scan_cb) {
 		return -EALREADY;
 	}
@@ -1100,13 +1108,22 @@ static void winc1500_iface_init(struct net_if *iface)
 	w1500_data.iface = iface;
 }
 
-static const struct net_wifi_mgmt_offload winc1500_api = {
-	.iface_api.init = winc1500_iface_init,
+static enum offloaded_net_if_types winc1500_get_wifi_type(void)
+{
+	return L2_OFFLOADED_NET_IF_TYPE_WIFI;
+}
+
+static const struct wifi_mgmt_ops winc1500_mgmt_ops = {
 	.scan		= winc1500_mgmt_scan,
 	.connect	= winc1500_mgmt_connect,
 	.disconnect	= winc1500_mgmt_disconnect,
 	.ap_enable	= winc1500_mgmt_ap_enable,
 	.ap_disable	= winc1500_mgmt_ap_disable,
+};
+static const struct net_wifi_mgmt_offload winc1500_api = {
+	.wifi_iface.iface_api.init = winc1500_iface_init,
+	.wifi_iface.get_type = winc1500_get_wifi_type,
+	.wifi_mgmt_api = &winc1500_mgmt_ops,
 };
 
 static int winc1500_init(const struct device *dev)
@@ -1156,7 +1173,7 @@ static int winc1500_init(const struct device *dev)
 	/* monitoring thread for winc wifi callbacks */
 	k_thread_create(&winc1500_thread_data, winc1500_stack,
 			CONFIG_WIFI_WINC1500_THREAD_STACK_SIZE,
-			(k_thread_entry_t)winc1500_thread, NULL, NULL, NULL,
+			winc1500_thread, NULL, NULL, NULL,
 			K_PRIO_COOP(CONFIG_WIFI_WINC1500_THREAD_PRIO),
 			0, K_NO_WAIT);
 	k_thread_name_set(&winc1500_thread_data, "WINC1500");

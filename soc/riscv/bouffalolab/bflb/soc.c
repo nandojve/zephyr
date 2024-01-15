@@ -9,8 +9,9 @@
  * @brief Bouffalo Lab RISC-V MCU series initialization code
  */
 
-#include <device.h>
-#include <init.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/irq.h>
 
 #include <bflb_hbn.h>
 #include <bflb_glb.h>

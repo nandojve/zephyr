@@ -8,11 +8,8 @@ compatible: "fcs,fxl6408"
 include: [gpio-controller.yaml, i2c-device.yaml]
 
 properties:
-    label:
-      required: true
-
-    "#gpio-cells":
-      const: 2
+  "#gpio-cells":
+    const: 2
 
 gpio-cells:
   - pin

@@ -4,23 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <mgmt/hawkbit.h>
-#include <dfu/mcuboot.h>
-#include <sys/printk.h>
-#include <sys/reboot.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/mgmt/hawkbit.h>
+#include <zephyr/dfu/mcuboot.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/reboot.h>
+#include <zephyr/logging/log.h>
 
 #include "dhcp.h"
 
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
-#include <net/tls_credentials.h>
+#include <zephyr/net/tls_credentials.h>
 #include "ca_certificate.h"
 #endif
 
 LOG_MODULE_REGISTER(main);
 
-void main(void)
+int main(void)
 {
 	int ret = -1;
 
@@ -83,4 +83,5 @@ void main(void)
 	}
 
 #endif
+	return 0;
 }

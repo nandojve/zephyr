@@ -4,8 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
 #include <mem.h>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	chosen {
@@ -25,6 +26,7 @@
 		sw1 = &sw1;
 		sw2 = &sw2;
 		sw3 = &sw3;
+		spi-flash0 = &flash0;
 	};
 
 	leds {
@@ -104,34 +106,42 @@
 		sw0: sw0 {
 			gpios = <&gpio0_2 0 GPIO_ACTIVE_HIGH>;
 			label = "SW0";
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		sw1: sw1 {
 			gpios = <&gpio0_2 1 GPIO_ACTIVE_HIGH>;
 			label = "SW1";
+			zephyr,code = <INPUT_KEY_1>;
 		};
 		sw2: sw2 {
 			gpios = <&gpio0_2 2 GPIO_ACTIVE_HIGH>;
 			label = "SW2";
+			zephyr,code = <INPUT_KEY_2>;
 		};
 		sw3: sw3 {
 			gpios = <&gpio0_2 3 GPIO_ACTIVE_HIGH>;
 			label = "SW3";
+			zephyr,code = <INPUT_KEY_3>;
 		};
 		btn0: btn0 {
 			gpios = <&gpio1_2 0 GPIO_ACTIVE_HIGH>;
 			label = "BTN0";
+			zephyr,code = <INPUT_KEY_4>;
 		};
 		btn1: btn1 {
 			gpios = <&gpio1_2 1 GPIO_ACTIVE_HIGH>;
 			label = "BTN1";
+			zephyr,code = <INPUT_KEY_5>;
 		};
 		btn2: btn2 {
 			gpios = <&gpio1_2 2 GPIO_ACTIVE_HIGH>;
 			label = "BTN2";
+			zephyr,code = <INPUT_KEY_6>;
 		};
 		btn3: btn3 {
 			gpios = <&gpio1_2 3 GPIO_ACTIVE_HIGH>;
 			label = "BTN3";
+			zephyr,code = <INPUT_KEY_7>;
 		};
 	};
 
@@ -148,7 +158,6 @@
 			compatible = "xlnx,xps-gpio-1.00.a";
 			status = "disabled";
 			reg = <0x40010000 0x10000>;
-			label = "DAPLINK_GPIO_0";
 			gpio-controller;
 			#gpio-cells = <2>;
 
@@ -167,7 +176,6 @@
 			interrupts = <4 0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			label = "DAPLINK_QUAD_SPI_0";
 
 			xlnx,num-ss-bits = <0x1>;
 			xlnx,num-transfer-bits = <0x8>;
@@ -178,7 +186,6 @@
 			status = "disabled";
 			reg = <0x40030000 0x10000>;
 			interrupts = <5 0>;
-			label = "DAPLINK_SINGLE_SPI_0";
 			#address-cells = <1>;
 			#size-cells = <0>;
 
@@ -190,14 +197,12 @@
 			compatible = "xlnx,xps-uartlite-1.00.a";
 			interrupts = <0 0>;
 			reg = <0x40100000 0x10000>;
-			label = "UART_0";
 		};
 
 		gpio0: gpio@40110000 {
 			compatible = "xlnx,xps-gpio-1.00.a";
 			interrupts = <1 0>;
 			reg = <0x40110000 0x10000>;
-			label = "GPIO_0";
 			gpio-controller;
 			#gpio-cells = <2>;
 
@@ -215,7 +220,6 @@
 
 			gpio0_2: gpio2 {
 				compatible = "xlnx,xps-gpio-1.00.a-gpio2";
-				label = "GPIO_0_2";
 				gpio-controller;
 				#gpio-cells = <2>;
 			};
@@ -225,7 +229,6 @@
 			compatible = "xlnx,xps-gpio-1.00.a";
 			interrupts = <2 0>;
 			reg = <0x40120000 0x10000>;
-			label = "GPIO_1";
 			gpio-controller;
 			#gpio-cells = <2>;
 
@@ -243,7 +246,6 @@
 
 			gpio1_2: gpio2 {
 				compatible = "xlnx,xps-gpio-1.00.a-gpio2";
-				label = "GPIO_1_2";
 				gpio-controller;
 				#gpio-cells = <2>;
 			};
@@ -255,7 +257,6 @@
 			interrupts = <3 0>;
 			#address-cells = <1>;
 			#size-cells = <0>;
-			label = "QUAD_SPI_0";
 
 			xlnx,num-ss-bits = <0x1>;
 			xlnx,num-transfer-bits = <0x8>;
@@ -266,7 +267,6 @@
 				spi-max-frequency = <108000000>;
 				size = <DT_SIZE_M(128)>;
 				jedec-id = [20 ba 18];
-				label = "FLASH_0";
 
 				partitions {
 					compatible = "fixed-partitions";

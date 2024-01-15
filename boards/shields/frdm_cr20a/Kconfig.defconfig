@@ -8,15 +8,6 @@ if SHIELD_FRDM_CR20A
 
 if IEEE802154
 
-config SPI
-	default y
-
-config IEEE802154_MCR20A
-	default y
-
-config NET_CONFIG_IEEE802154_DEV_NAME
-	default "mcr20a"
-
 rsource "boards/*.defconfig"
 
 endif # IEEE802154

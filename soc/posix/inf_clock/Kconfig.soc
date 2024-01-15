@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config SOC_POSIX
-	bool "Native POSIX port"
+	bool "Native port"
 	select ARCH_POSIX
+	select CPU_HAS_FPU
 	help
 	  SOC for to the POSIX arch. It emulates a CPU running at an infinitely fast
 	  clock. That means the CPU will always run in zero time until completion after

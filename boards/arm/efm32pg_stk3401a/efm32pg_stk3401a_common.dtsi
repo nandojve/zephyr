@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
 / {
 	model = "Silicon Labs EFM32PG STK3401A board";
 
@@ -12,7 +14,6 @@
 		zephyr,shell-uart = &usart0;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
-		watchdog0 = &wdog0;
 	};
 
 	/* These aliases are provided for compatibility with samples */
@@ -21,6 +22,7 @@
 		led1 = &led1;
 		sw0 = &button0;
 		sw1 = &button1;
+		watchdog0 = &wdog0;
 	};
 
 	leds {
@@ -41,11 +43,13 @@
 			/* gpio flags need validation */
 			gpios = <&gpiof 6 GPIO_ACTIVE_LOW>;
 			label = "User Push Button 0";
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		button1: button_1 {
 			/* gpio flags need validation */
 			gpios = <&gpiof 7 GPIO_ACTIVE_LOW>;
 			label = "User Push Button 1";
+			zephyr,code = <INPUT_KEY_1>;
 		};
 	};
 };
@@ -86,6 +90,12 @@
 
 &gpioa {
 	status = "okay";
+
+	board-controller-enable {
+		gpio-hog;
+		gpios = <5 GPIO_ACTIVE_HIGH>;
+		output-high;
+	};
 };
 
 &gpiob {

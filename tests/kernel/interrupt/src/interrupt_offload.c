@@ -4,9 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
-#include <irq_offload.h>
-#include <interrupt_util.h>
+#include <zephyr/ztest.h>
+#include <zephyr/irq_offload.h>
+#include <zephyr/interrupt_util.h>
+#if defined(CONFIG_ARCH_POSIX)
+#include <soc.h>
+#endif
 
 #define STACK_SIZE	1024
 #define NUM_WORK	4
@@ -71,10 +74,10 @@ void isr_handler(const void *param)
 
 	orig_t_keep_run = 0;
 
-	/* If the work is busy, we don't sumbit it. */
+	/* If the work is busy, we don't submit it. */
 	if (!k_work_busy_get(work)) {
 		zassert_equal(k_work_submit_to_queue(&wq_queue, work),
-				1, "kwork not sumbmitted or queued");
+				1, "kwork not submitted or queued");
 
 		atomic_inc(&submit_success);
 	}
@@ -86,17 +89,17 @@ void isr_handler(const void *param)
  * Other arch will be add later.
  */
 #if defined(CONFIG_X86)
-#define IV_IRQS 32
-#define TEST_IRQ_DYN_LINE 17
-#define TRIGGER_IRQ_DYN_LINE (TEST_IRQ_DYN_LINE + IV_IRQS)
+#define TEST_IRQ_DYN_LINE 26
 
 #elif defined(CONFIG_ARCH_POSIX)
-#define TEST_IRQ_DYN_LINE 5
-#define TRIGGER_IRQ_DYN_LINE 5
+#if defined(OFFLOAD_SW_IRQ)
+#define TEST_IRQ_DYN_LINE OFFLOAD_SW_IRQ
+#else
+#define TEST_IRQ_DYN_LINE 0
+#endif
 
 #else
 #define TEST_IRQ_DYN_LINE 0
-#define TRIGGER_IRQ_DYN_LINE 0
 #endif
 
 #endif
@@ -108,13 +111,13 @@ static void init_dyn_interrupt(void)
 		ztest_test_skip();
 	}
 
-	/* We just initialize dynamic interrput once, then reuse them */
+	/* We just initialize dynamic interrupt once, then reuse them */
 	if (!vector_num) {
 		vector_num = irq_connect_dynamic(TEST_IRQ_DYN_LINE, 1,
 					isr_handler, (void *)&irq_param, 0);
 	}
 
-	TC_PRINT("irq(%d)\n", vector_num);
+	TC_PRINT("vector(%d)\n", vector_num);
 	zassert_true(vector_num > 0, "no vector can be used");
 	irq_enable(TEST_IRQ_DYN_LINE);
 }
@@ -124,7 +127,7 @@ static void trigger_offload_interrupt(const bool real_irq, void *work)
 	irq_param.work = work;
 
 	if (real_irq) {
-		trigger_irq(TRIGGER_IRQ_DYN_LINE);
+		trigger_irq(vector_num);
 	} else {
 		irq_offload((irq_offload_routine_t)&isr_handler, &irq_param);
 	}
@@ -132,6 +135,10 @@ static void trigger_offload_interrupt(const bool real_irq, void *work)
 
 static void t_running(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	k_sem_give(&sync_sem);
 
 	while (wait_for_end == false) {
@@ -186,7 +193,7 @@ static void run_test_offload(int case_type, int real_irq)
 	}
 
 	k_tid_t tid = k_thread_create(&tdata, tstack, STACK_SIZE,
-			(k_thread_entry_t)t_running,
+			t_running,
 			NULL, NULL, NULL, thread_prio,
 			K_INHERIT_PERMS, K_NO_WAIT);
 
@@ -237,7 +244,7 @@ static void run_test_offload(int case_type, int real_irq)
  *
  * We test this by irq_offload().
  */
-void test_isr_offload_job_multiple(void)
+ZTEST(interrupt_feature, test_isr_offload_job_multiple)
 {
 	offload_job_prio_higher = false;
 	run_test_offload(TEST_OFFLOAD_MULTI_JOBS, false);
@@ -262,7 +269,7 @@ void test_isr_offload_job_multiple(void)
  *
  * We test this by irq_offload().
  */
-void test_isr_offload_job_identi(void)
+ZTEST(interrupt_feature, test_isr_offload_job_identi)
 {
 	offload_job_prio_higher = false;
 	run_test_offload(TEST_OFFLOAD_IDENTICAL_JOBS, false);
@@ -280,7 +287,7 @@ void test_isr_offload_job_identi(void)
  * offload jobs could execute immediately base on it's priority.
  * We test this by dynamic interrupt.
  */
-void test_isr_offload_job(void)
+ZTEST(interrupt_feature, test_isr_offload_job)
 {
 	if (!IS_ENABLED(CONFIG_DYNAMIC_INTERRUPTS)) {
 		ztest_test_skip();

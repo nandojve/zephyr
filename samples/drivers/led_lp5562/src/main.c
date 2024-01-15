@@ -4,14 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <device.h>
+#include <zephyr/device.h>
 #include <errno.h>
-#include <drivers/led.h>
-#include <sys/util.h>
-#include <zephyr.h>
+#include <zephyr/drivers/led.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
 
 #define LOG_LEVEL 4
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
 #define NUM_LEDS 4
@@ -162,17 +162,17 @@ static int turn_off_all_leds(const struct device *dev)
 	return 0;
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = DEVICE_DT_GET_ANY(ti_lp5562);
+	const struct device *const dev = DEVICE_DT_GET_ANY(ti_lp5562);
 	int i, ret;
 
 	if (!dev) {
 		LOG_ERR("No \"ti,lp5562\" device found");
-		return;
+		return 0;
 	} else if (!device_is_ready(dev)) {
 		LOG_ERR("LED device %s is not ready", dev->name);
-		return;
+		return 0;
 	} else {
 		LOG_INF("Found LED device %s", dev->name);
 	}
@@ -187,7 +187,7 @@ void main(void)
 					colors[i][1],
 					colors[i][2]);
 			if (ret) {
-				return;
+				return 0;
 			}
 
 			k_msleep(DELAY_TIME);
@@ -195,14 +195,14 @@ void main(void)
 
 		ret = turn_off_all_leds(dev);
 		if (ret < 0) {
-			return;
+			return 0;
 		}
 
 		/* Blink white. */
 		ret = blink_color(dev, true, true, true, BLINK_DELAY_ON,
 				BLINK_DELAY_OFF);
 		if (ret) {
-			return;
+			return 0;
 		}
 
 		/* Wait a few blinking before turning off the LEDs */
@@ -215,7 +215,7 @@ void main(void)
 					colors[i][1],
 					colors[i][2]);
 			if (ret) {
-				return;
+				return 0;
 			}
 
 			k_msleep(DELAY_TIME * 2);
@@ -223,9 +223,10 @@ void main(void)
 
 		ret = turn_off_all_leds(dev);
 		if (ret < 0) {
-			return;
+			return 0;
 		}
 
 		k_msleep(DELAY_TIME);
 	}
+	return 0;
 }

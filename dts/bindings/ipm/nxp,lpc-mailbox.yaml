@@ -9,10 +9,7 @@ include: base.yaml
 
 properties:
   reg:
-      required: true
+    required: true
 
   interrupts:
-      required: true
-
-  label:
-      required: true
+    required: true

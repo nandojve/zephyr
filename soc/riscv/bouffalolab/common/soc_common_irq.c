@@ -8,7 +8,7 @@
  * @file
  * @brief interrupt management code for riscv SOCs supporting the SiFive clic
  */
-#include <irq.h>
+#include <zephyr/irq.h>
 #include <soc.h>
 #include <clic.h>
 

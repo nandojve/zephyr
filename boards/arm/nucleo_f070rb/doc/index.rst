@@ -21,8 +21,6 @@ The STM32 Nucleo board comes with the STM32 comprehensive software HAL library t
 with various packaged software examples.
 
 .. image:: img/nucleo_f070rb.jpg
-   :width: 500px
-   :height: 367px
    :align: center
    :alt: Nucleo F070RB
 
@@ -112,10 +110,8 @@ capable except for analog inputs.
 
 Board connectors:
 -----------------
-.. image:: img/nucleo_f070rb_connectors.png
-   :width: 800px
+.. image:: img/nucleo_f070rb_connectors.jpg
    :align: center
-   :height: 619px
    :alt: Nucleo F070RB connectors
 
 Default Zephyr Peripheral Mapping:
@@ -148,7 +144,7 @@ This interface is supported by the openocd version included in the Zephyr SDK.
 Flashing an application to Nucleo F070RB
 ----------------------------------------
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
@@ -175,10 +171,10 @@ References
 .. target-notes::
 
 .. _Nucleo F070RB website:
-   http://www.st.com/en/evaluation-tools/nucleo-f070rb.html
+   https://www.st.com/en/evaluation-tools/nucleo-f070rb.html
 
 .. _STM32F070 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00031936.pdf
+   https://www.st.com/resource/en/reference_manual/dm00031936.pdf
 
 .. _STM32 Nucleo-64 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00105823.pdf
+   https://www.st.com/resource/en/user_manual/dm00105823.pdf

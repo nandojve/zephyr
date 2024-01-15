@@ -4,19 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <shell/shell_fprintf.h>
-#include <shell/shell.h>
-#include <sys/cbprintf.h>
+#include <zephyr/shell/shell_fprintf.h>
+#include <zephyr/shell/shell.h>
+#include <zephyr/sys/cbprintf.h>
 
 static int out_func(int c, void *ctx)
 {
 	const struct shell_fprintf *sh_fprintf;
-	const struct shell *shell;
+	const struct shell *sh;
 
 	sh_fprintf = (const struct shell_fprintf *)ctx;
-	shell = (const struct shell *)sh_fprintf->user_ctx;
+	sh = (const struct shell *)sh_fprintf->user_ctx;
 
-	if ((shell->shell_flag == SHELL_FLAG_OLF_CRLF) && (c == '\n')) {
+	if ((sh->shell_flag == SHELL_FLAG_OLF_CRLF) && (c == '\n')) {
 		(void)out_func('\r', ctx);
 	}
 

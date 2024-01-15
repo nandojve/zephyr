@@ -10,7 +10,7 @@ The WeAct Black Pill V3.0 Board is an extremely low cost and bare-bones
 development board featuring the STM32F401CE, see `STM32F401CE website`_.
 This is the 48-pin variant of the STM32F401x series,
 see `STM32F401x reference manual`_. More info about the board available
-`here <stm32-base-board-page>`_ and on `WeAct Github`_.
+`here <stm32-base-board-page_>`_ and on `WeAct Github`_.
 
 .. image:: img/blackpill-v3.jpg
       :align: center
@@ -80,7 +80,7 @@ Pin Mapping
 
 Available pins:
 ---------------
-.. image:: img/Blackpill_Pinout.png
+.. image:: img/Blackpill_Pinout.jpg
       :align: center
       :alt: Black Pill V3.0+ Pinout
 
@@ -158,13 +158,13 @@ References
 .. target-notes::
 
 .. _board release notes:
-   https://github.com/WeActTC/MiniF4-STM32F4x1/blob/master/HDK/README.md
+   https://github.com/WeActStudio/WeActStudio.MiniSTM32F4x1/blob/master/HDK/README.md
 
 .. _Zadig:
    https://zadig.akeo.ie/
 
 .. _WeAct Github:
-   https://github.com/WeActTC/MiniF4-STM32F4x1
+   https://github.com/WeActStudio/WeActStudio.MiniSTM32F4x1
 
 .. _stm32-base-board-page:
    https://stm32-base.org/boards/STM32F401CEU6-WeAct-Black-Pill-V3.0.html
@@ -173,7 +173,7 @@ References
    http://dfu-util.sourceforge.net/build.html
 
 .. _STM32F401CE website:
-   http://www.st.com/en/microcontrollers/stm32f401ce.html
+   https://www.st.com/en/microcontrollers/stm32f401ce.html
 
 .. _STM32F401x reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00096844.pdf
+   https://www.st.com/resource/en/reference_manual/dm00096844.pdf

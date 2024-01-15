@@ -9,8 +9,7 @@ Overview
 The 96Boards Nitrogen hardware provides support for the Nordic Semiconductor
 nRF52832 ARM Cortex-M4F CPU.
 
-.. figure:: img/96b_nitrogen.png
-     :width: 487px
+.. figure:: img/96b_nitrogen.jpg
      :align: center
      :alt: 96Boards Nitrogen
 
@@ -72,7 +71,7 @@ features:
 | RTT       | on-chip    | console                              |
 +-----------+------------+--------------------------------------+
 
-Other hardware features are not supported by the Zephyr kernel.
+Other hardware features have not been enabled yet for this board.
 See `Nordic Semiconductor Infocenter`_ for a complete list of nRF52-based
 board hardware features.
 
@@ -293,7 +292,7 @@ Replace :code:`<tty_device>` with the port where the board 96Boards Nitrogen
 can be found. For example, under Linux, :code:`/dev/ttyACM0`.
 The ``-b`` option sets baud rate ignoring the value from config.
 
-Press the Reset button and you should see the the following message in your
+Press the Reset button and you should see the following message in your
 terminal:
 
 .. code-block:: console

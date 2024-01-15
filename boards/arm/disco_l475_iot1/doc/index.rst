@@ -37,9 +37,7 @@ This kit provides:
 
 
 .. image:: img/disco_l475_iot1.jpg
-     :width: 531px
      :align: center
-     :height: 354px
      :alt: Disco L475 IoT1
 
 More information about the board can be found at the `Disco L475 IoT1 website`_.
@@ -125,9 +123,13 @@ The Zephyr Disco L475 IoT board configuration supports the following hardware fe
 +-----------+------------+-------------------------------------+
 | WATCHDOG  | on-chip    | independent watchdog                |
 +-----------+------------+-------------------------------------+
+| DAC       | on-chip    | DAC Controller                      |
++-----------+------------+-------------------------------------+
 | ADC       | on-chip    | adc                                 |
 +-----------+------------+-------------------------------------+
 | QSPI NOR  | on-chip    | off-chip flash                      |
++-----------+------------+-------------------------------------+
+| die-temp  | on-chip    | die temperature sensor              |
 +-----------+------------+-------------------------------------+
 
 Other hardware features are not yet supported on this Zephyr port.
@@ -166,6 +168,7 @@ Default Zephyr Peripheral Mapping:
 - ADC123_IN4 : PC3
 - ADC12_IN13 : PC4
 - ADC12_IN14 : PC5
+- DAC1_OUT1 : PA4
 
 System Clock
 ------------
@@ -233,13 +236,13 @@ You can debug an application in the usual way.  Here is an example for the
    :goals: debug
 
 .. _Disco L475 IoT1 website:
-   http://www.st.com/content/st_com/en/products/evaluation-tools/product-evaluation-tools/mcu-eval-tools/stm32-mcu-eval-tools/stm32-mcu-discovery-kits/b-l475e-iot01a.html
+   https://www.st.com/content/st_com/en/products/evaluation-tools/product-evaluation-tools/mcu-eval-tools/stm32-mcu-eval-tools/stm32-mcu-discovery-kits/b-l475e-iot01a.html
 
 .. _STM32 Disco L475 IoT1 board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00347848.pdf
+   https://www.st.com/resource/en/user_manual/dm00347848.pdf
 
 .. _STM32L475VG on www.st.com:
    https://www.st.com/en/microcontrollers-microprocessors/stm32l475vg.html
 
 .. _STM32L475 reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00083560.pdf
+   https://www.st.com/resource/en/reference_manual/dm00083560.pdf

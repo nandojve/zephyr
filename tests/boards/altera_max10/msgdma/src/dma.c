@@ -4,11 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 #include <soc.h>
 #include <kernel_arch_func.h>
-#include <device.h>
-#include <drivers/dma.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/dma.h>
 
 #define DMA_BUFF_SIZE		1024
 
@@ -27,18 +27,18 @@ static struct dma_config dma_cfg = {0};
 static struct dma_block_config dma_block_cfg = {0};
 
 static void dma_user_callback(const struct device *dma_dev, void *arg,
-			      uint32_t id, int error_code)
+			      uint32_t id, int status)
 {
-	if (error_code == 0) {
+	if (status >= 0) {
 		TC_PRINT("DMA completed successfully\n");
 		dma_stat = DMA_OP_STAT_SUCCESS;
 	} else {
-		TC_PRINT("DMA error occurred!! (%d)\n", error_code);
+		TC_PRINT("DMA error occurred!! (%d)\n", status);
 		dma_stat = DMA_OP_STAT_ERR;
 	}
 }
 
-void test_msgdma(void)
+ZTEST(nios2_msgdma, test_msgdma)
 {
 	const struct device *dma;
 	static uint32_t chan_id;
@@ -98,9 +98,4 @@ void test_msgdma(void)
 
 }
 
-void test_main(void)
-{
-	ztest_test_suite(nios2_msgdma_test,
-			 ztest_unit_test(test_msgdma));
-	ztest_run_test_suite(nios2_msgdma_test);
-}
+ZTEST_SUITE(nios2_msgdma, NULL, NULL, NULL, NULL, NULL);

@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
-#include <drivers/flash.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
+#include <zephyr/drivers/flash.h>
 #include <jesd216.h>
 #include <stdio.h>
 #include <inttypes.h>
@@ -16,6 +16,12 @@
 #define FLASH_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(jedec_spi_nor)
 #elif DT_HAS_COMPAT_STATUS_OKAY(nordic_qspi_nor)
 #define FLASH_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(nordic_qspi_nor)
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_qspi_nor)
+#define FLASH_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_qspi_nor)
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_ospi_nor)
+#define FLASH_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(st_stm32_ospi_nor)
+#elif DT_HAS_COMPAT_STATUS_OKAY(nxp_s32_qspi_nor)
+#define FLASH_NODE DT_COMPAT_GET_ANY_STATUS_OKAY(nxp_s32_qspi_nor)
 #else
 #error Unsupported flash driver
 #define FLASH_NODE DT_INVALID_NODE
@@ -272,13 +278,13 @@ static void dump_bytes(const struct jesd216_param_header *php,
 	printf("];\n");
 }
 
-void main(void)
+int main(void)
 {
-	const struct device *dev = DEVICE_DT_GET(FLASH_NODE);
+	const struct device *const dev = DEVICE_DT_GET(FLASH_NODE);
 
 	if (!device_is_ready(dev)) {
 		printf("%s: device not ready\n", dev->name);
-		return;
+		return 0;
 	}
 
 	const uint8_t decl_nph = 5;
@@ -292,14 +298,14 @@ void main(void)
 	if (rc != 0) {
 		printf("Read SFDP not supported: device not JESD216-compliant "
 		       "(err %d)\n", rc);
-		return;
+		return 0;
 	}
 
 	uint32_t magic = jesd216_sfdp_magic(hp);
 
 	if (magic != JESD216_SFDP_MAGIC) {
 		printf("SFDP magic %08x invalid", magic);
-		return;
+		return 0;
 	}
 
 	printf("%s: SFDP v %u.%u AP %x with %u PH\n", dev->name,
@@ -321,7 +327,7 @@ void main(void)
 		rc = flash_sfdp_read(dev, addr, dw, sizeof(dw));
 		if (rc != 0) {
 			printf("Read failed: %d\n", rc);
-			return;
+			return 0;
 		}
 
 		if (id == JESD216_SFDP_PARAM_ID_BFP) {
@@ -348,4 +354,5 @@ void main(void)
 	} else {
 		printf("JEDEC ID read failed: %d\n", rc);
 	}
+	return 0;
 }

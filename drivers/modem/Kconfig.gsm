@@ -2,16 +2,19 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config MODEM_GSM_PPP
-	bool "Support GSM modems"
+	bool "[DEPRECATED] Support GSM modems"
 	select MODEM_CONTEXT
 	select MODEM_CMD_HANDLER
 	select MODEM_IFACE_UART
+	select NET_MGMT
+	select NET_MGMT_EVENT
+	select DEPRECATED
 	help
-	  Enable GSM modems that support standard AT commands and PPP.
+	  This driver is deprecated, use the MODEM_CELLULAR driver instead.
 
 if MODEM_GSM_PPP
 
-choice
+choice MODEM_GSM_TYPE
 	prompt "Modem type"
 	default MODEM_GSM_GENERIC
 	help
@@ -34,15 +37,41 @@ config MODEM_GSM_QUECTEL
 
 endchoice
 
+choice MODEM_GSM_STATUS_COMMAND
+	prompt "Select status command Type"
+	default MODEM_GSM_STATUS_CMD_USE_CREG
+	help
+	  Use particular type of AT command for cell tower registration status.
+
+config MODEM_GSM_STATUS_CMD_USE_CREG
+	bool "CREG command"
+
+config MODEM_GSM_STATUS_CMD_USE_CEREG
+	bool "CEREG command"
+
+endchoice
+
+config MODEM_GSM_STATUS_COMMAND
+	string "Status Command"
+	default "CREG" if MODEM_GSM_STATUS_CMD_USE_CREG
+	default "CEREG" if MODEM_GSM_STATUS_CMD_USE_CEREG
+
 config MODEM_GSM_RX_STACK_SIZE
 	int "Size of the stack allocated for receiving data from modem"
 	default 512
 	help
 	  Sets the stack size which will be used by the GSM RX thread.
 
+config MODEM_GSM_WORKQ_STACK_SIZE
+	int "Size of the stack allocated for the dedicated gsm workqueue"
+	default 768
+	help
+	  Sets the stack size which will be used by the dedicated GSM workqueue
+	  thread.
+
 config MODEM_GSM_INIT_PRIORITY
 	int "Init priority for the GSM modem driver"
-	default 42
+	default 60
 	range 0 99
 	help
 	  The GSM modem is initialized in POST_KERNEL using priority in
@@ -72,6 +101,14 @@ config MODEM_GSM_ATTACH_TIMEOUT
 	  using AT+CGATT. This setting dictates how much time in seconds
 	  we give the modem before giving up.
 
+config MODEM_GSM_REGISTER_TIMEOUT
+	int "Timeout for registering to cellular tower"
+	default 300
+	help
+	  Before attachment to packet service, modem is checked if it is
+	  connected to the cellular tower. This setting dictates how much
+	  time in seconds we give the modem before giving up.
+
 config MODEM_GSM_MANUAL_MCCMNO
 	string "MCC/MNO for establishing network connection"
 	help
@@ -87,7 +124,7 @@ config MODEM_GSM_RSSI_POLLING_PERIOD
 	  This settings is used to configure the period of RSSI polling
 
 config MODEM_GSM_ENABLE_CESQ_RSSI
-	bool "Enable +CESQ RSSI measurement"
+	bool "+CESQ RSSI measurement"
 	help
 	   If this is enabled, RSRP, RSCP and RXREL values are read from the
 	   modem with +CESQ. Otherwise only RSSI value is read with +CSQ

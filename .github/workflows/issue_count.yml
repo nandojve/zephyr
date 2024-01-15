@@ -2,7 +2,7 @@ name: Issue Tracker
 
 on:
   schedule:
-    - cron:  '*/10 * * * *'
+  - cron: '*/10 * * * *'
 
 env:
   OUTPUT_FILE_NAME: IssuesReport.md
@@ -14,16 +14,17 @@ env:
 jobs:
   track-issues:
     name: "Collect Issue Stats"
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     if: github.repository == 'zephyrproject-rtos/zephyr'
 
     steps:
     - name: Download configuration file
       run: |
-        wget -q https://raw.githubusercontent.com/$GITHUB_REPOSITORY/master/.github/workflows/issues-report-config.json
+        wget -q https://raw.githubusercontent.com/$GITHUB_REPOSITORY/main/.github/workflows/issues-report-config.json
 
     - name: install-packages
       run: |
+        sudo apt-get update
         sudo apt-get install discount
 
     - uses: brcrista/summarize-issues@v3
@@ -34,17 +35,17 @@ jobs:
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: upload-stats
-      uses: actions/upload-artifact@master
-      continue-on-error: True
+      uses: actions/upload-artifact@v3
+      continue-on-error: true
       with:
         name: ${{ env.OUTPUT_FILE_NAME }}
         path: ${{ env.OUTPUT_FILE_NAME }}
 
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v1
+      uses: aws-actions/configure-aws-credentials@v2
       with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID_TESTING }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY_TESTING }}
+        aws-access-key-id: ${{ vars.AWS_TESTING_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_TESTING_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
     - name: Post Results

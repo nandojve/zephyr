@@ -6,12 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 #include <stddef.h>
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
-#include <bluetooth/hci.h>
-#include <sys/byteorder.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/sys/byteorder.h>
 
 #define NUM_STD_CODECS 3
 static const struct bt_hci_std_codec_info_v2 std_codecs[NUM_STD_CODECS] = {
@@ -48,62 +48,30 @@ uint8_t hci_vendor_read_vs_codecs(
 	return NUM_VS_CODECS;
 }
 
-void test_read_codecs(void)
+ZTEST_SUITE(test_hci_codecs_info, NULL, NULL, NULL, NULL, NULL);
+
+ZTEST(test_hci_codecs_info, test_read_codecs)
 {
-	const struct bt_hci_rp_read_codecs *codecs;
 	struct net_buf *rsp;
-	uint8_t num_std_codecs;
-	uint8_t num_vs_codecs;
-	const uint8_t *ptr;
-	uint8_t i;
 	int err;
 
 	/* Initialize bluetooth subsystem */
 	bt_enable(NULL);
 
+	/*
+	 * An LE controller shall no longer support
+	 * HCI_Read_Local_Supported_Codecs [v1]
+	 * according to BT Core 5.3.
+	 */
+
+
 	/* Read Local Supported Codecs */
 	err = bt_hci_cmd_send_sync(BT_HCI_OP_READ_CODECS, NULL, &rsp);
-	zassert_equal(err, 0, "Reading local supported codecs failed");
+	zassert_not_equal(err, 0, "Reading local supported codecs failed");
 
-	/* Check returned data */
-	codecs = (struct bt_hci_rp_read_codecs *)rsp->data;
-	zassert_equal(codecs->status, 0,
-		      "Reading local supported codecs status failed");
-
-	ptr = (uint8_t *)&codecs->status + sizeof(codecs->status);
-	num_std_codecs = *ptr++;
-	zassert_equal(num_std_codecs, NUM_STD_CODECS,
-		      "Reading std codecs count failed");
-
-	for (i = 0; i < num_std_codecs; i++) {
-		const struct bt_hci_std_codec_info *codec;
-
-		codec = (const struct bt_hci_std_codec_info *)ptr;
-		ptr += sizeof(*codec);
-		zassert_equal(codec->codec_id, std_codecs[i].codec_id,
-			      "Reading std codecs codec_id %d failed", i);
-	}
-
-	num_vs_codecs = *ptr++;
-	zassert_equal(num_vs_codecs, NUM_VS_CODECS,
-		      "Reading vendor codecs count failed");
-	for (i = 0; i < num_vs_codecs; i++) {
-		const struct bt_hci_vs_codec_info *codec;
-
-		codec = (const struct bt_hci_vs_codec_info *)ptr;
-		ptr += sizeof(*codec);
-		zassert_equal(codec->company_id,
-			      sys_cpu_to_le16(vs_codecs[i].company_id),
-			      "Reading vendor codecs company_id %d failed", i);
-		zassert_equal(codec->codec_id,
-			      sys_cpu_to_le16(vs_codecs[i].codec_id),
-			      "Reading vendor codecs codec_id %d failed", i);
-	}
-
-	net_buf_unref(rsp);
 }
 
-void test_read_codecs_v2(void)
+ZTEST(test_hci_codecs_info, test_read_codecs_v2)
 {
 	const struct bt_hci_rp_read_codecs_v2 *codecs;
 	struct net_buf *rsp;
@@ -205,7 +173,7 @@ uint8_t hci_vendor_read_codec_capabilities(uint8_t coding_format,
 	return 0;
 }
 
-void test_read_codec_capabilities(void)
+ZTEST(test_hci_codecs_info, test_read_codec_capabilities)
 {
 	struct bt_hci_cp_read_codec_capabilities *cp;
 	struct bt_hci_rp_read_codec_capabilities *rp;
@@ -287,7 +255,7 @@ uint8_t hci_vendor_read_ctlr_delay(uint8_t coding_format,
 	return 0;
 }
 
-void test_read_ctlr_delay(void)
+ZTEST(test_hci_codecs_info, test_read_ctlr_delay)
 {
 	struct bt_hci_cp_read_ctlr_delay *cp;
 	struct bt_hci_rp_read_ctlr_delay *rp;
@@ -323,16 +291,4 @@ void test_read_ctlr_delay(void)
 		      "Reading controller min delay failed");
 	zassert_equal(sys_get_le24(rp->max_ctlr_delay), MAX_CTLR_DELAY,
 		      "Reading controller max delay failed");
-}
-
-
-/*test case main entry*/
-void test_main(void)
-{
-	ztest_test_suite(test_hci_codecs_info,
-			 ztest_unit_test(test_read_codecs),
-			 ztest_unit_test(test_read_codecs_v2),
-			 ztest_unit_test(test_read_codec_capabilities),
-			 ztest_unit_test(test_read_ctlr_delay));
-	ztest_run_test_suite(test_hci_codecs_info);
 }

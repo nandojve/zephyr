@@ -2,8 +2,9 @@ sample:
   name: Blink LED (PWM based)
 tests:
   sample.basic.blink_led:
-    # FIXME: We should remove those and just rely on depends_on
-    filter: dt_alias_exists("pwm-led0")
-    tags: drivers pwm
+    filter: dt_alias_exists("pwm-led0") and dt_compat_enabled("pwm-leds")
+    tags:
+      - drivers
+      - pwm
     depends_on: pwm
     harness: led

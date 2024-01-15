@@ -8,33 +8,33 @@
 
 #define NET_LOG_LEVEL CONFIG_NET_UDP_LOG_LEVEL
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
-#include <zephyr.h>
-#include <linker/sections.h>
+#include <zephyr/kernel.h>
+#include <zephyr/linker/sections.h>
 
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <string.h>
 #include <stdio.h>
 #include <errno.h>
-#include <device.h>
-#include <init.h>
-#include <sys/printk.h>
-#include <net/buf.h>
-#include <net/net_core.h>
-#include <net/net_pkt.h>
-#include <net/net_ip.h>
-#include <net/ethernet.h>
-#include <net/dummy.h>
-#include <net/udp.h>
-#include <random/rand32.h>
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/net/buf.h>
+#include <zephyr/net/net_core.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_ip.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/dummy.h>
+#include <zephyr/net/udp.h>
+#include <zephyr/random/random.h>
 
 #include "ipv4.h"
 #include "ipv6.h"
 
-#include <ztest.h>
+#include <zephyr/ztest.h>
 
 #if NET_LOG_LEVEL >= LOG_LEVEL_DBG
 #define DBG(fmt, ...) printk(fmt, ##__VA_ARGS__)
@@ -419,7 +419,7 @@ static void set_port(sa_family_t family, struct sockaddr *raddr,
 	}
 }
 
-void test_udp(void)
+ZTEST(udp_fn_tests, test_udp)
 {
 	if (IS_ENABLED(CONFIG_NET_TC_THREAD_COOPERATIVE)) {
 		k_thread_priority_set(k_current_get(),
@@ -438,7 +438,7 @@ void test_udp(void)
 	bool st;
 
 	struct sockaddr_in6 any_addr6;
-	const struct in6_addr in6addr_any = IN6ADDR_ANY_INIT;
+	const struct in6_addr in6addr_anyaddr = IN6ADDR_ANY_INIT;
 
 	struct sockaddr_in6 my_addr6;
 	struct in6_addr in6addr_my = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
@@ -459,7 +459,7 @@ void test_udp(void)
 
 	iface = net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY));
 
-	net_ipaddr_copy(&any_addr6.sin6_addr, &in6addr_any);
+	net_ipaddr_copy(&any_addr6.sin6_addr, &in6addr_anyaddr);
 	any_addr6.sin6_family = AF_INET6;
 
 	net_ipaddr_copy(&my_addr6.sin6_addr, &in6addr_my);
@@ -671,9 +671,4 @@ void test_udp(void)
 	zassert_false(test_failed, "udp tests failed");
 }
 
-void test_main(void)
-{
-	ztest_test_suite(test_udp_fn,
-		ztest_unit_test(test_udp));
-	ztest_run_test_suite(test_udp_fn);
-}
+ZTEST_SUITE(udp_fn_tests, NULL, NULL, NULL, NULL, NULL);

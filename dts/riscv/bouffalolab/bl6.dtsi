@@ -39,12 +39,14 @@
 		ranges;
 
 		itcm: itcm@22010000 {
-			compatible = "sifive,dtim0";
+			compatible = "zephyr,memory-region", "sifive,dtim0";
 			reg = <0x22010000 DT_SIZE_K(16)>;
+			zephyr,memory-region = "ITCM";
 		};
 		dtcm: dtcm@42014000 {
-			compatible = "sifive,dtim0";
+			compatible = "zephyr,memory-region", "sifive,dtim0";
 			reg = <0x42014000 DT_SIZE_K(48)>;
+			zephyr,memory-region = "DTCM";
 		};
 
 		sram0: memory@42020000 {
@@ -58,7 +60,7 @@
 		clint: clint@2000000 {
 			#interrupt-cells = <1>;
 			interrupt-controller;
-			compatible = "riscv,clint0";
+			compatible = "sifive,clint0";
 			interrupts-extended = <&ictrl 3 &ictrl 7>;
 			reg = <0x2000000 0x10000>;
 			reg-names = "control";
@@ -83,7 +85,9 @@
 			#size-cells = <1>;
 			ranges = <0x40000000 0x40000000 0x1000>;
 
-			glb: gpio@40000000 {
+		};
+
+		glb: gpio@40000000 {
 				compatible = "bflb,bl-gpio";
 				reg = <0x40000000 0x1000>;
 				label = "GLB";
@@ -94,7 +98,6 @@
 				#bflb,pin-cells = <2>;
 				#bflb,signal-cells = <1>;
 			};
-		};
 
 		spi0: spi@4000a200 {
 			compatible = "bflb,bl-spi";

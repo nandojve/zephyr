@@ -3,10 +3,10 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr.h>
-#include <pm/pm.h>
+#include <zephyr/kernel.h>
+#include <zephyr/pm/pm.h>
 #include <soc.h>
-#include <init.h>
+#include <zephyr/init.h>
 
 #include <stm32u5xx_ll_utils.h>
 #include <stm32u5xx_ll_bus.h>
@@ -16,7 +16,7 @@
 #include <stm32u5xx_ll_system.h>
 #include <clock_control/clock_stm32_ll_common.h>
 
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(soc, CONFIG_SOC_LOG_LEVEL);
 
 /* select MSI as wake-up system clock if configured, HSI otherwise */
@@ -54,37 +54,19 @@ void set_mode_standby(uint8_t substate_id)
 	LL_PWR_SetPowerMode(LL_PWR_STANDBY_MODE);
 }
 
-void set_mode_shutdown(uint8_t substate_id)
-{
-	ARG_UNUSED(substate_id);
-	/* Select shutdown mode */
-	LL_PWR_SetPowerMode(LL_PWR_SHUTDOWN_MODE);
-}
-
 /* Invoke Low Power/System Off specific Tasks */
-__weak void pm_power_state_set(struct pm_state_info info)
+void pm_state_set(enum pm_state state, uint8_t substate_id)
 {
-
-	switch (info.state) {
+	switch (state) {
 	case PM_STATE_SUSPEND_TO_IDLE:
-		set_mode_stop(info.substate_id);
+		set_mode_stop(substate_id);
 		break;
 	case PM_STATE_STANDBY:
 		/* To be tested */
-		set_mode_standby(info.substate_id);
+		set_mode_standby(substate_id);
 		break;
-	case PM_STATE_SOFT_OFF:
-		set_mode_shutdown(info.substate_id);
-		break;
-	/* Following states are not supported */
-	case PM_STATE_RUNTIME_IDLE:
-		__fallthrough;
-	case PM_STATE_ACTIVE:
-		__fallthrough;
-	case PM_STATE_SUSPEND_TO_RAM:
-		__fallthrough;
-	case PM_STATE_SUSPEND_TO_DISK:
-		LOG_DBG("Unsupported power state %u", info.state);
+	default:
+		LOG_DBG("Unsupported power state %u", state);
 		return;
 	}
 
@@ -96,31 +78,26 @@ __weak void pm_power_state_set(struct pm_state_info info)
 }
 
 /* Handle SOC specific activity after Low Power Mode Exit */
-__weak void pm_power_state_exit_post_ops(struct pm_state_info info)
+void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 {
-	switch (info.state) {
+	switch (state) {
 	case PM_STATE_SUSPEND_TO_IDLE:
-		if (info.substate_id <= 3) {
+		if (substate_id <= 3) {
 			LL_LPM_DisableSleepOnExit();
 			LL_LPM_EnableSleep();
 		} else {
 			LOG_DBG("Unsupported power substate-id %u",
-							info.substate_id);
+							substate_id);
 		}
 	case PM_STATE_STANDBY:
 		/* To be tested */
 		LL_LPM_EnableSleep();
-	case PM_STATE_SOFT_OFF:
-		/* We should not get there */
-		__fallthrough;
-	case PM_STATE_ACTIVE:
-		__fallthrough;
 	case PM_STATE_SUSPEND_TO_RAM:
 		__fallthrough;
 	case PM_STATE_SUSPEND_TO_DISK:
 		__fallthrough;
 	default:
-		LOG_DBG("Unsupported power state %u", info.state);
+		LOG_DBG("Unsupported power state %u", state);
 		break;
 	}
 	/* need to restore the clock */
@@ -135,19 +112,13 @@ __weak void pm_power_state_exit_post_ops(struct pm_state_info info)
 }
 
 /* Initialize STM32 Power */
-static int stm32_power_init(const struct device *dev)
+static int stm32_power_init(void)
 {
-	ARG_UNUSED(dev);
 
 	/* enable Power clock */
 	LL_AHB3_GRP1_EnableClock(LL_AHB3_GRP1_PERIPH_PWR);
 
-#ifdef CONFIG_DEBUG
-	/* Enable the Debug Module during all and any Low power mode */
-	LL_DBGMCU_EnableDBGStopMode();
-#endif /* CONFIG_DEBUG */
-
 	return 0;
 }
 
-SYS_INIT(stm32_power_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+SYS_INIT(stm32_power_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

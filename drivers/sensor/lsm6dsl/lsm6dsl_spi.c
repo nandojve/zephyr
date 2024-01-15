@@ -10,7 +10,7 @@
 #define DT_DRV_COMPAT st_lsm6dsl
 
 #include <string.h>
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 
 #include "lsm6dsl.h"
 
@@ -135,7 +135,7 @@ int lsm6dsl_spi_init(const struct device *dev)
 
 	data->hw_tf = &lsm6dsl_spi_transfer_fn;
 
-	if (!spi_is_ready(&cfg->bus_cfg.spi)) {
+	if (!spi_is_ready_dt(&cfg->bus_cfg.spi)) {
 		return -ENODEV;
 	}
 

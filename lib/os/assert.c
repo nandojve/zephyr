@@ -4,12 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <sys/__assert.h>
-#include <zephyr.h>
-
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/llext/symbol.h>
 
 /**
- *
  * @brief Assert Action Handler
  *
  * This routine implements the action to be taken when an assertion fails.
@@ -19,8 +19,6 @@
  * to a persistent repository and/or rebooting the system.
  *
  * @param N/A
- *
- * @return N/A
  */
 #ifdef CONFIG_ASSERT_NO_FILE_INFO
 __weak void assert_post_action(void)
@@ -44,3 +42,16 @@ __weak void assert_post_action(const char *file, unsigned int line)
 
 	k_panic();
 }
+EXPORT_SYMBOL(assert_post_action);
+
+void assert_print(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+
+	vprintk(fmt, ap);
+
+	va_end(ap);
+}
+EXPORT_SYMBOL(assert_print);

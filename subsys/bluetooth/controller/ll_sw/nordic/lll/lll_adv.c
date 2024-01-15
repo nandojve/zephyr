@@ -8,9 +8,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-#include <bluetooth/hci.h>
-#include <sys/byteorder.h>
-#include <soc.h>
+#include <zephyr/bluetooth/hci_types.h>
+#include <zephyr/sys/byteorder.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -21,9 +20,13 @@
 #include "util/mem.h"
 #include "util/memq.h"
 #include "util/mfifo.h"
+#include "util/mayfly.h"
+#include "util/dbuf.h"
 
 #include "ticker/ticker.h"
 
+#include "pdu_df.h"
+#include "pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -34,10 +37,10 @@
 #include "lll_adv_pdu.h"
 #include "lll_adv_aux.h"
 #include "lll_adv_sync.h"
+#include "lll_df_types.h"
 #include "lll_conn.h"
 #include "lll_chan.h"
 #include "lll_filter.h"
-#include "lll_df_types.h"
 
 #include "lll_internal.h"
 #include "lll_tim_internal.h"
@@ -45,17 +48,18 @@
 #include "lll_prof_internal.h"
 #include "lll_df_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_lll_adv
-#include "common/log.h"
 #include "hal/debug.h"
 
+#define PDU_FREE_TIMEOUT K_SECONDS(5)
+
 static int init_reset(void);
+static void pdu_free_sem_give(void);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT_PDU_EXTRA_DATA_MEMORY)
 static inline void adv_extra_data_release(struct lll_adv_pdu *pdu, int idx);
 static void *adv_extra_data_allocate(struct lll_adv_pdu *pdu, uint8_t last);
 static int adv_extra_data_free(struct lll_adv_pdu *pdu, uint8_t last);
+static void extra_data_free_sem_give(void);
 #endif /* CONFIG_BT_CTLR_ADV_EXT_PDU_EXTRA_DATA_MEMORY */
 
 static int prepare_cb(struct lll_prepare_param *p);
@@ -83,10 +87,11 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
 					struct pdu_adv *ci);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
-#define PAYLOAD_BASED_FRAG_COUNT ((CONFIG_BT_CTLR_ADV_DATA_LEN_MAX + \
-				   PDU_AC_PAYLOAD_SIZE_MAX - 1) / \
-				  PDU_AC_PAYLOAD_SIZE_MAX)
-#define PAYLOAD_FRAG_COUNT MAX(PAYLOAD_BASED_FRAG_COUNT, BT_CTLR_DF_PER_ADV_CTE_NUM_MAX)
+#define PAYLOAD_BASED_FRAG_COUNT \
+		DIV_ROUND_UP(CONFIG_BT_CTLR_ADV_DATA_LEN_MAX, \
+			     PDU_AC_PAYLOAD_SIZE_MAX)
+#define PAYLOAD_FRAG_COUNT \
+		MAX(PAYLOAD_BASED_FRAG_COUNT, BT_CTLR_DF_PER_ADV_CTE_NUM_MAX)
 #define BT_CTLR_ADV_AUX_SET  CONFIG_BT_CTLR_ADV_AUX_SET
 #if defined(CONFIG_BT_CTLR_ADV_PERIODIC)
 #define BT_CTLR_ADV_SYNC_SET CONFIG_BT_CTLR_ADV_SYNC_SET
@@ -94,7 +99,8 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
 #define BT_CTLR_ADV_SYNC_SET 0
 #endif /* !CONFIG_BT_CTLR_ADV_PERIODIC */
 #else
-#define PAYLOAD_FRAG_COUNT   1
+#define PAYLOAD_BASED_FRAG_COUNT 1
+#define PAYLOAD_FRAG_COUNT       (PAYLOAD_BASED_FRAG_COUNT)
 #define BT_CTLR_ADV_AUX_SET  0
 #define BT_CTLR_ADV_SYNC_SET 0
 #endif
@@ -108,9 +114,10 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
  * extra for double buffers for these is kept as configurable, by increasing
  * CONFIG_BT_CTLR_ADV_DATA_BUF_MAX.
  */
-#define PDU_MEM_COUNT_MIN  ((BT_CTLR_ADV_SET * 3) + \
-			    ((BT_CTLR_ADV_AUX_SET + \
-			      BT_CTLR_ADV_SYNC_SET) * \
+#define PDU_MEM_COUNT_MIN  (((BT_CTLR_ADV_SET) * 3) + \
+			    ((BT_CTLR_ADV_AUX_SET) * \
+			     PAYLOAD_BASED_FRAG_COUNT) + \
+			    ((BT_CTLR_ADV_SYNC_SET) * \
 			     PAYLOAD_FRAG_COUNT))
 
 /* Maximum advertising PDU buffers to allocate, which is the sum of minimum
@@ -126,9 +133,11 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
  *       PDU data is updated more frequently compare to the advertising
  *       interval with random delay included.
  */
-#define PDU_MEM_COUNT_MAX (PDU_MEM_COUNT_MIN + \
-			   ((1 + CONFIG_BT_CTLR_ADV_DATA_BUF_MAX) * \
-			    PAYLOAD_FRAG_COUNT))
+#define PDU_MEM_COUNT_MAX ((PDU_MEM_COUNT_MIN) + \
+			   ((BT_CTLR_ADV_SYNC_SET) * \
+			    PAYLOAD_FRAG_COUNT) + \
+			   (CONFIG_BT_CTLR_ADV_DATA_BUF_MAX * \
+			    PAYLOAD_BASED_FRAG_COUNT))
 #else /* !CONFIG_BT_CTLR_ADV_PERIODIC */
 /* NOTE: When Extended Advertising is supported but no Periodic Advertising
  *       then additional CONFIG_BT_CTLR_ADV_DATA_BUF_MAX amount of buffers is
@@ -139,7 +148,7 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
  */
 #define PDU_MEM_COUNT_MAX (PDU_MEM_COUNT_MIN + \
 			   (CONFIG_BT_CTLR_ADV_DATA_BUF_MAX * \
-			    PAYLOAD_FRAG_COUNT))
+			    PAYLOAD_BASED_FRAG_COUNT))
 #endif /* !CONFIG_BT_CTLR_ADV_PERIODIC */
 #else /* !CONFIG_BT_CTLR_ADV_EXT */
 /* NOTE: When Extended Advertising is not supported then
@@ -153,8 +162,10 @@ static inline bool isr_rx_ci_adva_check(uint8_t tx_addr, uint8_t *addr,
  * each for Extended Advertising and Periodic Advertising times the number of
  * chained fragments that would get returned.
  */
-#define PDU_MEM_FIFO_COUNT (BT_CTLR_ADV_SET + 1 +\
-			    ((BT_CTLR_ADV_AUX_SET + BT_CTLR_ADV_SYNC_SET) * \
+#define PDU_MEM_FIFO_COUNT ((BT_CTLR_ADV_SET) + 1 + \
+			    ((BT_CTLR_ADV_AUX_SET) * \
+			     PAYLOAD_BASED_FRAG_COUNT) + \
+			    ((BT_CTLR_ADV_SYNC_SET) * \
 			     PAYLOAD_FRAG_COUNT))
 
 #define PDU_POOL_SIZE      (PDU_MEM_SIZE * PDU_MEM_COUNT_MAX)
@@ -262,6 +273,10 @@ int lll_adv_data_init(struct lll_adv_pdu *pdu)
 		return -ENOMEM;
 	}
 
+#if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)
+	PDU_ADV_NEXT_PTR(p) = NULL;
+#endif /* CONFIG_BT_CTLR_ADV_PDU_LINK */
+
 	p->len = 0U;
 	pdu->pdu[0] = (void *)p;
 
@@ -322,8 +337,10 @@ int lll_adv_data_release(struct lll_adv_pdu *pdu)
 
 	last = pdu->last;
 	p = pdu->pdu[last];
-	pdu->pdu[last] = NULL;
-	mem_release(p, &mem_pdu.free);
+	if (p) {
+		pdu->pdu[last] = NULL;
+		mem_release(p, &mem_pdu.free);
+	}
 
 	last++;
 	if (last == DOUBLE_BUFFER_SIZE) {
@@ -402,8 +419,7 @@ struct pdu_adv *lll_adv_pdu_alloc_pdu_adv(void)
 
 	p = MFIFO_DEQUEUE_PEEK(pdu_free);
 	if (p) {
-		err = k_sem_take(&sem_pdu_free, K_NO_WAIT);
-		LL_ASSERT(!err);
+		k_sem_reset(&sem_pdu_free);
 
 		MFIFO_DEQUEUE(pdu_free);
 
@@ -421,8 +437,10 @@ struct pdu_adv *lll_adv_pdu_alloc_pdu_adv(void)
 		return p;
 	}
 
-	err = k_sem_take(&sem_pdu_free, K_FOREVER);
+	err = k_sem_take(&sem_pdu_free, PDU_FREE_TIMEOUT);
 	LL_ASSERT(!err);
+
+	k_sem_reset(&sem_pdu_free);
 
 	p = MFIFO_DEQUEUE(pdu_free);
 	LL_ASSERT(p);
@@ -471,8 +489,7 @@ struct pdu_adv *lll_adv_pdu_latest_get(struct lll_adv_pdu *pdu,
 			 * switch attempt (on next event).
 			 */
 			if (!MFIFO_ENQUEUE_IDX_GET(pdu_free, &free_idx)) {
-				pdu->pdu[pdu_idx] = p;
-				return NULL;
+				break;
 			}
 
 #if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)
@@ -482,21 +499,24 @@ struct pdu_adv *lll_adv_pdu_latest_get(struct lll_adv_pdu *pdu,
 #endif
 
 			MFIFO_BY_IDX_ENQUEUE(pdu_free, free_idx, p);
-			k_sem_give(&sem_pdu_free);
+			pdu_free_sem_give();
 
 			p = next;
 		} while (p);
 
-		pdu->pdu[pdu_idx] = NULL;
+		/* If not all PDUs where released into mfifo, keep the list in
+		 * current data index, to be released on the next switch
+		 * attempt.
+		 */
+		pdu->pdu[pdu_idx] = p;
 
+		/* Progress to next data index */
 		first += 1U;
 		if (first == DOUBLE_BUFFER_SIZE) {
 			first = 0U;
 		}
 		pdu->first = first;
 		*is_modified = 1U;
-
-		pdu->pdu[pdu_idx] = NULL;
 	}
 
 	return (void *)pdu->pdu[first];
@@ -512,6 +532,10 @@ int lll_adv_and_extra_data_init(struct lll_adv_pdu *pdu)
 	if (!p) {
 		return -ENOMEM;
 	}
+
+#if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)
+	PDU_ADV_NEXT_PTR(p) = NULL;
+#endif /* CONFIG_BT_CTLR_ADV_PDU_LINK */
 
 	pdu->pdu[0] = (void *)p;
 
@@ -614,7 +638,7 @@ struct pdu_adv *lll_adv_pdu_and_extra_data_latest_get(struct lll_adv_pdu *pdu,
 #endif
 
 			MFIFO_BY_IDX_ENQUEUE(pdu_free, pdu_free_idx, p);
-			k_sem_give(&sem_pdu_free);
+			pdu_free_sem_give();
 
 			p = next;
 		} while (p);
@@ -643,7 +667,7 @@ struct pdu_adv *lll_adv_pdu_and_extra_data_latest_get(struct lll_adv_pdu *pdu,
 			pdu->extra_data[pdu_idx] = NULL;
 
 			MFIFO_BY_IDX_ENQUEUE(extra_data_free, ed_free_idx, ed);
-			k_sem_give(&sem_extra_data_free);
+			extra_data_free_sem_give();
 		}
 	}
 
@@ -707,8 +731,7 @@ int lll_adv_scan_req_report(struct lll_adv *lll, struct pdu_adv *pdu_adv_rx,
 	node_rx->hdr.rx_ftr.rl_idx = rl_idx;
 #endif
 
-	ull_rx_put(node_rx->hdr.link, node_rx);
-	ull_rx_sched();
+	ull_rx_put_sched(node_rx->hdr.link, node_rx);
 
 	return 0;
 }
@@ -777,6 +800,31 @@ static int init_reset(void)
 	return 0;
 }
 
+#if defined(CONFIG_BT_CTLR_ZLI)
+static void mfy_pdu_free_sem_give(void *param)
+{
+	ARG_UNUSED(param);
+
+	k_sem_give(&sem_pdu_free);
+}
+
+static void pdu_free_sem_give(void)
+{
+	static memq_link_t link;
+	static struct mayfly mfy = {0, 0, &link, NULL, mfy_pdu_free_sem_give};
+
+	/* Ignore mayfly_enqueue failure on repeated enqueue call */
+	(void)mayfly_enqueue(TICKER_USER_ID_LLL, TICKER_USER_ID_ULL_HIGH, 0,
+			     &mfy);
+}
+
+#else /* !CONFIG_BT_CTLR_ZLI */
+static void pdu_free_sem_give(void)
+{
+	k_sem_give(&sem_pdu_free);
+}
+#endif /* !CONFIG_BT_CTLR_ZLI */
+
 #if defined(CONFIG_BT_CTLR_ADV_EXT_PDU_EXTRA_DATA_MEMORY)
 static void *adv_extra_data_allocate(struct lll_adv_pdu *pdu, uint8_t last)
 {
@@ -806,7 +854,7 @@ static void *adv_extra_data_allocate(struct lll_adv_pdu *pdu, uint8_t last)
 		return extra_data;
 	}
 
-	err = k_sem_take(&sem_extra_data_free, K_FOREVER);
+	err = k_sem_take(&sem_extra_data_free, PDU_FREE_TIMEOUT);
 	LL_ASSERT(!err);
 
 	extra_data = MFIFO_DEQUEUE(extra_data_free);
@@ -834,7 +882,7 @@ static int adv_extra_data_free(struct lll_adv_pdu *pdu, uint8_t last)
 		pdu->extra_data[last] = NULL;
 
 		MFIFO_BY_IDX_ENQUEUE(extra_data_free, ed_free_idx, ed);
-		k_sem_give(&sem_extra_data_free);
+		extra_data_free_sem_give();
 	}
 
 	return 0;
@@ -850,6 +898,33 @@ static inline void adv_extra_data_release(struct lll_adv_pdu *pdu, int idx)
 		mem_release(extra_data, &mem_extra_data.free);
 	}
 }
+
+#if defined(CONFIG_BT_CTLR_ZLI)
+static void mfy_extra_data_free_sem_give(void *param)
+{
+	ARG_UNUSED(param);
+
+	k_sem_give(&sem_extra_data_free);
+}
+
+static void extra_data_free_sem_give(void)
+{
+	static memq_link_t link;
+	static struct mayfly mfy = {0, 0, &link, NULL,
+				    mfy_extra_data_free_sem_give};
+	uint32_t retval;
+
+	retval = mayfly_enqueue(TICKER_USER_ID_LLL, TICKER_USER_ID_ULL_HIGH, 0,
+				&mfy);
+	LL_ASSERT(!retval);
+}
+
+#else /* !CONFIG_BT_CTLR_ZLI */
+static void extra_data_free_sem_give(void)
+{
+	k_sem_give(&sem_extra_data_free);
+}
+#endif /* !CONFIG_BT_CTLR_ZLI */
 #endif /* CONFIG_BT_CTLR_ADV_EXT_PDU_EXTRA_DATA_MEMORY */
 
 static int prepare_cb(struct lll_prepare_param *p)
@@ -861,6 +936,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	struct lll_adv *lll;
 	uint32_t remainder;
 	uint32_t start_us;
+	uint32_t ret;
 	uint32_t aa;
 
 	DEBUG_RADIO_START_A(1);
@@ -894,16 +970,18 @@ static int prepare_cb(struct lll_prepare_param *p)
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
 	/* TODO: if coded we use S8? */
 	radio_phy_set(lll->phy_p, lll->phy_flags);
-	radio_pkt_configure(8, PDU_AC_LEG_PAYLOAD_SIZE_MAX, (lll->phy_p << 1));
+	radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT, PDU_AC_LEG_PAYLOAD_SIZE_MAX,
+			    RADIO_PKT_CONF_PHY(lll->phy_p));
 #else /* !CONFIG_BT_CTLR_ADV_EXT */
 	radio_phy_set(0, 0);
-	radio_pkt_configure(8, PDU_AC_LEG_PAYLOAD_SIZE_MAX, 0);
+	radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT, PDU_AC_LEG_PAYLOAD_SIZE_MAX,
+			    RADIO_PKT_CONF_PHY(RADIO_PKT_CONF_PHY_LEGACY));
 #endif /* !CONFIG_BT_CTLR_ADV_EXT */
 
 	aa = sys_cpu_to_le32(PDU_AC_ACCESS_ADDR);
 	radio_aa_set((uint8_t *)&aa);
-	radio_crc_configure(((0x5bUL) | ((0x06UL) << 8) | ((0x00UL) << 16)),
-			    0x555555);
+	radio_crc_configure(PDU_CRC_POLYNOMIAL,
+					PDU_AC_CRC_IV);
 
 	lll->chan_map_curr = lll->chan_map;
 
@@ -947,30 +1025,47 @@ static int prepare_cb(struct lll_prepare_param *p)
 	/* capture end of Tx-ed PDU, used to calculate HCTO. */
 	radio_tmr_end_capture();
 
-#if defined(CONFIG_BT_CTLR_GPIO_PA_PIN)
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
 	radio_gpio_pa_setup();
 	radio_gpio_pa_lna_enable(start_us + radio_tx_ready_delay_get(0, 0) -
-				 CONFIG_BT_CTLR_GPIO_PA_OFFSET);
-#else /* !CONFIG_BT_CTLR_GPIO_PA_PIN */
+				 HAL_RADIO_GPIO_PA_OFFSET);
+#else /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 	ARG_UNUSED(start_us);
-#endif /* !CONFIG_BT_CTLR_GPIO_PA_PIN */
+#endif /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 
 #if defined(CONFIG_BT_CTLR_XTAL_ADVANCED) && \
 	(EVENT_OVERHEAD_PREEMPT_US <= EVENT_OVERHEAD_PREEMPT_MIN_US)
+	uint32_t overhead;
+
+	overhead = lll_preempt_calc(ull, (TICKER_ID_ADV_BASE + ull_adv_lll_handle_get(lll)),
+				    ticks_at_event);
 	/* check if preempt to start has changed */
-	if (lll_preempt_calc(ull, (TICKER_ID_ADV_BASE +
-				   ull_adv_lll_handle_get(lll)),
-			     ticks_at_event)) {
+	if (overhead) {
+		LL_ASSERT_OVERHEAD(overhead);
+
 		radio_isr_set(isr_abort, lll);
 		radio_disable();
-	} else
-#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
-	{
-		uint32_t ret;
 
-		ret = lll_prepare_done(lll);
-		LL_ASSERT(!ret);
+		return -ECANCELED;
 	}
+#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
+
+#if defined(CONFIG_BT_CTLR_ADV_EXT) && defined(CONFIG_BT_TICKER_EXT_EXPIRE_INFO)
+	if (lll->aux) {
+		/* fill in aux ptr in pdu */
+		ull_adv_aux_lll_auxptr_fill(pdu, lll);
+
+		/* NOTE: as first primary channel PDU does not use remainder, the packet
+		 * timer is started one tick in advance to start the radio with
+		 * microsecond precision, hence compensate for the higher start_us value
+		 * captured at radio start of the first primary channel PDU.
+		 */
+		lll->aux->ticks_pri_pdu_offset += 1U;
+	}
+#endif
+
+	ret = lll_prepare_done(lll);
+	LL_ASSERT(!ret);
 
 	DEBUG_RADIO_START_A(1);
 
@@ -1118,7 +1213,7 @@ static void isr_tx(void *param)
 		radio_rssi_measure();
 	}
 
-#if defined(CONFIG_BT_CTLR_GPIO_LNA_PIN)
+#if defined(HAL_RADIO_GPIO_HAVE_LNA_PIN)
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 		/* PA/LNA enable is overwriting packet end used in ISR
 		 * profiling, hence back it up for later use.
@@ -1129,8 +1224,8 @@ static void isr_tx(void *param)
 	radio_gpio_lna_setup();
 	radio_gpio_pa_lna_enable(radio_tmr_tifs_base_get() + EVENT_IFS_US - 4 -
 				 radio_tx_chain_delay_get(phy_p, 0) -
-				 CONFIG_BT_CTLR_GPIO_LNA_OFFSET);
-#endif /* CONFIG_BT_CTLR_GPIO_LNA_PIN */
+				 HAL_RADIO_GPIO_LNA_OFFSET);
+#endif /* HAL_RADIO_GPIO_HAVE_LNA_PIN */
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 		/* NOTE: as scratch packet is used to receive, it is safe to
@@ -1160,12 +1255,17 @@ static void isr_rx(void *param)
 		crc_ok = radio_crc_is_valid();
 		devmatch_ok = radio_filter_has_match();
 		devmatch_id = radio_filter_match_get();
-		irkmatch_ok = radio_ar_has_match();
-		irkmatch_id = radio_ar_match_get();
+		if (IS_ENABLED(CONFIG_BT_CTLR_PRIVACY)) {
+			irkmatch_ok = radio_ar_has_match();
+			irkmatch_id = radio_ar_match_get();
+		} else {
+			irkmatch_ok = 0U;
+			irkmatch_id = FILTER_IDX_NONE;
+		}
 		rssi_ready = radio_rssi_is_ready();
 	} else {
 		crc_ok = devmatch_ok = irkmatch_ok = rssi_ready = 0U;
-		devmatch_id = irkmatch_id = 0xFF;
+		devmatch_id = irkmatch_id = FILTER_IDX_NONE;
 	}
 
 	/* Clear radio status and events */
@@ -1231,7 +1331,7 @@ static void isr_done(void *param)
 
 		pdu = chan_prepare(lll);
 
-#if defined(CONFIG_BT_CTLR_GPIO_PA_PIN) || defined(CONFIG_BT_CTLR_ADV_EXT)
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN) || defined(CONFIG_BT_CTLR_ADV_EXT)
 		start_us = radio_tmr_start_now(1);
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT)
@@ -1240,24 +1340,25 @@ static void isr_done(void *param)
 		lll_aux = lll->aux;
 		if (lll_aux) {
 			(void)ull_adv_aux_lll_offset_fill(pdu,
-							  lll_aux->ticks_offset,
+							  lll_aux->ticks_pri_pdu_offset,
+							  lll_aux->us_pri_pdu_offset,
 							  start_us);
 		}
 #else /* !CONFIG_BT_CTLR_ADV_EXT */
 		ARG_UNUSED(pdu);
 #endif /* !CONFIG_BT_CTLR_ADV_EXT */
 
-#if defined(CONFIG_BT_CTLR_GPIO_PA_PIN)
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
 		radio_gpio_pa_setup();
 		radio_gpio_pa_lna_enable(start_us +
 					 radio_tx_ready_delay_get(0, 0) -
-					 CONFIG_BT_CTLR_GPIO_PA_OFFSET);
-#endif /* CONFIG_BT_CTLR_GPIO_PA_PIN */
-#else /* !(CONFIG_BT_CTLR_GPIO_PA_PIN || defined(CONFIG_BT_CTLR_ADV_EXT)) */
+					 HAL_RADIO_GPIO_PA_OFFSET);
+#endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
+#else /* !(HAL_RADIO_GPIO_HAVE_PA_PIN || defined(CONFIG_BT_CTLR_ADV_EXT)) */
 		ARG_UNUSED(start_us);
 
 		radio_tx_enable();
-#endif /* !(CONFIG_BT_CTLR_GPIO_PA_PIN || defined(CONFIG_BT_CTLR_ADV_EXT)) */
+#endif /* !(HAL_RADIO_GPIO_HAVE_PA_PIN || defined(CONFIG_BT_CTLR_ADV_EXT)) */
 
 		/* capture end of Tx-ed PDU, used to calculate HCTO. */
 		radio_tmr_end_capture();
@@ -1292,14 +1393,17 @@ static void isr_done(void *param)
 		/* TODO: add other info by defining a payload struct */
 		node_rx->type = NODE_RX_TYPE_ADV_INDICATION;
 
-		ull_rx_put(node_rx->link, node_rx);
-		ull_rx_sched();
+		ull_rx_put_sched(node_rx->link, node_rx);
 	}
 #endif /* CONFIG_BT_CTLR_ADV_INDICATION */
 
 #if defined(CONFIG_BT_CTLR_ADV_EXT) || defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
+#if defined(CONFIG_BT_CTLR_ADV_EXT) && !defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
 	/* If no auxiliary PDUs scheduled, generate primary radio event done */
-	if (!lll->aux) {
+	if (!lll->aux)
+#endif /* CONFIG_BT_CTLR_ADV_EXT && !CONFIG_BT_CTLR_JIT_SCHEDULING */
+
+	{
 		struct event_done_extra *extra;
 
 		extra = ull_done_extra_type_set(EVENT_DONE_EXTRA_TYPE_ADV);
@@ -1315,10 +1419,35 @@ static void isr_abort(void *param)
 	/* Clear radio status and events */
 	lll_isr_status_reset();
 
+	/* Disable any filter that was setup */
 	radio_filter_disable();
 
+	/* Current LLL radio event is done*/
 	lll_isr_cleanup(param);
 }
+
+#if defined(CONFIG_BT_PERIPHERAL)
+static void isr_abort_all(void *param)
+{
+	static memq_link_t link;
+	static struct mayfly mfy = {0, 0, &link, NULL, lll_disable};
+	uint32_t ret;
+
+	/* Clear radio status and events */
+	lll_isr_status_reset();
+
+	/* Disable any filter that was setup */
+	radio_filter_disable();
+
+	/* Current LLL radio event is done*/
+	lll_isr_cleanup(param);
+
+	/* Abort any LLL prepare/resume enqueued in pipeline */
+	mfy.param = param;
+	ret = mayfly_enqueue(TICKER_USER_ID_LLL, TICKER_USER_ID_LLL, 1U, &mfy);
+	LL_ASSERT(!ret);
+}
+#endif /* CONFIG_BT_PERIPHERAL */
 
 static struct pdu_adv *chan_prepare(struct lll_adv *lll)
 {
@@ -1440,7 +1569,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		}
 #endif /* CONFIG_BT_CTLR_SCAN_REQ_NOTIFY */
 
-#if defined(CONFIG_BT_CTLR_GPIO_PA_PIN)
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
 		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 			/* PA/LNA enable is overwriting packet end used in ISR
 			 * profiling, hence back it up for later use.
@@ -1452,8 +1581,8 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		radio_gpio_pa_lna_enable(radio_tmr_tifs_base_get() +
 					 EVENT_IFS_US -
 					 radio_rx_chain_delay_get(0, 0) -
-					 CONFIG_BT_CTLR_GPIO_PA_OFFSET);
-#endif /* CONFIG_BT_CTLR_GPIO_PA_PIN */
+					 HAL_RADIO_GPIO_PA_OFFSET);
+#endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 		return 0;
 
 #if defined(CONFIG_BT_PERIPHERAL)
@@ -1486,7 +1615,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 			return -ENOBUFS;
 		}
 
-		radio_isr_set(isr_abort, lll);
+		radio_isr_set(isr_abort_all, lll);
 		radio_disable();
 
 		/* assert if radio started tx */
@@ -1524,8 +1653,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 			ftr->extra = ull_pdu_rx_alloc();
 		}
 
-		ull_rx_put(rx->hdr.link, rx);
-		ull_rx_sched();
+		ull_rx_put_sched(rx->hdr.link, rx);
 
 		return 0;
 #endif /* CONFIG_BT_PERIPHERAL */

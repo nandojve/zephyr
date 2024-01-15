@@ -24,9 +24,7 @@ and high-speed connectivity features. Important board features include:
 - USB OTG FS with Micro-AB connectors
 
 .. image:: img/stm32f723e_disco.jpg
-     :width: 400px
      :align: center
-     :height: 261px
      :alt: STM32F723E-DISCO
 
 More information about the board can be found at the `32F723E-DISCO website`_.
@@ -182,13 +180,13 @@ You can debug an application in the usual way.  Here is an example for the
 
 
 .. _32F723E-DISCO website:
-   http://www.st.com/en/evaluation-tools/32f723ediscovery.html
+   https://www.st.com/en/evaluation-tools/32f723ediscovery.html
 
 .. _32F723E-DISCO board User Manual:
-   http://www.st.com/resource/en/user_manual/dm00342318.pdf
+   https://www.st.com/resource/en/user_manual/dm00342318.pdf
 
 .. _STM32F723IEK6 on www.st.com:
-   http://www.st.com/en/microcontrollers/stm32f723ie.html
+   https://www.st.com/en/microcontrollers/stm32f723ie.html
 
 .. _STM32F72xxx reference manual:
-   http://www.st.com/resource/en/reference_manual/dm00305990.pdf
+   https://www.st.com/resource/en/reference_manual/dm00305990.pdf

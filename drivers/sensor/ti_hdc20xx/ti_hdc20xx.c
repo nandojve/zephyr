@@ -4,13 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <kernel.h>
-#include <drivers/gpio.h>
-#include <drivers/i2c.h>
-#include <drivers/sensor.h>
-#include <sys/byteorder.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(TI_HDC20XX, CONFIG_SENSOR_LOG_LEVEL);
 
@@ -128,7 +128,7 @@ static int ti_hdc20xx_channel_get(const struct device *dev,
 		val->val2 = ((tmp & 0xFFFF) * 15625U) >> 10;
 		break;
 	default:
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	return 0;
@@ -192,7 +192,7 @@ static int ti_hdc20xx_init(const struct device *dev)
 
 	/* Configure the interrupt GPIO if available */
 	if (config->gpio_int.port) {
-		if (!device_is_ready(config->gpio_int.port)) {
+		if (!gpio_is_ready_dt(&config->gpio_int)) {
 			LOG_ERR("Cannot get pointer to gpio interrupt device");
 			return -ENODEV;
 		}

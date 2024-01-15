@@ -35,7 +35,12 @@
 	aliases {
 		led0 = &red_led_1;
 		led1 = &red_led_2;
+		watchdog0 = &iwdg;
 	};
+};
+
+&clk_lsi {
+	status = "okay";
 };
 
 &clk_hse {
@@ -62,12 +67,14 @@
 
 &i2c2 {
 	pinctrl-0 = <&i2c2_sda_pb3 &i2c2_scl_pb10>;
+	pinctrl-names = "default";
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &usart1 {
 	pinctrl-0 = <&usart1_tx_pa9 &usart1_rx_pa10>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 	status = "okay";
 };
@@ -78,10 +85,13 @@
 	pwm2: pwm {
 		status = "okay";
 		pinctrl-0 = <&tim2_ch1_pa0>;
+		pinctrl-names = "default";
 	};
 };
 
 &rtc {
+	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 

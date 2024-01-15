@@ -14,11 +14,12 @@ config TEST
 	  Mark a project or an application as a test. This will enable a few
 	  test defaults.
 
-config TEST_EXTRA_STACKSIZE
+config TEST_EXTRA_STACK_SIZE
 	int "Test function extra thread stack size"
 	default 2048 if COVERAGE_GCOV
 	default 768 if XTENSA
 	default 0
+	depends on TEST
 	help
 	  Additional stack for tests on some platform where default is not
 	  enough.
@@ -39,22 +40,61 @@ config COVERAGE
 	  For more information see
 	  https://docs.zephyrproject.org/latest/guides/coverage.html
 
+choice
+	prompt "Coverage mode"
+	default COVERAGE_NATIVE_GCOV if NATIVE_BUILD
+	default COVERAGE_GCOV if !NATIVE_BUILD
+	depends on COVERAGE
+
+config COVERAGE_NATIVE_GCOV
+	bool "Host compiler gcov based code coverage"
+	depends on NATIVE_BUILD
+	help
+	  Build natively with the compiler standard `--coverage` options,
+	  that is with gcov/GCC-compatible coverage
+
+config COVERAGE_NATIVE_SOURCE
+	bool "Host compiler source based code coverage"
+	depends on NATIVE_BUILD
+	depends on "${ZEPHYR_TOOLCHAIN_VARIANT}" = "llvm"
+	help
+	  Build natively with the compiler source based coverage options.
+	  Today this is only supported with LLVM
+
 config COVERAGE_GCOV
 	bool "Create Coverage data from hardware platform"
-	default y
-	depends on COVERAGE
-	depends on !NATIVE_APPLICATION
+	depends on !NATIVE_BUILD
 	help
 	  This option will select the custom gcov library. The reports will
 	  be available over serial. This serial dump can be passed to
 	  gen_gcov_files.py which creates the required .gcda files. These
 	  can be read by gcov utility. For more details see gcovr.com .
 
+endchoice
+
+config COVERAGE_GCOV_HEAP_SIZE
+	int "Size of heap allocated for gcov coverage data dump"
+	default 32768 if X86 || SOC_SERIES_MPS2
+	default 16384
+	help
+	  This option configures the heap size allocated for gcov coverage
+	  data to be dumped over serial. If the value is 0, no buffer will be used,
+	  data will be dumped directly over serial.
+
 config COVERAGE_DUMP
 	bool "Dump coverage data on exit"
 	depends on COVERAGE_GCOV
 	help
 	  Dump collected coverage information to console on exit.
+
+config FORCE_COVERAGE
+	bool "Force coverage"
+	select HAS_COVERAGE_SUPPORT
+	help
+	  Regardless of platform support, it will enable coverage data production.
+	  If the platform does not support coverage by default, setting this config
+	  does not guarantee that coverage data will be gathered.
+	  Application may not fit memory or crash at runtime.
 
 config TEST_USERSPACE
 	bool "Indicate that this test exercises user mode"
@@ -76,10 +116,10 @@ config TEST_USERSPACE
 	  testcase.yaml.
 
 config TEST_LOGGING_DEFAULTS
-	bool "Enable test case logging defaults"
+	bool "Test case logging defaults"
 	depends on TEST
 	select LOG
-	imply LOG_MINIMAL
+	select LOG_DEFAULT_MINIMAL
 	default y
 	help
 	  Option which implements default policy of enabling logging in
@@ -103,7 +143,7 @@ config TEST_ENABLE_USERSPACE
 config TEST_USERSPACE_WITHOUT_HW_STACK_PROTECTION
 	bool "Run User Mode tests without additionally enabling stack protection"
 	depends on TEST_ENABLE_USERSPACE
-	default y if SOC_SERIES_KINETIS_KE1XF
+	default y if SOC_SERIES_KINETIS_KE1XF || SOC_SERIES_S32K1XX
 	help
 	  A HW platform might not have sufficient MPU/MMU capabilities to support
 	  running all test cases with User Mode and HW Stack Protection features
@@ -111,7 +151,7 @@ config TEST_USERSPACE_WITHOUT_HW_STACK_PROTECTION
 	  related tests without enabling HW stack protection.
 
 config TEST_HW_STACK_PROTECTION
-	bool "Enable hardware-based stack overflow detection if available"
+	bool "Hardware-based stack overflow detection if available"
 	depends on ARCH_HAS_STACK_PROTECTION
 	depends on TEST
 	select HW_STACK_PROTECTION
@@ -138,7 +178,10 @@ config TEST_ARM_CORTEX_M
 	help
 	  ARM Cortex-M configuration required when testing.
 
-	  Currently, this option is only utilized, to force routing
+	  This option is used to select stack sizes and enable features for
+	  testing.
+
+	  This option is also used to force routing
 	  BusFault, HardFault, and NMI exceptions to Secure State,
 	  when building a Secure ARMv8-M firmware. This will allow
 	  the testing suite to utilize these exceptions, in tests.
@@ -146,10 +189,10 @@ config TEST_ARM_CORTEX_M
 	  set, these exceptions are set to target the Non-Secure state.
 
 config TEST_BUSY_SIM
-	bool "Enable busy simulator"
+	bool "Busy simulator"
 	depends on TEST
 	select ENTROPY_GENERATOR
-	select RING_BUFFER
+	select RING_BUFFER if !XOSHIRO_RANDOM_GENERATOR
 	select COUNTER
 	help
 	  It simulates cpu load by using counter device to generate interrupts

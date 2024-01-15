@@ -7,12 +7,12 @@
  * Author: Saravanan Sekar <saravanan@linumiz.com>
  */
 
-#include <init.h>
-#include <drivers/sensor.h>
-#include <sys/byteorder.h>
-#include <kernel.h>
-#include <sys/__assert.h>
-#include <logging/log.h>
+#include <zephyr/init.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log.h>
 #include "itds.h"
 
 #define DT_DRV_COMPAT we_wsen_itds
@@ -25,7 +25,7 @@ static const struct itds_odr itds_odr_map[ITDS_ODR_MAX] = {
 	{400}, {800}, {1600}
 };
 
-static const unsigned int itds_sensitivity_scale[][ITDS_ACCL_RANGE_END] = {
+static const int16_t itds_sensitivity_scale[][ITDS_ACCL_RANGE_END] = {
 	{976, 1952, 3904, 7808},
 
 	/* high performance mode */
@@ -81,7 +81,7 @@ static int itds_accl_odr_set(const struct device *dev, uint16_t freq,
 		if ((freq == itds_odr_map[i].freq) &&
 		    (mfreq == itds_odr_map[i].mfreq)) {
 
-			return i2c_reg_update_byte(ddata->i2c, cfg->i2c_addr,
+			return i2c_reg_update_byte_dt(&cfg->i2c,
 					 ITDS_REG_CTRL1, ITDS_MASK_ODR, i << 4);
 		}
 	}
@@ -108,7 +108,7 @@ static int itds_accl_range_set(const struct device *dev, int32_t range)
 		return -EINVAL;
 	}
 
-	ret = i2c_reg_update_byte(ddata->i2c, cfg->i2c_addr, ITDS_REG_CTRL6,
+	ret = i2c_reg_update_byte_dt(&cfg->i2c, ITDS_REG_CTRL6,
 				  ITDS_MASK_SCALE, i << 4);
 	if (ret) {
 		LOG_ERR("Accl set full scale failed %d", ret);
@@ -146,14 +146,14 @@ static int itds_attr_set(const struct device *dev, enum sensor_channel chan,
 	}
 }
 
-static int itds_fetch_temprature(struct itds_device_data *ddata,
+static int itds_fetch_temperature(struct itds_device_data *ddata,
 				 const struct itds_device_config *cfg)
 {
 	uint8_t rval;
 	int16_t temp_raw = 0;
 	int ret;
 
-	ret = i2c_reg_read_byte(ddata->i2c, cfg->i2c_addr,
+	ret = i2c_reg_read_byte_dt(&cfg->i2c,
 				ITDS_REG_STATUS_DETECT, &rval);
 	if (ret) {
 		return ret;
@@ -163,13 +163,13 @@ static int itds_fetch_temprature(struct itds_device_data *ddata,
 		return -EAGAIN;
 	}
 
-	ret = i2c_burst_read(ddata->i2c, cfg->i2c_addr, ITDS_REG_TEMP_L,
+	ret = i2c_burst_read_dt(&cfg->i2c, ITDS_REG_TEMP_L,
 			     (uint8_t *)&temp_raw, sizeof(uint16_t));
 	if (ret) {
 		return ret;
 	}
 
-	ddata->temprature = sys_le16_to_cpu(temp_raw);
+	ddata->temperature = sys_le16_to_cpu(temp_raw);
 
 	return 0;
 }
@@ -180,7 +180,7 @@ static int itds_fetch_accel(struct itds_device_data *ddata,
 	size_t i, ret;
 	uint8_t rval;
 
-	ret = i2c_reg_read_byte(ddata->i2c, cfg->i2c_addr,
+	ret = i2c_reg_read_byte_dt(&cfg->i2c,
 				ITDS_REG_STATUS, &rval);
 	if (ret) {
 		return ret;
@@ -190,7 +190,7 @@ static int itds_fetch_accel(struct itds_device_data *ddata,
 		return -EAGAIN;
 	}
 
-	ret = i2c_burst_read(ddata->i2c, cfg->i2c_addr, ITDS_REG_X_OUT_L,
+	ret = i2c_burst_read_dt(&cfg->i2c, ITDS_REG_X_OUT_L,
 			     (uint8_t *)ddata->samples,
 			     sizeof(uint16_t) * ITDS_SAMPLE_SIZE);
 	if (ret) {
@@ -228,7 +228,11 @@ static int itds_sample_fetch(const struct device *dev,
 		return itds_fetch_accel(ddata, cfg);
 
 	case SENSOR_CHAN_DIE_TEMP:
-		return itds_fetch_temprature(ddata, cfg);
+		return itds_fetch_temperature(ddata, cfg);
+
+	case SENSOR_CHAN_ALL:
+		return itds_fetch_accel(ddata, cfg) ||
+		       itds_fetch_temperature(ddata, cfg);
 
 	default:
 		return -EINVAL;
@@ -276,7 +280,7 @@ static int itds_temp_channel_get(const struct device *dev,
 	int32_t temp_processed;
 	struct itds_device_data *ddata = dev->data;
 
-	temp_processed = (ddata->temprature >> 4) * ITDS_TEMP_CONST;
+	temp_processed = (ddata->temperature >> 4) * ITDS_TEMP_CONST;
 
 	val->val1 = ITDS_TEMP_OFFSET;
 	val->val2 = temp_processed;
@@ -315,13 +319,12 @@ static int itds_init(const struct device *dev)
 	uint16_t freq, mfreq;
 	uint8_t rval;
 
-	ddata->i2c = device_get_binding(cfg->bus_name);
-	if (!ddata->i2c) {
-		LOG_ERR("I2C controller not found: %s.", cfg->bus_name);
-		return -EINVAL;
+	if (!device_is_ready(cfg->i2c.bus)) {
+		LOG_ERR("Bus device is not ready");
+		return -ENODEV;
 	}
 
-	ret = i2c_reg_read_byte(ddata->i2c, cfg->i2c_addr,
+	ret = i2c_reg_read_byte_dt(&cfg->i2c,
 				ITDS_REG_DEV_ID, &rval);
 	if (ret) {
 		LOG_ERR("device init fail: %d", ret);
@@ -333,22 +336,21 @@ static int itds_init(const struct device *dev)
 		return ret;
 	}
 
-	ret = i2c_reg_update_byte(ddata->i2c, cfg->i2c_addr, ITDS_REG_CTRL2,
+	ret = i2c_reg_update_byte_dt(&cfg->i2c, ITDS_REG_CTRL2,
 				  ITDS_MASK_BDU_INC_ADD, ITDS_MASK_BDU_INC_ADD);
 	if (ret) {
 		LOG_ERR("unable to set block data update %d", ret);
 		return ret;
 	}
 
-	ret = i2c_reg_write_byte(ddata->i2c, cfg->i2c_addr,
-				 ITDS_REG_WAKEUP_EVENT, 0);
+	ret = i2c_reg_write_byte_dt(&cfg->i2c, ITDS_REG_WAKEUP_EVENT, 0);
 	if (ret) {
 		LOG_ERR("disable wakeup event fail %d", ret);
 		return ret;
 	}
 
-	ret = i2c_reg_update_byte(ddata->i2c, cfg->i2c_addr, ITDS_REG_CTRL1,
-				  ITDS_MASK_MODE, 1 << cfg->def_op_mode);
+	ret = i2c_reg_update_byte_dt(&cfg->i2c, ITDS_REG_CTRL1,
+				     ITDS_MASK_MODE, 1 << cfg->def_op_mode);
 	if (ret) {
 		LOG_ERR("set operating mode fail %d", ret);
 		return ret;
@@ -387,21 +389,25 @@ static const struct sensor_driver_api itds_api = {
 	.channel_get = itds_channel_get,
 };
 
+#ifdef CONFIG_ITDS_TRIGGER
+#define WSEN_ITDS_CFG_IRQ(inst)						\
+	.int_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, { 0 }),
+#else
+#define WSEN_ITDS_CFG_IRQ(inst)
+#endif
+
 #define WSEN_ITDS_INIT(idx)						\
 									\
 static struct itds_device_data itds_data_##idx;				\
 									\
 static const struct itds_device_config itds_config_##idx = {		\
-	.i2c_addr = DT_INST_REG_ADDR(idx),				\
-	.bus_name = DT_INST_BUS_LABEL(idx),				\
-	.gpio_port = DT_INST_GPIO_LABEL(idx, int_gpios),		\
-	.int_pin = DT_INST_GPIO_PIN(idx, int_gpios),			\
-	.int_flags = DT_INST_GPIO_FLAGS(idx, int_gpios),		\
-	.def_odr = DT_ENUM_IDX(DT_DRV_INST(idx), odr),			\
-	.def_op_mode = DT_ENUM_IDX(DT_DRV_INST(idx), op_mode),		\
+	.i2c = I2C_DT_SPEC_INST_GET(idx),				\
+	.def_odr = DT_INST_ENUM_IDX(idx, odr),				\
+	.def_op_mode = DT_INST_ENUM_IDX(idx, op_mode),			\
+	WSEN_ITDS_CFG_IRQ(idx)						\
 };									\
 									\
-DEVICE_DT_INST_DEFINE(idx, itds_init, NULL,				\
+SENSOR_DEVICE_DT_INST_DEFINE(idx, itds_init, NULL,			\
 		    &itds_data_##idx, &itds_config_##idx,		\
 		    POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,		\
 		    &itds_api);						\

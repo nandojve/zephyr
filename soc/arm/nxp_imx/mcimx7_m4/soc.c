@@ -4,9 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <init.h>
+#include <zephyr/init.h>
 #include <soc.h>
-#include <dt-bindings/rdc/imx_rdc.h>
+#include <zephyr/dt-bindings/rdc/imx_rdc.h>
+#include <zephyr/devicetree.h>
 #include "wdog_imx.h"
 
 /* Initialize clock. */
@@ -221,9 +222,8 @@ static void nxp_mcimx7_mu_config(void)
 }
 #endif /* CONFIG_IPM_IMX */
 
-static int nxp_mcimx7_init(const struct device *arg)
+static int nxp_mcimx7_init(void)
 {
-	ARG_UNUSED(arg);
 
 	/* SoC specific RDC settings */
 	SOC_RdcInit();

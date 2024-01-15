@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <sys/printk.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/printk.h>
 #include <wait_q.h>
 #include <ksched.h>
 
@@ -86,7 +86,7 @@ static void partner_fn(void *arg1, void *arg2, void *arg3)
 	}
 }
 
-void main(void)
+int main(void)
 {
 	z_waitq_init(&waitq);
 
@@ -149,4 +149,5 @@ void main(void)
 		       whole, avg);
 	}
 	printk("fin\n");
+	return 0;
 }

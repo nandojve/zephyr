@@ -4,22 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
-#include <device.h>
+#include <zephyr/kernel.h>
+#include <zephyr/device.h>
 
-#include <drivers/video.h>
+#include <zephyr/drivers/video.h>
 
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <logging/log.h>
+#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
 #define VIDEO_DEV_SW "VIDEO_SW_GENERATOR"
 
-#if defined(CONFIG_VIDEO_MCUX_CSI)
-#define VIDEO_DEV DT_LABEL(DT_INST(0, nxp_imx_csi))
-#endif
-
-void main(void)
+int main(void)
 {
 	struct video_buffer *buffers[2], *vbuf;
 	struct video_format fmt;
@@ -33,29 +29,27 @@ void main(void)
 	video = device_get_binding(VIDEO_DEV_SW);
 	if (video == NULL) {
 		LOG_ERR("Video device %s not found", VIDEO_DEV_SW);
-		return;
+		return 0;
 	}
 
 	/* But would be better to use a real video device if any */
-#ifdef VIDEO_DEV
-	{
-		const struct device *dev = device_get_binding(VIDEO_DEV);
+#if defined(CONFIG_VIDEO_MCUX_CSI)
+	const struct device *const dev = DEVICE_DT_GET_ONE(nxp_imx_csi);
 
-		if (dev == NULL) {
-			LOG_ERR("Video device %s not found, "
-				"fallback to software generator.", VIDEO_DEV);
-		} else {
-			video = dev;
-		}
+	if (!device_is_ready(dev)) {
+		LOG_ERR("%s: device not ready.\n", dev->name);
+		return 0;
 	}
+
+	video = dev;
 #endif
 
-	printk("- Device name: %s\n", VIDEO_DEV);
+	printk("- Device name: %s\n", video->name);
 
 	/* Get capabilities */
 	if (video_get_caps(video, VIDEO_EP_OUT, &caps)) {
 		LOG_ERR("Unable to retrieve video capabilities");
-		return;
+		return 0;
 	}
 
 	printk("- Capabilities:\n");
@@ -75,7 +69,7 @@ void main(void)
 	/* Get default/native format */
 	if (video_get_format(video, VIDEO_EP_OUT, &fmt)) {
 		LOG_ERR("Unable to retrieve video format");
-		return;
+		return 0;
 	}
 
 	printk("- Default format: %c%c%c%c %ux%u\n", (char)fmt.pixelformat,
@@ -92,7 +86,7 @@ void main(void)
 		buffers[i] = video_buffer_alloc(bsize);
 		if (buffers[i] == NULL) {
 			LOG_ERR("Unable to alloc video buffer");
-			return;
+			return 0;
 		}
 
 		video_enqueue(video, VIDEO_EP_OUT, buffers[i]);
@@ -101,7 +95,7 @@ void main(void)
 	/* Start video capture */
 	if (video_stream_start(video)) {
 		LOG_ERR("Unable to start capture (interface)");
-		return;
+		return 0;
 	}
 
 	printk("Capture started\n");
@@ -113,7 +107,7 @@ void main(void)
 		err = video_dequeue(video, VIDEO_EP_OUT, &vbuf, K_FOREVER);
 		if (err) {
 			LOG_ERR("Unable to dequeue video buf");
-			return;
+			return 0;
 		}
 
 		printk("\rGot frame %u! size: %u; timestamp %u ms",
@@ -122,7 +116,7 @@ void main(void)
 		err = video_enqueue(video, VIDEO_EP_OUT, vbuf);
 		if (err) {
 			LOG_ERR("Unable to requeue video buf");
-			return;
+			return 0;
 		}
 	}
 }

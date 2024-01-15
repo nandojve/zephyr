@@ -4,8 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr.h>
+#include <zephyr/kernel.h>
 
-void main(void)
+int main(void)
 {
+#ifdef CONFIG_SAMPLE_DO_OUTPUT
+	printk("Hello World from minimal!\n");
+#endif
+
+	return 0;
 }

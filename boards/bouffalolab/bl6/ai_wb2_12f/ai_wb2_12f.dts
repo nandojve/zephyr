@@ -1,0 +1,48 @@
+/*
+ * Copyright (c) 2024, MASSDRIVER EI (massdriver.space)
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <bouffalolab/bl602.dtsi>
+#include "ai_wb2_12f-pinctrl.dtsi"
+
+/ {
+	model = "Ai-Thinker WB2-12F";
+	compatible = "bflb,bl602";
+
+	chosen {
+		zephyr,flash = &flash0;
+		zephyr,itcm = &itcm;
+		zephyr,dtcm = &dtcm;
+		zephyr,sram = &sram0;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};
+
+&cpu0 {
+	clock-frequency = <192000000>;
+};
+
+&spi1 {
+	reg = <0x4000b000 0x1000 0x23000000 0xc00000>;
+	flash0: flash@0 {
+		compatible = "zb,25vq32", "jedec,spi-nor";
+		size = <4194304>;
+		label = "FLASH0";
+		reg = <0>;
+		// Dummy entry
+		spi-max-frequency = <0>;
+	};
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-1 = <&uart0_sleep>;
+	pinctrl-names = "default", "sleep";
+};

@@ -1,0 +1,5 @@
+board:
+  name: ai_wb2_12f
+  vendor: bouffalolab
+  socs:
+    - name: bl602c00q2i

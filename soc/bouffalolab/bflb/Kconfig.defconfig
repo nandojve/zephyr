@@ -5,4 +5,7 @@ if SOC_FAMILY_BFLB
 
 rsource "*/Kconfig.defconfig"
 
+config PINCTRL
+	default y
+
 endif # SOC_FAMILY_BFLB

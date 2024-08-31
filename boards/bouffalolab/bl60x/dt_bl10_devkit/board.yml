@@ -1,0 +1,5 @@
+board:
+  name: dt_bl10_devkit
+  vendor: bouffalolab
+  socs:
+    - name: bl602c20q2i

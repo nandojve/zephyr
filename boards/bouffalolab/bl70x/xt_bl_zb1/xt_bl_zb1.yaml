@@ -1,0 +1,19 @@
+# Copyright (c) 2024 MASSDRIVER EI (massdriver.space)
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: xt_bl_zb1
+name: bl702 module
+type: mcu
+arch: riscv
+ram: 132
+toolchain:
+  - zephyr
+testing:
+  ignore_tags:
+    - net
+    - bluetooth
+supported:
+  - uart
+  - i2c
+  - gpio
+vendor: bouffalolab

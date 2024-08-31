@@ -1,0 +1,5 @@
+board:
+  name: xt_bl_zb1
+  vendor: bflb
+  socs:
+    - name: bl702c10q2h

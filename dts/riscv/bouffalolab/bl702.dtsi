@@ -1,0 +1,16 @@
+/*
+ * Copyright (c) 2024 MASSDRIVER EI (massdriver.space)
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <bouffalolab/bl70x.dtsi>
+#include <dt-bindings/pinctrl/bl702x-pinctrl.h>
+
+/ {
+	soc {
+		sram0: memory@42018000 {
+			reg = <0x42018000 DT_SIZE_K(96)>;
+		};
+	};
+};

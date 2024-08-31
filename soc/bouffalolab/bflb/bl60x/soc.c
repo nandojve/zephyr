@@ -361,7 +361,6 @@ static void system_setup_PLL(uint32_t crystal)
 
 		/* set PLL ref as RC32M */
 		system_setup_PLL_set_reference(0);
-
 	} else {
 		/* PLL ref is crystal */
 		system_setup_PLL_set_reference(1);
@@ -419,9 +418,7 @@ static void system_setup_PLL(uint32_t crystal)
 			| ((uint32_t)(5) << PDS_CLKPLL_RZ_POS);
 		tmpVal  = (tmpVal & PDS_CLKPLL_R4_SHORT_UMSK)
 			| ((uint32_t)(0) << PDS_CLKPLL_R4_SHORT_POS);
-	}
-	else
-	{
+	} else {
 		tmpVal  = (tmpVal & PDS_CLKPLL_C3_UMSK)
 			| ((uint32_t)(3) << PDS_CLKPLL_C3_POS);
 		tmpVal  = (tmpVal & PDS_CLKPLL_CZ_UMSK)

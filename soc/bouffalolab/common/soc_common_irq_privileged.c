@@ -28,3 +28,8 @@ void riscv_clic_irq_priority_set(unsigned int irq, unsigned int prio, uint32_t f
 	ARG_UNUSED(prio);
 	ARG_UNUSED(flags);
 }
+
+int riscv_clic_irq_is_enabled(unsigned int irq)
+{
+	return *(volatile uint8_t *)(CLIC_HART0_ADDR + CLIC_INTIE + irq);
+}

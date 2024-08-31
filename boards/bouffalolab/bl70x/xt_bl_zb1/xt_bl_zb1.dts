@@ -1,0 +1,48 @@
+/*
+ * Copyright (c) 2021, ATL Electronics
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <bouffalolab/bl702.dtsi>
+#include "xt_bl_zb1-pinctrl.dtsi"
+
+/ {
+	model = "bl702 xt_bl_zb1";
+	compatible = "bflb,bl702";
+
+	chosen {
+		zephyr,flash = &flash0;
+		zephyr,itcm = &itcm;
+		zephyr,dtcm = &dtcm;
+		zephyr,sram = &sram0;
+		zephyr,console = &uart0;
+		zephyr,shell-uart = &uart0;
+	};
+};
+
+&cpu0 {
+	clock-frequency = <144000000>;
+};
+
+&spi1 {
+	reg = <0x4000b000 0x1000 0x23000000 0xc00000>;
+	flash0: flash@0 {
+		compatible = "jedec,spi-nor";
+		size = <1048576>;
+		label = "FLASH0";
+		reg = <0>;
+		// Dummy entry
+		spi-max-frequency = <0>;
+	};
+};
+
+&uart0 {
+	status = "okay";
+	current-speed = <115200>;
+
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-1 = <&uart0_sleep>;
+	pinctrl-names = "default", "sleep";
+};

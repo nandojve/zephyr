@@ -65,6 +65,8 @@ static void uart_bflb_enabled(const struct device *dev, uint32_t enable)
 	sys_write32(txt, cfg->base_reg + UART_UTX_CONFIG_OFFSET);
 }
 
+#ifdef CONFIG_SOC_SERIES_BL60X
+
 static uint32_t uart_bflb_get_crystal_frequency(void)
 {
 	uint32_t tmpVal;
@@ -168,6 +170,76 @@ static uint32_t uart_bflb_get_clock(void)
 	}
 	return 0;
 }
+
+#elif defined(CONFIG_SOC_SERIES_BL70X)
+
+static uint32_t uart_bflb_get_crystal_frequency(void)
+{
+	return (32 * 1000 * 1000);
+}
+
+static uint32_t uart_bflb_get_PLL_frequency(void)
+{
+	uint32_t tmpVal;
+
+	tmpVal = sys_read32(GLB_BASE + GLB_CLK_CFG0_OFFSET);
+	tmpVal = (tmpVal & GLB_REG_PLL_SEL_MSK) >> GLB_REG_PLL_SEL_POS;
+
+	if (tmpVal == 0) {
+		return (57 * 1000 * 1000 + 6 * 100 * 1000);
+	} else if (tmpVal == 1) {
+		return (96 * 1000 * 1000);
+	} else if (tmpVal == 2) {
+		return (144 * 1000 * 1000);
+	} else if (tmpVal == 3) {
+		return (288 * 1000 * 1000);
+	} else {
+		return 0;
+	}
+}
+
+static uint32_t uart_bflb_get_clock(void)
+{
+	uint32_t tmpVal = 0;
+	uint32_t uart_divider = 0;
+	uint32_t hclk_divider = 0;
+
+	tmpVal = sys_read32(GLB_BASE + GLB_CLK_CFG2_OFFSET);
+	uart_divider = (tmpVal & GLB_UART_CLK_DIV_MSK) >> GLB_UART_CLK_DIV_POS;
+
+	tmpVal = sys_read32(HBN_BASE + HBN_GLB_OFFSET);
+	tmpVal = (tmpVal & HBN_UART_CLK_SEL_MSK) >> HBN_UART_CLK_SEL_POS;
+
+	if (tmpVal == 0) {
+		/* FCLK */
+		tmpVal = sys_read32(GLB_BASE + GLB_CLK_CFG0_OFFSET);
+		hclk_divider = (tmpVal & GLB_REG_HCLK_DIV_MSK) >> GLB_REG_HCLK_DIV_POS;
+
+		tmpVal = sys_read32(GLB_BASE + GLB_CLK_CFG0_OFFSET);
+		tmpVal = (tmpVal & GLB_HBN_ROOT_CLK_SEL_MSK) >> GLB_HBN_ROOT_CLK_SEL_POS;
+
+		if (tmpVal == 0) {
+			/* RC32M clock */
+			tmpVal = (32 * 1000 * 1000) / (hclk_divider + 1);
+			return (tmpVal / (uart_divider + 1));
+		} else if (tmpVal == 1) {
+			/* Crystal clock */
+			tmpVal = uart_bflb_get_crystal_frequency() / (hclk_divider + 1);
+			return (tmpVal / (uart_divider + 1));
+		} else if (tmpVal > 1) {
+			/* PLL Clock */
+			tmpVal = uart_bflb_get_PLL_frequency() / (hclk_divider + 1);
+			return (tmpVal / (uart_divider + 1));
+
+		}
+	} else {
+		/* UART DLL 96 */
+		return ((96 * 1000 * 1000) / (uart_divider + 1));
+	}
+	return 0;
+}
+
+#endif
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 

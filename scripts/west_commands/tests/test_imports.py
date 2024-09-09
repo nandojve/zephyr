@@ -16,7 +16,6 @@ def test_runner_imports():
     # Please keep this sorted alphabetically.
     expected = set(('arc-nsim',
                     'blackmagicprobe',
-                    'blflash',
                     'bossac',
                     'canopen',
                     'dediprog',

@@ -27,7 +27,6 @@ def _import_runner_module(runner_name):
 _names = [
     'bflb_mcu_tool',
     'blackmagicprobe',
-    'blflash',
     'bossac',
     'canopen_program',
     'dediprog',

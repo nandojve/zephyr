@@ -26,6 +26,8 @@
 		sercom-4 = &sercom4;
 		sercom-5 = &sercom5;
 
+		rtc = &rtc;
+
 		tc-4 = &tc4;
 
 		watchdog0 = &wdog;
@@ -203,6 +205,9 @@
 			atmel,assigned-clocks = <&osc32kctrl 0>;
 			atmel,assigned-clock-names = "OSC32KCTRL";
 			status = "disabled";
+
+			alarms-count = <1>;
+			cal-constant = <(8192 * 128)>;
 		};
 
 		adc: adc@43000c00 {

@@ -18,6 +18,8 @@
 		port-b = &portb;
 		port-c = &portc;
 
+		rtc = &rtc;
+
 		sercom-0 = &sercom0;
 		sercom-1 = &sercom1;
 		sercom-2 = &sercom2;
@@ -255,6 +257,9 @@
 			assigned-clocks = <&osc32kctrl 0>;
 			assigned-clock-names = "OSC32KCTRL";
 			status = "disabled";
+
+			alarms-count = <1>;
+			cal-constant = <(4096 * 240)>;
 		};
 	};
 };

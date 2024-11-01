@@ -21,6 +21,8 @@
 		port-c = &portc;
 		port-d = &portd;
 
+		rtc = &rtc;
+
 		sercom-0 = &sercom0;
 		sercom-1 = &sercom1;
 		sercom-2 = &sercom2;
@@ -45,6 +47,7 @@
 	};
 
 	chosen {
+		zephyr,flash-controller = &nvmctrl;
 		zephyr,entropy = &trng;
 		zephyr,flash-controller = &nvmctrl;
 	};
@@ -316,6 +319,9 @@
 			assigned-clocks = <&osc32kctrl 0>;
 			assigned-clock-names = "OSC32KCTRL";
 			status = "disabled";
+
+			alarms-count = <2>;
+			cal-constant = <(8192 * 128)>;
 		};
 
 		adc0: adc@43001c00 {

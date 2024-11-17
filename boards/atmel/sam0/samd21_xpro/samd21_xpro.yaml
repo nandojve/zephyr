@@ -17,6 +17,7 @@ supported:
   - gpio
   - i2c
   - pwm
+  - rtc
   - spi
   - uart
   - usb_device

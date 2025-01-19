@@ -10,6 +10,8 @@ common:
     - mimxrt1015_evk
     - mimxrt1060_evk/mimxrt1062/qspi
     - sam4l_ek
+    - same54_xpro
+    - samr21_xpro
     - mimxrt1050_evk/mimxrt1052/hyperflash
     - mimxrt1050_evk/mimxrt1052/qspi
     - mimxrt1060_evk/mimxrt1062/hyperflash

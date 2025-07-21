@@ -446,6 +446,7 @@ if (CONFIG_BUILD_WITH_TFM)
 
   dt_chosen(chosen_flash PROPERTY "zephyr,flash")
   dt_prop(flash_write_block_size PATH ${chosen_flash} PROPERTY write-block-size)
+  dt_prop(flash_erase_block_size PATH ${chosen_flash} PROPERTY erase-block-size)
   # The alignment is determined by the minimal amount of bytes necessary to
   # be written in the flash sector. Ex., assuming that the sector erase
   # operation is 1KiB and, on that sector, the minimal amount of bytes that
@@ -463,8 +464,15 @@ if (CONFIG_BUILD_WITH_TFM)
   else()
     set(image_alignment 1)
   endif()
+  # Calculate the maximum number of sectors necessary to store the image.
+  dt_nodelabel(s_partition_node NODELABEL "slot0_partition")
+  dt_nodelabel(ns_partition_node NODELABEL "slot0_ns_partition")
+  dt_reg_size(s_partition_size PATH ${s_partition_node})
+  dt_reg_size(ns_partition_size PATH ${ns_partition_node})
+  math(EXPR S_MAX_SECTORS "${s_partition_size} / ${flash_erase_block_size}")
+  math(EXPR NS_MAX_SECTORS "${ns_partition_size} / ${flash_erase_block_size}")
 
-  function(tfm_sign OUT_ARG SUFFIX PAD INPUT_FILE OUTPUT_FILE)
+  function(tfm_sign OUT_ARG SUFFIX PAD MAX_SECTORS INPUT_FILE OUTPUT_FILE)
     if(PAD)
       set(pad_args --pad --pad-header)
     endif()
@@ -484,6 +492,7 @@ if (CONFIG_BUILD_WITH_TFM)
       -k ${CONFIG_TFM_KEY_FILE_${SUFFIX}}
       --public-key-format ${TFM_PUBLIC_KEY_FORMAT}
       --align ${image_alignment}
+      --max-sectors ${MAX_SECTORS}
       -v ${CONFIG_TFM_IMAGE_VERSION_${SUFFIX}}
       ${pad_args}
       ${HEX_ADDR_ARGS_${SUFFIX}}
@@ -524,7 +533,7 @@ if (CONFIG_BUILD_WITH_TFM)
     )
 
   elseif(CONFIG_TFM_MCUBOOT_IMAGE_NUMBER STREQUAL "1")
-    tfm_sign(sign_cmd S_NS TRUE ${S_NS_FILE} ${S_NS_SIGNED_FILE})
+    tfm_sign(sign_cmd S_NS TRUE ${S_MAX_SECTORS} ${S_NS_FILE} ${S_NS_SIGNED_FILE})
 
     set_property(GLOBAL APPEND PROPERTY extra_post_build_commands
       COMMAND ${PYTHON_EXECUTABLE} ${ZEPHYR_BASE}/scripts/build/mergehex.py
@@ -549,12 +558,12 @@ if (CONFIG_BUILD_WITH_TFM)
 
   else()
     if (CONFIG_TFM_USE_NS_APP)
-      tfm_sign(sign_cmd_ns NS TRUE ${NS_APP_FILE} ${NS_SIGNED_FILE})
+      tfm_sign(sign_cmd_ns NS TRUE ${NS_MAX_SECTORS} ${NS_APP_FILE} ${NS_SIGNED_FILE})
     else()
-      tfm_sign(sign_cmd_ns NS FALSE ${NS_APP_FILE} ${NS_SIGNED_FILE})
+      tfm_sign(sign_cmd_ns NS FALSE ${NS_MAX_SECTORS} ${NS_APP_FILE} ${NS_SIGNED_FILE})
     endif()
 
-    tfm_sign(sign_cmd_s S TRUE $<TARGET_PROPERTY:tfm,TFM_S_HEX_FILE> ${S_SIGNED_FILE})
+    tfm_sign(sign_cmd_s S TRUE ${S_MAX_SECTORS} $<TARGET_PROPERTY:tfm,TFM_S_HEX_FILE> ${S_SIGNED_FILE})
 
     #Create and sign for concatenated binary image, should align with the TF-M BL2
     set_property(GLOBAL APPEND PROPERTY extra_post_build_commands

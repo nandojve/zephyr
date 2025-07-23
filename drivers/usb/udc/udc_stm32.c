@@ -227,11 +227,11 @@ static int udc_stm32_tx(const struct device *dev, struct udc_ep_config *epcfg,
 	uint8_t *data; uint32_t len;
 	HAL_StatusTypeDef status;
 
-	LOG_DBG("TX ep 0x%02x len %u", epcfg->addr, buf->len);
-
-	if (udc_ep_is_busy(epcfg)) {
+	if (udc_ep_is_busy(epcfg) || epcfg->stat.halted) {
 		return 0;
 	}
+
+	LOG_DBG("TX ep 0x%02x len %u", epcfg->addr, buf->len);
 
 	data = buf->data;
 	len = buf->len;
@@ -837,6 +837,10 @@ static int udc_stm32_ep_set_halt(const struct device *dev,
 		return -EIO;
 	}
 
+	if (USB_EP_GET_IDX(cfg->addr) != 0) {
+		cfg->stat.halted = true;
+	}
+
 	return 0;
 }
 
@@ -853,6 +857,21 @@ static int udc_stm32_ep_clear_halt(const struct device *dev,
 		LOG_ERR("HAL_PCD_EP_ClrStall failed(0x%02x), %d",
 			cfg->addr, (int)status);
 		return -EIO;
+	}
+
+	cfg->stat.halted = false;
+
+	if (USB_EP_GET_IDX(cfg->addr)) {
+		struct net_buf *buf;
+
+		buf = udc_buf_peek(cfg);
+		if (buf) {
+			if (USB_EP_DIR_IS_IN(cfg->addr)) {
+				udc_stm32_tx(dev, cfg, buf);
+			} else {
+			/* Perhaps do something for OUT */
+			}
+		}
 	}
 
 	return 0;

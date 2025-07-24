@@ -1,0 +1,11 @@
+identifier: nucleo_u5a5zj_q/ns
+name: ST Nucleo U5A5ZJ Q
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+supported:
+  - usart
+ram: 1664
+flash: 1280

@@ -67,12 +67,16 @@ LOG_MODULE_REGISTER(udc_stm32, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #else
 #define UDC_STM32_SPEED                  USB_OTG_SPEED_HIGH
 #endif
+#define IS_HIGH_SPEED			 1
 #elif USB_OTG_HS_EMB_PHYC || USB_OTG_HS_EMB_PHY || USB_OTG_HS_ULPI_PHY
 #define UDC_STM32_SPEED                  USB_OTG_SPEED_HIGH_IN_FULL
+#define IS_HIGH_SPEED			 1
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_usb)
 #define UDC_STM32_SPEED                  PCD_SPEED_FULL
+#define IS_HIGH_SPEED			 0
 #else
 #define UDC_STM32_SPEED                  USB_OTG_SPEED_FULL
+#define IS_HIGH_SPEED			 0
 #endif
 
 
@@ -1285,7 +1289,7 @@ static int udc_stm32_driver_init0(const struct device *dev)
 			ep_cfg_out[i].caps.bulk = 1;
 			ep_cfg_out[i].caps.interrupt = 1;
 			ep_cfg_out[i].caps.iso = 1;
-			ep_cfg_out[i].caps.mps = cfg->ep_mps;
+			ep_cfg_out[i].caps.mps = IS_HIGH_SPEED ? 1024 : 1023;
 		}
 
 		ep_cfg_out[i].addr = USB_EP_DIR_OUT | i;
@@ -1305,7 +1309,7 @@ static int udc_stm32_driver_init0(const struct device *dev)
 			ep_cfg_in[i].caps.bulk = 1;
 			ep_cfg_in[i].caps.interrupt = 1;
 			ep_cfg_in[i].caps.iso = 1;
-			ep_cfg_in[i].caps.mps = 1023;
+			ep_cfg_in[i].caps.mps = IS_HIGH_SPEED ? 1024 : 1023;
 		}
 
 		ep_cfg_in[i].addr = USB_EP_DIR_IN | i;
@@ -1319,7 +1323,7 @@ static int udc_stm32_driver_init0(const struct device *dev)
 	data->caps.rwup = true;
 	data->caps.out_ack = false;
 	data->caps.mps0 = UDC_MPS0_64;
-#if UDC_STM32_SPEED == USB_OTG_SPEED_HIGH
+#if IS_HIGH_SPEED
 	data->caps.hs = true;
 #endif
 

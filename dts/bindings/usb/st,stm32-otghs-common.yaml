@@ -25,3 +25,11 @@ properties:
 
   clocks:
     required: true
+
+  vbus-sensing:
+    type: boolean
+    description: |
+      Enable VBUS sensing via the OTG controller's internal comparator.
+      When set, the driver enables the HAL VBUS comparator and advertises
+      the VBUS detection capability. The VBUS pin must also be included
+      in pinctrl-0 to route the voltage to the comparator input.

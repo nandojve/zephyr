@@ -50,6 +50,17 @@ LOG_MODULE_REGISTER(udc_stm32, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define UDC_STM32_IRQ_NAME     usb
 #endif
 
+/*
+ * VBUS sensing is only supported on OTG controllers.
+ * The st,stm32-usb binding does not define this property.
+ */
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs) || \
+	DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otgfs)
+#define UDC_STM32_VBUS_SENSING DT_INST_PROP(0, vbus_sensing)
+#else
+#define UDC_STM32_VBUS_SENSING 0
+#endif
+
 /* Shorthand to obtain PHY node for an instance */
 #define UDC_STM32_PHY(usb_node)			DT_PROP_BY_IDX(usb_node, phys, 0)
 
@@ -742,6 +753,10 @@ int udc_stm32_init(const struct device *dev)
 	priv->pcd.Init.ep0_mps = UDC_STM32_EP0_MAX_PACKET_SIZE;
 	priv->pcd.Init.phy_itface = cfg->selected_phy;
 	priv->pcd.Init.speed = cfg->selected_speed;
+
+#if UDC_STM32_VBUS_SENSING
+	priv->pcd.Init.vbus_sensing_enable = ENABLE;
+#endif
 
 	status = HAL_PCD_Init(&priv->pcd);
 	if (status != HAL_OK) {
@@ -1512,6 +1527,10 @@ static int udc_stm32_driver_init0(const struct device *dev)
 	if (cfg->selected_speed == PCD_SPEED_HIGH) {
 		data->caps.hs = true;
 	}
+
+#if UDC_STM32_VBUS_SENSING
+	data->caps.can_detect_vbus = true;
+#endif
 
 	priv->dev = dev;
 
